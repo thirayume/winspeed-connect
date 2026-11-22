@@ -35,7 +35,9 @@ async function main(){
  await db.pools().ready;await qa.assertQaAccess(db.wfQuery);
  check(boot.database===require('../services/native-document-target').QA,'TARGET_QA_ONLY');
  if(['overlap-app','overlap-app-replay','overlap-native','overlap-native-retry'].includes(phase)){
-  const key=phase.startsWith('overlap-app')?'app':'native';state.overlap||={};
+  const attempt=process.env.QA_BRIDGE_OVERLAP_ATTEMPT||'';
+  assert(!attempt||(/^[1-9][0-9]?$/.test(attempt)&&Number(attempt)>=2),'QA_OVERLAP_ATTEMPT_INVALID');
+  const key=(phase.startsWith('overlap-app')?'app':'native')+(attempt?'-'+attempt:'');state.overlap||={};
   const chosen=state.chosen[0];
   const body={couponId:chosen.CouponId,carrierSoId:String(loop.cases[chosen.book].soid),
    carrierDocuNo:loop.cases[chosen.book].bookingNo,beneficiaryCustId:String(boot.custId),reservedQty:0.25,
@@ -44,7 +46,7 @@ async function main(){
   try{
    const r=await call('sales','/coupons/reserve',body);
    state.overlap[key]={id:String(r.id),status:200,idempotencyKey:body.idempotencyKey};save();
-   if(phase==='overlap-app'){console.log('QA_OVERLAP_API_COMPLETE app status=200');return;}
+   if(phase==='overlap-app'){console.log('QA_OVERLAP_API_COMPLETE '+key+' status=200');return;}
    const again=await call('sales','/coupons/reserve',body);
    check(String(again.id)===String(r.id)&&again.idempotent===true,'OVERLAP_RESERVE_REPLAY_ONCE_'+key);
    const row=(await db.wfQuery(`SELECT COUNT(*) AS N FROM wf.CouponReservation WHERE IdempotencyKey=@k;
