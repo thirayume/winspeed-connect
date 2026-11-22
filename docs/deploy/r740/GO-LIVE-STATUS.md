@@ -23,6 +23,21 @@ screen, refresh customer/FIFO balances after evidence or conversion decisions, a
 returning tickets while a native delivery remains usable, overcuts and inconsistent balances. Mismatch incidents use
 the business transaction; polling rotates through waiting receipts separately for each database. Local tests and UAT
 SQL reads/incident-rollback checks cover these changes; the running UAT bundle does not yet contain them.
+**Owner target and gaps, reviewed 22 November:** both environments must offer the same business functions and role rules.
+Read-only runtime checks still find AI/104/116/107 switches true on UAT and false on PROD; direct conversion is true on
+UAT and false on PROD, while Rebate conversion approval and evidence discovery are true on both. The current native
+writers also pin the UAT database, require simulation evidence and support a restricted single-line case. Removing
+those controls or switching PROD flags alone is not a Production implementation. The common release needs native
+Production contracts and multi-line/mixed-ticket acceptance first.
+
+The owner now requires SALES to request cuts and its customers' Rebate use, with new fertilizer-ticket sales limited
+to COUNTER_SALES and explicitly authorized roles. Current default `so.create-native-delivery` still includes SALES;
+the native 116 workflow's creator policy still excludes SALES. These need separate request/approve/apply permissions
+and API tests. Giveaway borrowing currently transfers regional budgets, refuses same-region borrowing and has no
+explicit repayment route in `routes/giveaway.js`; individual salesperson borrowing/repayment needs implementation and
+acceptance. These are open gaps, not completed features. See the latest owner rules in
+`docs/sale-app/handover/APPROVAL-POLICIES.md`.
+
 Older paragraphs below are history.
 
 **Bill-to-invoice rehearsal on UAT, 3 November 2026.** Bills were made in Sale-App and carried through WinSpeed over
