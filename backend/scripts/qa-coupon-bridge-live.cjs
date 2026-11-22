@@ -101,8 +101,10 @@ async function main(){
     const args={requestId:state.command.requestId,operationType:'C',reason:'QA reviewed native WinSpeed C '+run};
     const inspected=await bridge('inspect',args),permit=await bridge('publish',{...args,fingerprint:inspected.fingerprint});
     state.permit=permit.permitId;state.operation='C';save();
-    const recorder=(await db.wfQuery('SELECT EmpId FROM wf.AppUser WHERE Id=@u',{u:input(db.sql.Int,f.users.manager.id)})).recordset[0];
-    const facts={...state.command.data,recorderEmpId:recorder.EmpId,coupons:chosen.map(c=>({coupon:c.CouponNo,quantity:'0.10'}))};
+    const recorder=(await db.wfQuery(`SELECT u.EmpId,e.EmpCode FROM wf.AppUser u JOIN dbo.EMEmp e ON e.EmpID=CONVERT(int,u.EmpId)
+     WHERE u.Id=@u`,{u:input(db.sql.Int,f.users.manager.id)})).recordset[0];
+    const facts={...state.command.data,recorderEmpId:recorder.EmpId,recorderCode:recorder.EmpCode,
+     coupons:chosen.map(c=>({coupon:c.CouponNo,quantity:'0.10'}))};
     fs.writeFileSync(path.join(dir,'bridge-ui-facts.json'),JSON.stringify(facts,null,2),{mode:0o600});
     console.log('QA_NATIVE_CREATE_UI_FACTS '+JSON.stringify(facts));return;
    }

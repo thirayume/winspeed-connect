@@ -178,6 +178,7 @@ export function NativeOperationalAction({soid,stage,onCreated}:{soid:string|numb
      </div>}
      {receipt&&<div role="status" className="rounded bg-emerald-50 p-3">บันทึกแล้ว: <strong>{receipt.nativeNo}</strong>{receipt.replayed&&' (รายการเดิม)'}
       {receipt.lines.filter(l=>l.CouponNo).map((l,i)=><p key={i}>ตั๋ว {l.CouponNo}</p>)}
+      {stage===104&&<p className="mt-2 text-sm">หากค้นหาตั๋วใหม่ใน WinSpeed ไม่พบ ให้กด Refresh ในหน้าค้นหาตั๋วก่อนค้นหาอีกครั้ง</p>}
       {stage!==119&&can(`native.print-${stage}`)&&<button onClick={()=>setPrinting(true)} className="mt-2 rounded border px-3 py-2">พิมพ์เอกสาร</button>}
      </div>}
     </div>}
