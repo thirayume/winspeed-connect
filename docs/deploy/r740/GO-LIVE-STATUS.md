@@ -1,13 +1,28 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **21 November 2026 (ICT)**. This page records observed results;
+Operational snapshot: **22 November 2026 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**Running release: 2.0.0 on UAT and Production (migrations through 253 on `dbwins_worldfert9`, `dbwins_worldfert9_uat`
-and `dbwins_worldfert2`). Production runs in mixed mode: quotations, bills, trips, 103, stock, reports and prints in
-Sale-App; AI, 104, 116 and 107 in WinSpeed. All native writers stay off; Rebate reset admin is off.**
+**Observed on R740, 22 November:** UAT checkout `9b42bdd`, healthy backend, migration 259 applied;
+Production checkout `fbbc139`, healthy backend, migration 254 applied on `dbwins_worldfert9`.
+The second company's migration level was not rechecked in this review. Rebate Pool is already enabled on both stacks;
+Production's Rebate reset admin and native 107 writer remain off. Production stays in mixed mode: AI, 104, 116 and 107
+are issued in WinSpeed. No Production data, switches or deployment were changed in this review.
+
+**Rebate ticket acceptance on UAT:** continued the existing price-zero ticket rehearsal through 107 from the browser.
+The invoice date matches its 116; the 202 and 107 amounts and VAT are zero. One invoice receipt and one stock deduction
+were found, the Rebate ticket remains FINAL with no remaining quantity, and reopening Post Invoice returns the same
+invoice. The document-stage badge reads “ออกครบแล้ว · ปิดงานขาย”. VAT/GL accounting remains in WinSpeed; this case
+does not establish positive-VAT or GL acceptance. Identifiers and screenshots stay in the private evidence folder
+`scratch/codex-uat-review-20261122/`.
+
+**Source fixes pending deployment:** remove the unavailable legacy Ledger/alert controls from the current Rebate Pool
+screen, refresh customer/FIFO balances after evidence or conversion decisions, and harden the settlement worker against
+returning tickets while a native delivery remains usable, overcuts and inconsistent balances. Mismatch incidents use
+the business transaction; polling rotates through waiting receipts separately for each database. Local tests and UAT
+SQL reads/incident-rollback checks cover these changes; the running UAT bundle does not yet contain them.
 Older paragraphs below are history.
 
 **Bill-to-invoice rehearsal on UAT, 3 November 2026.** Bills were made in Sale-App and carried through WinSpeed over

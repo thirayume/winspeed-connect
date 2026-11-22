@@ -151,6 +151,7 @@ function settleFake(over = {}) {
   const cuts = over.cuts ?? [{ RedemtionID: 192002, DocuNo: '9900104', Qty: '0.0500' }];
   const query = async (text, params) => {
     if (/FROM wf\.RebateTicketReceiptState st WITH \(UPDLOCK,HOLDLOCK\)/.test(text)) return { recordset: [head] };
+    if (/AS BlockingDeliverySOID/.test(text)) return { recordset: over.blockingDeliveries || [] };
     if (/WHERE l\.DocuType=104 AND l\.RefSOID=@bookingId/.test(text)) return { recordset: deliveries };
     if (/FROM dbo\.WFRedemtionDT x/.test(text)) return { recordset: cuts };
     if (/SET Status='FINAL'/.test(text)) { writes.push(params); return { rowsAffected: [1] }; }
@@ -169,8 +170,13 @@ test('the worker makes a ticket final at its 116, waits before that, releases on
   assert.equal(f.writes[0].no, '9900104'); assert.equal(f.writes[0].id, 192002);
   // waiting states
   assert.equal((await lines.settleReceipt(settleFake({ deliveries: [] }).query, 7, {})).outcome, 'WAITING_104');
-  assert.equal((await lines.settleReceipt(settleFake({ cuts: [] }).query, 7, {})).outcome, 'WAITING_116');
-  assert.equal((await lines.settleReceipt(settleFake({ cuts: [{ RedemtionID: 1, DocuNo: 'x', Qty: '0.0200' }] }).query, 7, {})).outcome, 'WAITING_116');
+  assert.equal((await lines.settleReceipt(settleFake({ cuts: [], deliveries: [{ SOID: 8, DocuNo: 'TEST-104',
+    ListNo: 2, GoodID: 1118, Qty: '0.0500', Price: '0.0000', Amount: '0.0000', CouponID: 5,
+    CouponQty: '0.0500', CouponRema: '0.0500' }] }).query, 7, {})).outcome, 'WAITING_116');
+  const partial = settleFake({ cuts: [{ RedemtionID: 1, DocuNo: 'TEST-116', Qty: '0.0200' }],
+    deliveries: [{ SOID: 8, DocuNo: 'TEST-104', ListNo: 2, GoodID: 1118, Qty: '0.0500', Price: '0.0000',
+      Amount: '0.0000', CouponID: 5, CouponQty: '0.0500', CouponRema: '0.0300' }] });
+  assert.equal((await lines.settleReceipt(partial.query, 7, {})).outcome, 'WAITING_116');
   // the 103 was cancelled or deleted in WinSpeed: tickets go back
   for (const head of [{ HeadStatus: 'C' }, { HeadSOID: null }]) {
     f = settleFake({ head });
@@ -193,6 +199,73 @@ test('the worker makes a ticket final at its 116, waits before that, releases on
     assert.equal(f.incidents[0].key, `REBATE_TICKET_DOCUMENT_MISMATCH:7:${reason}`);
     assert.equal(f.writes.length, 0);
   }
+});
+
+test('a cancelled or missing booking cannot return a ticket while a native delivery remains usable or used', async () => {
+  for (const head of [{ HeadStatus: 'C' }, { HeadSOID: null }]) {
+    const f = settleFake({ head, blockingDeliveries: [{ BlockingDeliverySOID: 8 }] });
+    const result = await lines.settleReceipt(f.query, 7, { recordIncident: f.recordIncident });
+    assert.equal(result.outcome, 'MISMATCH');
+    assert.equal(result.reason, 'CANCELLED_BOOKING_HAS_DELIVERY');
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.incidents.length, 1);
+  }
+});
+
+test('overcuts, invalid cut quantities and inconsistent native balances never make a Rebate receipt final', async () => {
+  for (const qty of ['0.0600', '0.0400', 'invalid', '-0.0100', '0.0000']) {
+    const f = settleFake({ cuts: [{ RedemtionID: 1, DocuNo: 'TEST-116', Qty: qty }] });
+    assert.equal((await lines.settleReceipt(f.query, 7, { recordIncident: f.recordIncident })).outcome, 'MISMATCH');
+    assert.equal(f.writes.length, 0);
+    assert.equal(f.incidents.length, 1);
+  }
+});
+
+test('the settlement batch records mismatches through the transaction-provided incident writer', async () => {
+  const f = settleFake({ head: { LinePrice: '1.0000' } });
+  const query = async (text, params) => {
+    if (/sp_getapplock/.test(text)) return { recordset: [{ LockResult: 0 }] };
+    if (/FROM wf\.RebateResetParticipant/.test(text)) return { recordset: [{ Phase: 'READY' }] };
+    return f.query(text, params);
+  };
+  const results = await lines.settleReservedTickets({
+    listQuery: async () => ({ recordset: [{ ReceiptId: 7 }] }),
+    runTx: fn => fn(query, f.recordIncident),
+    recordIncident: async () => { throw Error('must not open a separate audit transaction'); },
+    env: {},
+  });
+  assert.equal(results[0].outcome, 'MISMATCH');
+  assert.equal(f.incidents.length, 1);
+});
+
+test('settlement scans past waiting receipts and wraps at the end', async () => {
+  const afters = [];
+  const listQuery = async (text, params) => {
+    afters.push(params.after);
+    return { recordset: params.after === 50 ? [] : [{ ReceiptId: 7 }] };
+  };
+  const f = settleFake({ head: { LinePrice: '1.0000' } });
+  const query = (text, params) => /sp_getapplock/.test(text) ? { recordset: [{ LockResult: 0 }] }
+    : /FROM wf\.RebateResetParticipant/.test(text) ? { recordset: [{ Phase: 'READY' }] } : f.query(text, params);
+  const result = await lines.settleReservedTickets({ afterReceiptId: 50, listQuery,
+    runTx: fn => fn(query, f.recordIncident) });
+  assert.deepEqual(afters, [50, 0]);
+  assert.equal(result[0].receiptId, 7);
+});
+
+test('the worker advances a separate settlement cursor for each database', async () => {
+  const calls = [];
+  let database;
+  const worker = require('../services/rebate-ticket-settlement-worker').createWorker({
+    env: {}, targets: () => [{ name: 'fixtureA' }, { name: 'fixtureB' }],
+    db: { runWithTarget: async (target, fn, name) => { database = name; return fn(); } },
+    settle: async input => {
+      calls.push([database, input.afterReceiptId]);
+      return [{ receiptId: database === 'fixtureA' ? 50 : 100 }];
+    },
+  });
+  await worker.runOnce(); await worker.runOnce();
+  assert.deepEqual(calls, [['fixtureA', 0], ['fixtureB', 0], ['fixtureA', 50], ['fixtureB', 100]]);
 });
 
 test('migration 258 adds the ticket line flag and the receipt state table; the rollback refuses while they are in use', () => {

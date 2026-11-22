@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { fetchRebateShipmentEvidence, stageRebateShipmentEvidence, reviewRebateShipmentEvidence,
   type RebateShipmentEvidence } from '../../services/api';
 
-export function RebateEvidenceQueue() {
+export function RebateEvidenceQueue({ onChanged }: { onChanged?: () => void } = {}) {
   const [rows,setRows]=useState<RebateShipmentEvidence[]>([]);
   const [open,setOpen]=useState(false);
   const [loading,setLoading]=useState(false);
@@ -36,6 +36,7 @@ export function RebateEvidenceQueue() {
     try {
       await reviewRebateShipmentEvidence(selected.Id,{expectedRevision:selected.Revision,decision,
         ...(decision==='VERIFY'?{occurredAtUtc:`${when}:00+07:00`}:{}),reason:reason.trim()});
+      onChanged?.();
       setSelected(null);setWhen('');setReason('');await refresh();
     } catch(e:unknown){setError(e instanceof Error?e.message:'ตรวจหลักฐานไม่สำเร็จ');}
     finally{setLoading(false);}

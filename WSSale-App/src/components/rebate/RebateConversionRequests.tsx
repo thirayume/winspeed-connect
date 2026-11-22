@@ -7,7 +7,9 @@ import { appAlert, appConfirm, appPrompt } from '../ui/AppAlert';
 import { SearchableSelect, type SearchableSelectOption } from '../ui/SearchableSelect';
 
 const labels:Record<string,string> = { PENDING:'รออนุมัติ', APPROVED:'อนุมัติแล้ว', REJECTED:'ไม่อนุมัติ', CANCELLED:'ยกเลิก' };
-export function RebateConversionRequests({ customers, goods }: { customers:SearchableSelectOption[]; goods:SearchableSelectOption[] }) {
+export function RebateConversionRequests({ customers, goods, onChanged }: {
+  customers:SearchableSelectOption[]; goods:SearchableSelectOption[]; onChanged?: () => void;
+}) {
   const user = useAuthStore(s => s.user); const can = useCan();
   const canRequest = can('rebate.conversion.request'), canApprove = can('rebate.conversion.approve');
   const [items,setItems] = useState<RebateConversionRequestItem[]|null>(null);
@@ -42,6 +44,7 @@ export function RebateConversionRequests({ customers, goods }: { customers:Searc
       let requestId=sessionStorage.getItem(key);
       if(!requestId){requestId=crypto.randomUUID();sessionStorage.setItem(key,requestId);}
       const result=await submitRebateConversionRequest({...payload,requestId,expectedDatabase:database});
+      onChanged?.();
       sessionStorage.removeItem(key);setNote('');setTons('');setExpiryDate('');
       await appAlert(`ยื่นคำขอ #${result.id} แล้ว ยอดถูกจองระหว่างรออนุมัติ`,'info');await refresh();
     } catch(e:unknown) { await appAlert((e as Error).message||'ยื่นคำขอไม่สำเร็จ','error'); }
@@ -54,7 +57,7 @@ export function RebateConversionRequests({ customers, goods }: { customers:Searc
     if(!await appConfirm(`ยืนยัน${action==='approve'?'อนุมัติ':action==='reject'?'ไม่อนุมัติ':'ยกเลิก'}คำขอ #${row.id}?`))return;
     setBusy(true);
     try {if(!database)throw new Error('ไม่สามารถยืนยันฐานข้อมูลปัจจุบัน');
-      await decideRebateConversionRequest(row.id,action,reason.trim(),database);await refresh();}
+      await decideRebateConversionRequest(row.id,action,reason.trim(),database);onChanged?.();await refresh();}
     catch(e:unknown){await appAlert((e as Error).message||'ดำเนินการไม่สำเร็จ','error');}
     finally{setBusy(false);}
   };

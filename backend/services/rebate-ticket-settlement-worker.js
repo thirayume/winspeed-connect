@@ -11,6 +11,7 @@ const { transactionQuery, rebateQuery } = require('./rebate-sql');
 function createWorker({ env = process.env, db = require('../db'), targets = resolvePhysicalResetTargets,
   settle = settleReservedTickets, interval = setInterval, logger = console } = {}) {
   let timer = null, running = false;
+  const cursors = new Map();
   function intervalMs() {
     const ms = Number(env.REBATE_TICKET_SETTLE_INTERVAL_MS || 60000);
     if (!Number.isSafeInteger(ms) || ms < 10000 || ms > 3600000)
@@ -24,12 +25,15 @@ function createWorker({ env = process.env, db = require('../db'), targets = reso
       const results = [];
       for (const target of targets(env)) {
         // Do not log target tuples or credentials.
-        results.push(await db.runWithTarget('onprem', () => settle({
-          runTx: fn => db.wfTransaction(tx => fn(transactionQuery(tx, db.sql))),
+        const settled = await db.runWithTarget('onprem', () => settle({
+          afterReceiptId: cursors.get(target.name) || 0,
+          runTx: fn => db.wfTransaction(tx => fn(transactionQuery(tx, db.sql),
+            incident => require('./rule-incidents').recordIncidentTx(tx, incident))),
           listQuery: rebateQuery(db.wfQuery, db.sql),
-          recordIncident: require('./rule-incidents').recordIncident,
           env,
-        }), target.name));
+        }), target.name);
+        if (settled.length) cursors.set(target.name, settled[settled.length - 1].receiptId);
+        results.push(settled);
       }
       return { skipped: false, targets: results.length, results };
     } finally { running = false; }

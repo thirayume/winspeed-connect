@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react';
 import { fetchRebateCustomerOverview, type RebateCustomerOverview } from '../../services/api';
 
-export function RebateCustomersOverview({ onSelect }: { onSelect: (id: number) => void }) {
+export function RebateCustomersOverview({ onSelect, refreshKey = 0 }: {
+  onSelect: (id: number) => void;
+  refreshKey?: number;
+}) {
   const [input, setInput] = useState('');
   const [search, setSearch] = useState('');
   const [after, setAfter] = useState(0);
   const [result, setResult] = useState<RebateCustomerOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [refreshSequence, setRefreshSequence] = useState(0);
   useEffect(() => {
     let cancelled = false;
     setResult(null); setError(''); setLoading(true);
@@ -17,7 +21,7 @@ export function RebateCustomersOverview({ onSelect }: { onSelect: (id: number) =
       if (!cancelled) setError('ยังไม่สามารถแสดงกอง Rebate ใหม่ได้ กรุณาตรวจสอบกับผู้ดูแลระบบ');
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [after, search]);
+  }, [after, search, refreshKey, refreshSequence]);
   return <section className="rounded-xl border border-blue-200 bg-white p-4 shadow-sm space-y-3">
     <div><h2 className="font-bold text-[#0C447C]">กอง Rebate รายลูกค้า</h2>
       <p className="text-xs text-gray-600 mt-1">แสดงลูกค้าที่มีรายการสะสมจากการขนส่งในรอบปัจจุบันตามสิทธิ์ของคุณ รวมยอดยกมา รายการที่ตรวจไม่ได้จะไม่แสดงเป็นยอดศูนย์</p>
@@ -27,6 +31,8 @@ export function RebateCustomersOverview({ onSelect }: { onSelect: (id: number) =
       <input id="rebate-customer-search" value={input} maxLength={100} onChange={e => setInput(e.target.value)}
         placeholder="ค้นหารหัสหรือชื่อลูกค้า" className="rounded-lg border px-3 py-2 text-sm" />
       <button className="rounded-lg bg-[#0C447C] px-3 py-2 text-sm text-white" type="submit">ค้นหา</button>
+      <button className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50" type="button"
+        disabled={loading} onClick={() => setRefreshSequence(n => n + 1)}>รีเฟรชยอดลูกค้า</button>
     </form>
     {loading && <p role="status" className="text-sm text-gray-600">กำลังตรวจยอดลูกค้า...</p>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}

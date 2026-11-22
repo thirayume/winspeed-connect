@@ -218,17 +218,27 @@ async function settleReceipt(query, receiptId, { recordIncident, today = bangkok
     WHERE st.ReceiptId=@receiptId`, { receiptId })).recordset?.[0];
   if (!row || row.Status !== 'RESERVED') return { receiptId, outcome: 'SKIPPED' };
   const bookingId = Number(row.BookingSOID), lineNo = Number(row.BookingLineNo), qty = ticketUnits(row.Qty);
-  if (row.HeadSOID == null || String(row.HeadStatus || '').toUpperCase() === 'C') {
-    await releaseReceipt(query, { receiptId, bookingId, docuNo: row.DocuNo, today,
-      reason: row.HeadSOID == null ? 'ไม่พบใบสั่งจองใน WinSpeed' : 'ใบสั่งจองถูกยกเลิก' });
-    return { receiptId, outcome: 'RELEASED' };
-  }
   const mismatch = async (reason, detail) => {
     if (recordIncident) await recordIncident({ key: `REBATE_TICKET_DOCUMENT_MISMATCH:${receiptId}:${reason}`,
       type: 'REBATE_TICKET_DOCUMENT_MISMATCH', soid: bookingId, docuNo: row.DocuNo,
       detail: `บรรทัด ${lineNo} ตั๋ว Rebate ${ticketQuantity(qty)} ตัน: ${detail}` });
     return { receiptId, outcome: 'MISMATCH', reason };
   };
+  if (row.HeadSOID == null || String(row.HeadStatus || '').toUpperCase() === 'C') {
+    // A native 103 can be removed independently of its 104. Returning the Rebate ticket while that delivery can
+    // still be cut would give the customer the same goods twice. A cancelled 104 with a used coupon also needs review.
+    const downstream = (await query(`SELECT TOP 1 s.SOID AS BlockingDeliverySOID
+      FROM dbo.SODT l WITH (UPDLOCK,HOLDLOCK)
+      JOIN dbo.SOHD s WITH (UPDLOCK,HOLDLOCK) ON s.SOID=l.SOID AND s.DocuType=104
+      WHERE l.DocuType=104 AND l.RefSOID=@bookingId AND
+        (ISNULL(s.DocuStatus,'')<>'C' OR EXISTS (
+          SELECT 1 FROM dbo.WFCoupon c WITH (UPDLOCK,HOLDLOCK) WHERE c.DocuID=s.SOID AND c.DocuType=104
+            AND (c.RemaQty IS NULL OR c.GoodQty IS NULL OR c.RemaQty<>c.GoodQty)))`, { bookingId })).recordset || [];
+    if (downstream.length) return mismatch('CANCELLED_BOOKING_HAS_DELIVERY', 'ใบสั่งจองถูกลบหรือยกเลิก แต่ยังมีใบสั่งขายหรือตั๋วที่ใช้แล้ว ต้องตรวจเอกสารก่อนคืนสิทธิ์');
+    await releaseReceipt(query, { receiptId, bookingId, docuNo: row.DocuNo, today,
+      reason: row.HeadSOID == null ? 'ไม่พบใบสั่งจองใน WinSpeed' : 'ใบสั่งจองถูกยกเลิก' });
+    return { receiptId, outcome: 'RELEASED' };
+  }
   if (row.LineListNo == null) return mismatch('BOOKING_LINE_MISSING', 'ไม่พบบรรทัดในใบสั่งจอง WinSpeed');
   if (Number(row.LineGood) !== Number(row.GoodId) || money4(row.LineQty) !== qty || money4(row.LinePrice) !== 0n ||
       money4(row.LineAmount) !== 0n || String(row.LineFree || '').toUpperCase() === 'Y' || Number(row.HeadCust) !== Number(row.CustId))
@@ -252,8 +262,13 @@ async function settleReceipt(query, receiptId, { recordIncident, today = bangkok
     FROM dbo.WFRedemtionDT x WITH (UPDLOCK,HOLDLOCK)
     JOIN dbo.WFRedemtionHD h WITH (UPDLOCK,HOLDLOCK) ON h.RedemtionID=x.RedemtionID AND h.DocuType=116 AND ISNULL(h.DocuStatus,'')<>'C'
     WHERE x.CouponID=@coupon ORDER BY h.RedemtionID`, { coupon: Number(dl.CouponID) })).recordset || [];
-  const cut = cuts.reduce((s, c) => s + (money4(c.Qty) || 0n), 0n);
-  if (!cuts.length || cut < qty || money4(dl.CouponRema) !== 0n) return { receiptId, outcome: 'WAITING_116' };
+  const quantities = cuts.map(c => money4(c.Qty));
+  if (quantities.some(q => q == null || q <= 0n))
+    return mismatch('CUT_QTY_INVALID', 'จำนวนในใบขนไม่ถูกต้อง ต้องตรวจหลักฐานก่อนตัดตั๋วเป็นที่สุด');
+  const cut = quantities.reduce((s, q) => s + q, 0n), remainder = money4(dl.CouponRema);
+  if (remainder == null || remainder < 0n || cut > qty || cut + remainder !== qty)
+    return mismatch('CUT_BALANCE_MISMATCH', 'ยอดใบขนรวมกับยอดคงเหลือตั๋วไม่ตรงกับจำนวนที่ออก ต้องตรวจเอกสารก่อน');
+  if (!cuts.length || cut < qty) return { receiptId, outcome: 'WAITING_116' };
   const last = cuts[cuts.length - 1];
   const done = await query(`UPDATE wf.RebateTicketReceiptState SET Status='FINAL',FinalRedemptionId=@id,FinalRedemptionNo=@no,
       Reason=@reason,Revision=Revision+1,ChangedAtUtc=GETUTCDATE() WHERE ReceiptId=@receiptId AND Status='RESERVED'`,
@@ -263,14 +278,17 @@ async function settleReceipt(query, receiptId, { recordIncident, today = bangkok
 }
 
 /** Worker step: settle up to `limit` RESERVED receipts, each in its own transaction. */
-async function settleReservedTickets({ limit = 50, runTx, listQuery, recordIncident, env = process.env } = {}) {
-  const ids = ((await listQuery(`SELECT TOP (@limit) ReceiptId FROM wf.RebateTicketReceiptState WITH (NOLOCK)
-    WHERE Status='RESERVED' ORDER BY ChangedAtUtc,ReceiptId`, { limit })).recordset || []).map(r => Number(r.ReceiptId));
+async function settleReservedTickets({ limit = 50, afterReceiptId = 0, runTx, listQuery, recordIncident, env = process.env } = {}) {
+  const list = async after => ((await listQuery(`SELECT TOP (@limit) ReceiptId FROM wf.RebateTicketReceiptState WITH (NOLOCK)
+    WHERE Status='RESERVED' AND ReceiptId>@after ORDER BY ReceiptId`, { limit, after })).recordset || []).map(r => Number(r.ReceiptId));
+  // Waiting for 104/116 must not keep the oldest 50 receipts at the head of every poll forever.
+  let ids = await list(afterReceiptId);
+  if (!ids.length && afterReceiptId > 0) ids = await list(0);
   const results = [];
   for (const id of ids) {
-    results.push(await runTx(async query => {
+    results.push(await runTx(async (query, recordIncidentInTransaction) => {
       await acquireParticipantReady(query, env);
-      return settleReceipt(query, id, { recordIncident });
+      return settleReceipt(query, id, { recordIncident: recordIncidentInTransaction || recordIncident });
     }));
   }
   return results;

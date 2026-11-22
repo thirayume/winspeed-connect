@@ -1,13 +1,9 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Calculator,
-  CheckCircle2,
   XCircle,
-  Clock,
-  Coins,
   AlertTriangle,
   RefreshCw,
-  Bell,
   Lock,
   ArrowRightLeft,
   Plus,
@@ -15,13 +11,8 @@ import {
 } from 'lucide-react';
 import {
   calculateRebatePoolOrder,
-  fetchRebatePoolLedger,
   fetchRebatePoolLimits,
-  createRebatePoolLedger,
-  approveRebatePoolLedger,
-  rejectRebatePoolLedger,
   fetchRebatePoolCustomerQueue,
-  fetchRebatePoolAlerts,
   fetchOct31StandingPrices,
   snapshotOct31StandingPrices,
   fetchRebateConversions,
@@ -43,10 +34,8 @@ import type {
   EMGood,
   Oct31StandingPriceItem,
   RebateCalculationResult,
-  RebateConversionAlertItem,
   RebateConversionRecord,
   RebateCustomerQueue,
-  RebatePoolLedgerEntry,
   RebatePricingMode,
 } from '../../types';
 
@@ -85,22 +74,7 @@ const PRICING_MODE_META: Record<RebatePricingMode, { label: string; badge: strin
   },
 };
 
-const APPROVAL_META: Record<string, { label: string; cls: string }> = {
-  NOT_REQUIRED: { label: 'อนุมัติอัตโนมัติ', cls: 'bg-gray-100 text-gray-600' },
-  PENDING_MANAGER_APPROVAL: { label: 'รออนุมัติส่วนลดเกินเกณฑ์', cls: 'bg-amber-100 text-amber-800' },
-  APPROVED: { label: 'ผู้จัดการอนุมัติแล้ว', cls: 'bg-green-100 text-green-700' },
-  REJECTED: { label: 'ไม่อนุมัติ', cls: 'bg-red-100 text-red-700' },
-};
-
-const LEDGER_STATUS_META: Record<string, { label: string; cls: string }> = {
-  ACTIVE: { label: 'สะสมใช้งานได้', cls: 'bg-blue-50 text-blue-700' },
-  READY_FOR_CONVERSION: { label: 'ครบรอบสะสม', cls: 'bg-purple-100 text-purple-800' },
-  PARTIALLY_CONVERTED: { label: 'แปลงบางส่วน', cls: 'bg-indigo-50 text-indigo-700' },
-  CONVERTED: { label: 'แปลงหมดแล้ว', cls: 'bg-gray-100 text-gray-500' },
-  CANCELLED: { label: 'ยกเลิก', cls: 'bg-red-50 text-red-600' },
-};
-
-type SubTab = 'ledger' | 'calculator' | 'conversion';
+type SubTab = 'calculator' | 'conversion';
 
 export function RebatePoolPanel() {
   const poolEnabled = useFeature()('rebate-pool-103');
@@ -125,7 +99,7 @@ function EnabledRebatePoolPanel() {
   const canManageSnapshot =
     canConvert || canApproveOverLimit;
 
-  const [subTab, setSubTab] = useState<SubTab>('ledger');
+  const [subTab, setSubTab] = useState<SubTab>('conversion');
   // Discount limits from App Settings, as the server applies them; generic words until they load.
   const [limits, setLimits] = useState<{ standard: number; max: number } | null>(null);
   useEffect(() => {
@@ -138,31 +112,22 @@ function EnabledRebatePoolPanel() {
   const [customers, setCustomers] = useState<EMCust[]>([]);
   const [goods, setGoods] = useState<EMGood[]>([]);
 
-  // Shared overview data
-  const [ledger, setLedger] = useState<RebatePoolLedgerEntry[]>([]);
-  const [alerts, setAlerts] = useState<RebateConversionAlertItem[]>([]);
+  const [balanceRevision, setBalanceRevision] = useState(0);
+
+  // Shipment-backed balances and conversions
   const [standingYear, setStandingYear] = useState<number>(new Date().getFullYear());
   const [oct31Items, setOct31Items] = useState<Oct31StandingPriceItem[]>([]);
   const [conversions, setConversions] = useState<RebateConversionRecord[]>([]);
   const [expandedConvId, setExpandedConvId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [ledgerUnavailable, setLedgerUnavailable] = useState(false);
-  const [alertsUnavailable, setAlertsUnavailable] = useState(false);
 
-  // Ledger filters
-  const [filterCustId, setFilterCustId] = useState('');
-  const [filterApproval, setFilterApproval] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
 
-  // Calculator / record state
-  const [calcCustId, setCalcCustId] = useState('');
+  // Price preview; actual accrual is created only from verified shipment evidence
   const [calcGoodId, setCalcGoodId] = useState('');
   const [basePriceStr, setBasePriceStr] = useState('15000');
   const [sellingPriceStr, setSellingPriceStr] = useState('15000');
   const [qtyTonsStr, setQtyTonsStr] = useState('10');
   const [isCashDiscount, setIsCashDiscount] = useState(false);
-  const [earnedDate, setEarnedDate] = useState(() => bangkokDate());
-  const [calcDocNo, setCalcDocNo] = useState('');
   const [calcResult, setCalcResult] = useState<RebateCalculationResult | null>(null);
   const [calcErr, setCalcErr] = useState('');
   const [calcBusy, setCalcBusy] = useState(false);
@@ -203,21 +168,10 @@ function EnabledRebatePoolPanel() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [lRows, aRows, oRes, cRows] = await Promise.all([
-        fetchRebatePoolLedger({
-          custId: filterCustId || undefined,
-          approvalStatus: filterApproval || undefined,
-          status: filterStatus || undefined,
-          limit: 200,
-        }).catch(() => null),
-        fetchRebatePoolAlerts(standingYear).catch(() => null),
+      const [oRes, cRows] = await Promise.all([
         fetchOct31StandingPrices(standingYear).catch(() => ({ standingYear, items: [] })),
         fetchRebateConversions(undefined, 100).catch(() => []),
       ]);
-      setLedger(Array.isArray(lRows) ? lRows : []);
-      setAlerts(Array.isArray(aRows) ? aRows : []);
-      setLedgerUnavailable(lRows === null);
-      setAlertsUnavailable(aRows === null);
       setOct31Items(Array.isArray(oRes?.items) ? oRes.items : []);
       setConversions(Array.isArray(cRows) ? cRows : []);
     } catch (e) {
@@ -225,7 +179,7 @@ function EnabledRebatePoolPanel() {
     } finally {
       setLoading(false);
     }
-  }, [filterCustId, filterApproval, filterStatus, standingYear]);
+  }, [standingYear]);
 
   useEffect(() => {
     loadAll();
@@ -263,12 +217,6 @@ function EnabledRebatePoolPanel() {
     return () => { queueRequestSequence.current++; };
   }, [queueCustId, queueAsOfDate, loadCustomerQueue]);
 
-  const customerById = useMemo(() => {
-    const m = new Map<string, EMCust>();
-    for (const c of customers) m.set(String(c.CustID), c);
-    return m;
-  }, [customers]);
-
   const goodById = useMemo(() => {
     const m = new Map<string, EMGood>();
     for (const g of goods) m.set(String(g.GoodID), g);
@@ -302,61 +250,6 @@ function EnabledRebatePoolPanel() {
     for (const item of oct31Items) m.set(Number(item.goodId), item);
     return m;
   }, [oct31Items]);
-
-  // KPI metrics
-  const kpi = useMemo(() => {
-    let pendingApproval = 0;
-    let totalRemaining = 0;
-    let totalMaturedInLedger = 0;
-    for (const r of ledger) {
-      if (r.approvalStatus === 'PENDING_MANAGER_APPROVAL') pendingApproval += 1;
-      if (r.status !== 'CANCELLED' && r.approvalStatus !== 'REJECTED') {
-        totalRemaining += Number(r.remainingAmount || 0);
-      }
-      if (r.status === 'READY_FOR_CONVERSION') {
-        totalMaturedInLedger += Number(r.remainingAmount || 0);
-      }
-    }
-    const alertTotal = alerts.reduce((s, a) => s + Number(a.MaturedBalance || 0), 0);
-    return {
-      pendingApproval,
-      totalRemaining,
-      totalMaturedInLedger,
-      alertCount: alerts.length,
-      alertTotal,
-    };
-  }, [ledger, alerts]);
-
-  async function handleApproveLedger(row: RebatePoolLedgerEntry) {
-    const note = await appPrompt(
-      `อนุมัติรายการส่วนลด ${Math.abs(row.sellingPrice - row.basePrice).toLocaleString()} บ./ตัน ของ "${row.custName || `ลูกค้า #${row.custId}`}"?\nระบุหมายเหตุ (ไม่บังคับ):`,
-      'อนุมัติตามนโยบายผู้จัดการ'
-    );
-    if (note === null) return;
-    try {
-      await approveRebatePoolLedger(row.id, note.trim() || undefined);
-      await loadAll();
-    } catch (e: unknown) {
-      await appAlert((e as Error).message || 'อนุมัติไม่สำเร็จ', 'error');
-    }
-  }
-
-  async function handleRejectLedger(row: RebatePoolLedgerEntry) {
-    const note = await appPrompt(
-      `ระบุเหตุผลที่ปฏิเสธรายการ "${row.custName || `ลูกค้า #${row.custId}`}" (บังคับ):`
-    );
-    if (note === null) return;
-    if (!note.trim()) {
-      await appAlert('กรุณาระบุเหตุผลในการปฏิเสธ', 'warning');
-      return;
-    }
-    try {
-      await rejectRebatePoolLedger(row.id, note.trim());
-      await loadAll();
-    } catch (e: unknown) {
-      await appAlert((e as Error).message || 'ปฏิเสธไม่สำเร็จ', 'error');
-    }
-  }
 
   async function runPreview() {
     const basePrice = Number(basePriceStr);
@@ -392,55 +285,6 @@ function EnabledRebatePoolPanel() {
       setCalcErr((e as Error).message || 'คำนวณไม่สำเร็จ');
       setCalcResult(null);
       return null;
-    } finally {
-      setCalcBusy(false);
-    }
-  }
-
-  async function handleCreateLedger() {
-    if (!calcCustId) {
-      await appAlert('กรุณาเลือกลูกค้าก่อนบันทึกลง Ledger', 'warning');
-      return;
-    }
-    const custIdNum = Number(calcCustId);
-    if (!Number.isInteger(custIdNum) || custIdNum <= 0) {
-      await appAlert('รหัสลูกค้าต้องเป็นตัวเลขที่ถูกต้อง', 'warning');
-      return;
-    }
-    const preview = await runPreview();
-    if (!preview) return;
-
-    const ok = await appConfirm(
-      `ยืนยันบันทึกลง Rebate Ledger?\nราคาออกบิล: ${fmtMoney(preview.invoiceUnitPrice)} บ./ตัน\nสะสม Rebate รวม: ${fmtMoney(preview.totalRebateEarned)} บาท${
-        preview.requiresManagerApproval ? '\n(รายการนี้มีสถานะรออนุมัติจากผู้จัดการ)' : ''
-      }`
-    );
-    if (!ok) return;
-
-    const cust = customerById.get(calcCustId);
-    const good = calcGoodId ? goodById.get(calcGoodId) : undefined;
-    setCalcBusy(true);
-    try {
-      await createRebatePoolLedger({
-        custId: custIdNum,
-        custCode: cust?.CustCode || String(custIdNum),
-        custName: cust?.CustName || undefined,
-        goodId: good ? Number(good.GoodID) : undefined,
-        goodCode: good?.GoodCode || undefined,
-        goodName: good?.GoodName || undefined,
-        qtyTons: Number(qtyTonsStr),
-        basePrice: Number(basePriceStr),
-        sellingPrice: Number(sellingPriceStr),
-        isCashDiscount,
-        earnedDate: earnedDate || undefined,
-        docNo: calcDocNo.trim() || undefined,
-      });
-      await appAlert('บันทึกลง Rebate Pool Ledger เรียบร้อยแล้ว', 'info');
-      setCalcDocNo('');
-      setSubTab('ledger');
-      await loadAll();
-    } catch (e: unknown) {
-      await appAlert((e as Error).message || 'บันทึกรายการไม่สำเร็จ', 'error');
     } finally {
       setCalcBusy(false);
     }
@@ -530,6 +374,7 @@ function EnabledRebatePoolPanel() {
         sessionStorage.setItem(attemptKey, requestId);
       }
       const res = await executeManualRebateConversion({ ...payload, requestId });
+      setBalanceRevision(n => n + 1);
       sessionStorage.removeItem(attemptKey);
       await appAlert(
         `แปลงตั๋วปุ๋ยสำเร็จ (${res.conversion.conversionNo})\nจำนวน ${fmtTons(res.conversion.convertedTons)} ตัน · ตัดยอด ${fmtMoney(res.conversion.convertedValueBaht)} บาท\nหมดอายุ ${res.ticket.expiryDate}`,
@@ -606,77 +451,20 @@ function EnabledRebatePoolPanel() {
     return tons > 0 ? { baht: tons * price, tons } : null;
   }, [selectedOct31Price, convMode, convBahtStr, convTonsStr, convMaturedOnly, customerQueue]);
 
+  const refreshBalances = useCallback(() => {
+    setBalanceRevision(n => n + 1);
+    setCustomerQueue(null);
+    void loadAll();
+    if (queueCustId) void loadCustomerQueue(queueCustId, queueAsOfDate);
+  }, [loadAll, loadCustomerQueue, queueCustId, queueAsOfDate]);
+
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-      <RebateCustomersOverview onSelect={id => { setQueueCustId(String(id)); setQueueAsOfDate(bangkokDate()); setSubTab('conversion'); }} />
-      <RebateConversionRequests customers={customerOptions} goods={goodOptions} />
-      {(ledgerUnavailable || alertsUnavailable) && <p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-        ข้อมูลยอดหรือการแจ้งเตือนบางส่วนยังไม่พร้อมแสดง กรุณาอย่าใช้ตัวเลขในส่วนที่ไม่พร้อมเป็นยอดคงเหลือ
-      </p>}
-      {/* KPI + Alert Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-          <div className="text-xs text-gray-400 flex items-center gap-1.5">
-            <Coins size={14} className="text-[#0C447C]" /> ยอดจาก Ledger เดิม (ไม่ใช่ยอดคงเหลือที่ใช้เคลม)
-          </div>
-          <div className="text-xl font-black text-[#0C447C] tabular-nums mt-1">
-            {ledgerUnavailable ? 'ไม่พร้อมแสดง' : `฿${fmtMoney(kpi.totalRemaining)}`}
-          </div>
-          <div className="text-[11px] text-gray-500 mt-0.5">{ledgerUnavailable ? 'โหลดข้อมูลไม่สำเร็จ' : `${ledger.length} รายการในตาราง`}</div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-amber-200 p-4 shadow-sm">
-          <div className="text-xs text-amber-700 flex items-center gap-1.5 font-semibold">
-            <Clock size={14} /> รออนุมัติส่วนลดเกิน {rangeText}
-          </div>
-          <div className="text-xl font-black text-amber-700 tabular-nums mt-1">
-            {ledgerUnavailable ? 'ไม่พร้อมแสดง' : `${kpi.pendingApproval} รายการ`}
-          </div>
-          <div className="text-[11px] text-amber-600 mt-0.5">
-            {canApproveOverLimit ? 'คุณมีสิทธิ์อนุมัติ / ปฏิเสธ' : 'รอ MANAGER / C_LEVEL / ADMIN'}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-purple-200 p-4 shadow-sm">
-          <div className="text-xs text-purple-700 flex items-center gap-1.5 font-semibold">
-            <Bell size={14} /> ยอดครบกำหนด 1 พ.ย. (ปี {standingYear + 543})
-          </div>
-          <div className="text-xl font-black text-purple-700 tabular-nums mt-1">
-            {alertsUnavailable ? 'ไม่พร้อมแสดง' : `${kpi.alertCount} ลูกค้า · ฿${fmtMoney(kpi.alertTotal)}`}
-          </div>
-          <div className="text-[11px] text-purple-600 mt-0.5">
-            พร้อมแปลงตั๋วปุ๋ยแบบ Manual (FIFO)
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-col justify-between">
-          <div className="text-xs text-gray-500 font-semibold">เกณฑ์นโยบายปัจจุบัน</div>
-          <div className="text-[11px] text-gray-600 space-y-0.5 mt-1">
-            <div>· สะสมอัตโนมัติ: ส่วนลดไม่เกิน {stdText}</div>
-            <div>· ขออนุมัติ ผจก.: ส่วนลดเกิน {rangeText}</div>
-            <div>· เปลี่ยนเกณฑ์ได้ที่ App Settings</div>
-            <div>· รอบตัด FIFO: 1 พ.ย. ใช้ราคา 31 ต.ค.</div>
-          </div>
-        </div>
-      </div>
-
+      <RebateCustomersOverview refreshKey={balanceRevision} onSelect={id => { setQueueCustId(String(id)); setQueueAsOfDate(bangkokDate()); setSubTab('conversion'); }} />
+      <RebateConversionRequests customers={customerOptions} goods={goodOptions} onChanged={refreshBalances} />
       {/* Sub-navigation bar */}
       <div className="bg-white rounded-xl border border-gray-200 p-2 flex flex-wrap items-center justify-between gap-2 shadow-sm">
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setSubTab('ledger')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 ${
-              subTab === 'ledger' ? 'bg-[#0C447C] text-white' : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            <Clock size={14} /> Ledger &amp; อนุมัติ ({limits ? `-${limits.standard}..-${limits.max}` : 'เกินเกณฑ์'})
-            {kpi.pendingApproval > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-400 text-amber-950 font-black">
-                {kpi.pendingApproval}
-              </span>
-            )}
-          </button>
           <button
             type="button"
             onClick={() => setSubTab('calculator')}
@@ -684,7 +472,7 @@ function EnabledRebatePoolPanel() {
               subTab === 'calculator' ? 'bg-[#0C447C] text-white' : 'text-gray-600 hover:bg-gray-100'
             }`}
           >
-            <Calculator size={14} /> คำนวณราคา &amp; บันทึกสะสม
+            <Calculator size={14} /> ทดลองคำนวณราคา
           </button>
           <button
             type="button"
@@ -698,7 +486,7 @@ function EnabledRebatePoolPanel() {
         </div>
         <button
           type="button"
-          onClick={loadAll}
+          onClick={refreshBalances}
           disabled={loading}
           className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 flex items-center gap-1.5"
         >
@@ -706,208 +494,15 @@ function EnabledRebatePoolPanel() {
         </button>
       </div>
 
-      {can('rebate.evidence.verify') && <RebateEvidenceQueue />}
+      {can('rebate.evidence.verify') && <RebateEvidenceQueue onChanged={refreshBalances} />}
 
-      {/* TAB 1: LEDGER & APPROVALS */}
-      {subTab === 'ledger' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm space-y-4">
-          <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-            Ledger เดิมเป็นข้อมูลแยก ไม่ใช่ยอดที่ใช้เคลมหรือแปลงตั๋ว ให้ดูยอดจริงที่คิว FIFO; การอนุมัติรายการชุดเดิมอยู่ระหว่างเชื่อมระบบ
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">กรองตามลูกค้า</label>
-              <SearchableSelect
-                options={customerOptions}
-                value={filterCustId}
-                onChange={setFilterCustId}
-                placeholder="-- ลูกค้าทั้งหมด --"
-                searchPlaceholder="ค้นหารหัสหรือชื่อร้านค้า..."
-                allowClear
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">สถานะการอนุมัติส่วนลดเกิน {rangeText}</label>
-              <select
-                value={filterApproval}
-                onChange={e => setFilterApproval(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-              >
-                <option value="">-- ทั้งหมด --</option>
-                <option value="PENDING_MANAGER_APPROVAL">รออนุมัติผู้จัดการ (PENDING)</option>
-                <option value="APPROVED">ผู้จัดการอนุมัติแล้ว (APPROVED)</option>
-                <option value="REJECTED">ไม่อนุมัติ (REJECTED)</option>
-                <option value="NOT_REQUIRED">อนุมัติอัตโนมัติ (NOT_REQUIRED)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 mb-1">สถานะยอด FIFO</label>
-              <select
-                value={filterStatus}
-                onChange={e => setFilterStatus(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white"
-              >
-                <option value="">-- ทั้งหมด --</option>
-                <option value="ACTIVE">สะสมใช้งานได้ (ACTIVE)</option>
-                <option value="READY_FOR_CONVERSION">ครบรอบสะสม</option>
-                <option value="PARTIALLY_CONVERTED">แปลงบางส่วน</option>
-                <option value="CONVERTED">แปลงหมดแล้ว</option>
-                <option value="CANCELLED">ยกเลิก</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-gray-400 border-b border-gray-100 whitespace-nowrap">
-                  <th className="text-left py-2 px-2">วันที่ / เอกสาร</th>
-                  <th className="text-left py-2 px-2">ลูกค้า</th>
-                  <th className="text-left py-2 px-2">สินค้า · ปริมาณ</th>
-                  <th className="text-right py-2 px-2">กลาง / ขาย / บิล</th>
-                  <th className="text-left py-2 px-2">โหมดราคา</th>
-                  <th className="text-right py-2 px-2">สะสม / คงเหลือ FIFO</th>
-                  <th className="text-center py-2 px-2">ครบกำหนด</th>
-                  <th className="text-center py-2 px-2">สถานะอนุมัติ &amp; FIFO</th>
-                  <th className="text-right py-2 px-2">ดำเนินการ</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {ledger.map(row => {
-                  const modeMeta = PRICING_MODE_META[row.pricingMode];
-                  const appMeta = APPROVAL_META[row.approvalStatus] || {
-                    label: row.approvalStatus,
-                    cls: 'bg-gray-100 text-gray-600',
-                  };
-                  const stMeta = LEDGER_STATUS_META[row.status] || {
-                    label: row.status,
-                    cls: 'bg-gray-100 text-gray-600',
-                  };
-                  const isPending = row.approvalStatus === 'PENDING_MANAGER_APPROVAL';
-                  return (
-                    <tr key={row.id} className={isPending ? 'bg-amber-50/40' : ''}>
-                      <td className="py-2.5 px-2 whitespace-nowrap">
-                        <div className="font-semibold text-gray-800">{formatThaiDate(row.earnedDate)}</div>
-                        <div className="text-[11px] font-mono text-gray-400">{row.docNo || `#${row.id}`}</div>
-                      </td>
-                      <td className="py-2.5 px-2">
-                        <div className="font-semibold text-gray-800">
-                          {row.custCode ? `[${row.custCode}] ` : ''}{row.custName || `ลูกค้า #${row.custId}`}
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-2">
-                        <div className="text-gray-700">{row.goodName || (row.goodId ? `#${row.goodId}` : '-')}</div>
-                        <div className="text-[11px] text-gray-400 tabular-nums">{fmtTons(row.qtyTons)} ตัน</div>
-                      </td>
-                      <td className="py-2.5 px-2 text-right tabular-nums whitespace-nowrap">
-                        <div className="text-gray-500">กลาง {fmtMoney(row.basePrice)} · ขาย {fmtMoney(row.sellingPrice)}</div>
-                        <div className="font-bold text-[#0C447C]">ออกบิล {fmtMoney(row.invoiceUnitPrice)}</div>
-                      </td>
-                      <td className="py-2.5 px-2">
-                        <span className={`inline-block text-[10px] px-2 py-0.5 rounded-full border font-semibold whitespace-nowrap ${modeMeta?.badge || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                          {modeMeta?.label || row.pricingMode}
-                        </span>
-                        {row.companyExtraProfitPerTon > 0 && (
-                          <div className="text-[10px] text-indigo-700 mt-0.5">
-                            +กำไรส่วนเกิน ฿{fmtMoney(row.companyExtraProfitPerTon)}/ตัน
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-2 text-right tabular-nums whitespace-nowrap">
-                        <div className="text-gray-500">สะสม ฿{fmtMoney(row.totalRebateEarned)}</div>
-                        <div className="font-black text-green-700">คงเหลือ ฿{fmtMoney(row.remainingAmount)}</div>
-                      </td>
-                      <td className="py-2.5 px-2 text-center whitespace-nowrap text-gray-600">
-                        {formatThaiDate(row.cycleExpiryDate)}
-                      </td>
-                      <td className="py-2.5 px-2 text-center space-y-1">
-                        <div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${appMeta.cls}`}>
-                            {appMeta.label}
-                          </span>
-                        </div>
-                        <div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${stMeta.cls}`}>
-                            {stMeta.label}
-                          </span>
-                        </div>
-                        {row.approvalNote && (
-                          <div className="text-[10px] text-gray-400 max-w-[160px] truncate mx-auto" title={row.approvalNote}>
-                            {row.approvalNote}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-2 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
-                          {isPending && canApproveOverLimit && (
-                            <>
-                              <button
-                                type="button"
-                                disabled
-                                onClick={() => handleApproveLedger(row)}
-                                className="px-2 py-1 rounded bg-green-600 text-white text-[11px] font-bold hover:bg-green-700 flex items-center gap-1"
-                              >
-                                <CheckCircle2 size={12} /> อนุมัติ
-                              </button>
-                              <button
-                                type="button"
-                                disabled
-                                onClick={() => handleRejectLedger(row)}
-                                className="px-2 py-1 rounded bg-red-600 text-white text-[11px] font-bold hover:bg-red-700 flex items-center gap-1"
-                              >
-                                <XCircle size={12} /> ปฏิเสธ
-                              </button>
-                            </>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setQueueCustId(String(row.custId));
-                              setSubTab('conversion');
-                            }}
-                            className="px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 text-[11px] font-semibold"
-                          >
-                            คิว FIFO
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {ledger.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="py-10 text-center text-gray-400">
-                      ไม่พบรายการ Rebate Ledger ตามเงื่อนไขที่เลือก
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: CALCULATOR PREVIEW & RECORD */}
+      {/* Price preview only: accrual comes from verified shipments. */}
       {subTab === 'calculator' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
             <h2 className="text-sm font-black text-[#0C447C] flex items-center gap-2">
-              <Calculator size={16} /> กรอกข้อมูลคำนวณราคาออกบิล &amp; สะสม Rebate
+              <Calculator size={16} /> ทดลองคำนวณจากราคาที่กรอก
             </h2>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">
-                ลูกค้า (จำเป็นเมื่อบันทึกลง Ledger)
-              </label>
-              <SearchableSelect
-                options={customerOptions}
-                value={calcCustId}
-                onChange={setCalcCustId}
-                placeholder="-- ค้นหาลูกค้า --"
-                searchPlaceholder="พิมพ์รหัสหรือชื่อร้านค้า..."
-                allowClear
-              />
-            </div>
 
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1">สินค้าปุ๋ย (ไม่บังคับ)</label>
@@ -976,24 +571,8 @@ function EnabledRebatePoolPanel() {
               </div>
             </label>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">วันที่มีรายการสะสม</label>
-                <ThaiDatePicker value={earnedDate} onChange={setEarnedDate} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">เลขที่เอกสารอ้างอิง (ถ้ามี)</label>
-                <input
-                  type="text"
-                  value={calcDocNo}
-                  onChange={e => setCalcDocNo(e.target.value)}
-                  placeholder="เช่น I69-XXXXX"
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-
             <div className="flex flex-wrap gap-2 pt-1">
+
               <button
                 type="button"
                 disabled={calcBusy}
@@ -1001,14 +580,6 @@ function EnabledRebatePoolPanel() {
                 className="px-4 py-2 rounded-lg border border-[#0C447C] text-[#0C447C] text-xs font-bold hover:bg-blue-50 disabled:opacity-50 flex items-center gap-1.5"
               >
                 <Calculator size={14} /> ทดลองคำนวณ
-              </button>
-              <button
-                type="button"
-                disabled
-                onClick={handleCreateLedger}
-                className="px-4 py-2 rounded-lg bg-[#0C447C] text-white text-xs font-bold hover:bg-[#09345f] disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <Plus size={14} /> การบันทึก Ledger เดิมยังไม่พร้อม
               </button>
             </div>
           </div>
@@ -1094,50 +665,9 @@ function EnabledRebatePoolPanel() {
         </div>
       )}
 
-      {/* TAB 3: FIFO QUEUE + NOV 1 ALERTS + OCT 31 STANDING PRICES + MANUAL CONVERSION */}
+      {/* Shipment FIFO queue, standing prices and conversion */}
       {subTab === 'conversion' && (
         <div className="space-y-4">
-          {/* Nov 1 Conversion Alerts */}
-          <div className="bg-white rounded-xl border border-purple-200 p-4 shadow-sm space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Bell size={16} className="text-purple-700" />
-                <h2 className="text-sm font-black text-purple-900">
-                  ยอดลูกค้าครบกำหนด 1 พฤศจิกายน (ปี {standingYear + 543})
-                </h2>
-              </div>
-              <span className="text-xs text-purple-700">คำนวณจากยอด WinSpeed ที่เหลือ ณ วันที่ 1 พ.ย.</span>
-            </div>
-            {alerts.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {alerts.map(a => (
-                  <button
-                    key={a.Id}
-                    type="button"
-                    onClick={() => setQueueCustId(String(a.CustId))}
-                    className={`text-left p-3 rounded-lg border transition-all ${
-                      String(a.CustId) === queueCustId
-                        ? 'border-purple-600 bg-purple-50'
-                        : 'border-gray-200 hover:border-purple-400'
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-gray-800 truncate">
-                      {a.CustCode ? `[${a.CustCode}] ` : ''}{a.CustName || `ลูกค้า #${a.CustId}`}
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] mt-1">
-                      <span className="text-purple-700 font-black tabular-nums">
-                        ฿{fmtMoney(a.MaturedBalance)}
-                      </span>
-                      <span className="text-gray-400">{a.LedgerCount} รายการ</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400">ไม่พบยอดครบกำหนดรอบ 1 พ.ย. สำหรับปีนี้</p>
-            )}
-          </div>
-
           {/* Customer Queue + Manual Conversion Split */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
             <div className="lg:col-span-7 bg-white rounded-xl border border-gray-200 p-4 shadow-sm space-y-3">
