@@ -441,6 +441,22 @@ router.post('/tickets/issue', requireRole('ADMIN', 'ACCOUNTING', 'REBATE_CONVERT
   return res.status(503).json({ code: 'TICKET_ISSUANCE_UNAVAILABLE', error: 'การออกตั๋วปุ๋ยยังไม่พร้อมใช้งาน' });
 });
 
+// Owner, 22 Nov 2026: the bill form lists a customer's usable Rebate tickets for a ticket line (price 0).
+router.get('/tickets/usable', requireCapability('rebate.ticket-redeem'), async (req, res) => {
+  if (process.env.REBATE_POOL_103_ENABLED !== 'true')
+    return res.status(503).json({ code: 'REBATE_TICKET_UNAVAILABLE', message: 'ใช้ตั๋ว Rebate ได้เมื่อเปิดระบบ Rebate Pool' });
+  try {
+    const { defaultRebateQuery } = require('../services/rebate-sql');
+    const custId = await require('../services/rebate-price-authority').resolveRebateCustomer(defaultRebateQuery, req.query.custId);
+    if (!custId || !await canAccessRebateCustomer(req.user, custId)) return res.status(404).json({ code: 'REBATE_CUSTOMER_NOT_FOUND' });
+    const tickets = await require('../services/rebate-ticket-lines').listUsableTickets(defaultRebateQuery, { custId });
+    return res.json({ custId, tickets });
+  } catch (e) {
+    const status = Number.isInteger(e.status) && e.status >= 400 && e.status <= 599 ? e.status : 503;
+    return res.status(status).json({ code: e.code || 'REBATE_TICKET_UNAVAILABLE', message: 'อ่านตั๋ว Rebate ของลูกค้าไม่สำเร็จ' });
+  }
+});
+
 // Read-only UAT preview: verifies the locked 103, current scope, aging and
 // available ticket tons. It neither consumes a ticket nor certifies the
 // accounting treatment. The real writer remains separately closed.

@@ -573,6 +573,20 @@ async function getLines(soId, { isDraft = false } = {}) {
     }
   }
 
+  // Owner, 22 Nov 2026: an issued bill shows which price-0 lines are Rebate ticket lines and how far the cut went.
+  if (!isDraft && r.recordset && r.recordset.length > 0 && Number.isSafeInteger(Number(idValue))) {
+    try {
+      const tickets = (await wfQuery(`SELECT r.BookingLineNo, ISNULL(st.Status, 'FINAL') AS TicketState
+        FROM wf.RebateTicketRedemptionReceipt r WITH (NOLOCK)
+        LEFT JOIN wf.RebateTicketReceiptState st WITH (NOLOCK) ON st.ReceiptId = r.Id
+        WHERE r.BookingSOID = @soid`, { soid: { type: sql.Int, value: Number(idValue) } })).recordset || [];
+      const states = new Map(tickets.map(t => [Number(t.BookingLineNo), t.TicketState]));
+      for (const line of r.recordset) {
+        const state = states.get(Number(line.LineNum));
+        if (state && state !== 'RELEASED') { line.IsRebateTicket = true; line.RebateTicketState = state; }
+      }
+    } catch (e) { if (!/Invalid object name/i.test(String(e?.message))) throw e; }
+  }
   return r.recordset || [];
 }
 
@@ -1228,7 +1242,7 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
     const cache = new Map();
     const out = [];
     for (const l of lines) {
-      if (!l || l.isGiveaway || l.isCouponDrawn || l.isControlTicketDrawn || !l.goodId) { out.push({ key: l?.key ?? null, level: 'SKIP', belowThreshold: false }); continue; }
+      if (!l || l.isGiveaway || l.isCouponDrawn || l.isControlTicketDrawn || l.isRebateTicket || !l.goodId) { out.push({ key: l?.key ?? null, level: 'SKIP', belowThreshold: false }); continue; }
       const k = `${l.goodId}|${l.goodCode || ''}`;
       if (!cache.has(k)) {
         cache.set(k, await resolveAuthoritativePrice({ custId, goodId: l.goodId, goodCode: l.goodCode, asOfDate }).catch(e => {
@@ -1318,7 +1332,8 @@ router.patch('/unlock-requests/:reqId/resolve', requireRole('APPROVER', 'ADMIN',
       // Reversal, source update and request decision must all commit while the
       // same reset fences are held; otherwise reset can split the operation.
       await require('../services/so-rebate-transaction').withSoRebateTransaction(async tx => {
-        await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,sourceBooking);
+        // A cancel gives RESERVED Rebate tickets back inside cancelBillInTx; an edit unlock stays blocked by any ticket.
+        if (!cancelTarget) await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,sourceBooking);
         await reverseLegacyRebateForUnlockInTx(tx, reqRow.SoId, note || 'Request approved');
         if (cancelTarget) {
           await cancelBillInTx(tx, cancelTarget, {
@@ -1675,6 +1690,15 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
       }
     }
 
+    // Owner, 22 Nov 2026: Rebate ticket lines (price 0) need the permission, the Pool and enough usable tickets per goods.
+    {
+      const ticketLinesByCustomer = new Map();
+      for (const order of orders) ticketLinesByCustomer.set(order.custId, [...(ticketLinesByCustomer.get(order.custId) || []), ...(order.lines || [])]);
+      for (const [cid, custLines] of ticketLinesByCustomer)
+        await require('../services/rebate-ticket-lines').validateDraftTicketLines(require('../services/rebate-sql').defaultRebateQuery,
+          { user: req.user, custId: cid, lines: custLines });
+    }
+
     // Check credit limit and aging strict rule before transaction
     const custTotals = new Map();
     for (const order of orders) {
@@ -1732,7 +1756,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
         for (let lIdx = 0; lIdx < lines.length; lIdx++) {
           const l = lines[lIdx];
           const isCouponValidated = validatedLineIndexes instanceof Set && validatedLineIndexes.has(lIdx);
-          const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated, discountLimits });
+          const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated, discountLimits, isRebateTicketValidated: Boolean(l.isRebateTicket) });
           lineEvaluations.push(evalResult);
           if (evalResult.requiresApproval) {
             orderNeedsApproval = true;
@@ -1935,7 +1959,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
 
           // R9-2: Derive NET floor server-side from active price list; ignore client value
           let derivedNetPrice = null;
-          const isCouponOrGiveaway = Boolean(l.isGiveaway || l.isCouponDrawn || l.couponReservationId || l.refCouponDocuNo || l.isControlTicketDrawn || l.refControlTicketNo);
+          const isCouponOrGiveaway = Boolean(l.isGiveaway || l.isCouponDrawn || l.couponReservationId || l.refCouponDocuNo || l.isControlTicketDrawn || l.refControlTicketNo || l.isRebateTicket);
           if (!isCouponOrGiveaway) {
             try {
               const auth = await resolveAuthoritativePrice({
@@ -1994,13 +2018,14 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
           lr.input('couponReservationId',   sql.Int,           l.couponReservationId ? Number(l.couponReservationId) : null);
           lr.input('refCouponDocuNo',       sql.VarChar(50),   l.refCouponDocuNo || null);
           lr.input('isCouponDrawn',         sql.Bit,           l.isCouponDrawn ? 1 : 0);
+          lr.input('isRebateTicket',        sql.Bit,           l.isRebateTicket ? 1 : 0);
           addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
           lr.input('loadSequence',         sql.Int,           lineSeq);
           
           await lr.query(`
             INSERT INTO wf.SalesOrderLine
-              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RebatePricingMode, RefControlTicketNo, IsControlTicketDrawn, CouponReservationId, RefCouponDocuNo, IsCouponDrawn, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @rebatePricingMode, @refControlTicketNo, @isControlTicketDrawn, @couponReservationId, @refCouponDocuNo, @isCouponDrawn, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
+              (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RebatePricingMode, RefControlTicketNo, IsControlTicketDrawn, CouponReservationId, RefCouponDocuNo, IsCouponDrawn, IsRebateTicket, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+            VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @rebatePricingMode, @refControlTicketNo, @isControlTicketDrawn, @couponReservationId, @refCouponDocuNo, @isCouponDrawn, @isRebateTicket, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
           `);
 
           if (l.couponReservationId) {
@@ -2096,6 +2121,9 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
  */
 async function checkUnlockedNativeEdit(tx, req, so, order, beforeLines) {
   const lines = order.lines;
+  // A Rebate ticket deducts its tickets when a 103 is issued (migration 258); an already-issued bill cannot take one.
+  if (lines.some(l => l?.isRebateTicket))
+    throw Object.assign(new Error('ใช้ตั๋ว Rebate ได้ในบิลใหม่เท่านั้น ใบที่ออกแล้วเพิ่มบรรทัดตั๋วไม่ได้'), { status: 400, code: 'REBATE_TICKET_NEW_BILL_ONLY' });
   const sameCustomer = String(order.custId) === String(so.CustId);
   const prior = sameCustomer ? (beforeLines || []) : [];
   const actor = { userId: req.user?.sub || req.user?.id, altUserIds: so.SalesUserId ? [Number(so.SalesUserId)] : [], role: req.user?.role, principal: req.user };
@@ -2172,6 +2200,8 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         return res.status(400).json({ message: 'ผลรวมยอดแม่ + ยอดลูก ต้องเท่ากับจำนวนตันในแต่ละรายการ' });
       }
     }
+    await require('../services/rebate-ticket-lines').validateDraftTicketLines(require('../services/rebate-sql').defaultRebateQuery,
+      { user: req.user, custId: order.custId, lines: order.lines });
 
     let needsApproval = false;
 
@@ -2376,7 +2406,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       for (let lIdx = 0; lIdx < lines.length; lIdx++) {
         const l = lines[lIdx];
         const isCouponValidated = validatedLineIndexes instanceof Set && validatedLineIndexes.has(lIdx);
-        const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated, discountLimits });
+        const evalResult = await evaluateLinePrice(l, custId, deliveryDate || null, { isCouponValidated, discountLimits, isRebateTicketValidated: Boolean(l.isRebateTicket) });
         lineEvaluations.push(evalResult);
         if (evalResult.requiresApproval) {
           orderNeedsApproval = true;
@@ -2541,7 +2571,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
 
         // R9-2: Derive NET floor server-side from active price list; ignore client value
         let derivedNetPrice = null;
-        const isCouponOrGiveaway = Boolean(l.isGiveaway || l.isCouponDrawn || l.couponReservationId || l.refCouponDocuNo || l.isControlTicketDrawn || l.refControlTicketNo);
+        const isCouponOrGiveaway = Boolean(l.isGiveaway || l.isCouponDrawn || l.couponReservationId || l.refCouponDocuNo || l.isControlTicketDrawn || l.refControlTicketNo || l.isRebateTicket);
         if (!isCouponOrGiveaway) {
           try {
             const auth = await resolveAuthoritativePrice({
@@ -2600,13 +2630,14 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         lr.input('couponReservationId',   sql.Int,           l.couponReservationId ? Number(l.couponReservationId) : null);
         lr.input('refCouponDocuNo',       sql.VarChar(50),   l.refCouponDocuNo || null);
         lr.input('isCouponDrawn',         sql.Bit,           l.isCouponDrawn ? 1 : 0);
+        lr.input('isRebateTicket',        sql.Bit,           l.isRebateTicket ? 1 : 0);
         addGiveawayApprovalInputs(lr, req, l, hasGiveawayApproval);
         lr.input('loadSequence',         sql.Int,           lineSeq);
         
         await lr.query(`
           INSERT INTO wf.SalesOrderLine
-            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RebatePricingMode, RefControlTicketNo, IsControlTicketDrawn, CouponReservationId, RefCouponDocuNo, IsCouponDrawn, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
-          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @rebatePricingMode, @refControlTicketNo, @isControlTicketDrawn, @couponReservationId, @refCouponDocuNo, @isCouponDrawn, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
+            (SoId, LineNum, GoodId, GoodName, GoodCode, QtyTon, QtyBag, MasterQty, ChildQty, PricePerTon, NetPricePerTon, IsGiveaway, RebatePricingMode, RefControlTicketNo, IsControlTicketDrawn, CouponReservationId, RefCouponDocuNo, IsCouponDrawn, IsRebateTicket, LoadSequence${giveawayApprovalInsertColumns(hasGiveawayApproval)})
+          VALUES (@soId, @lineNum, @goodId, @goodName, @goodCode, @qtyTon, @qtyBag, @masterQty, @childQty, @pricePerTon, @netPricePerTon, @isGiveaway, @rebatePricingMode, @refControlTicketNo, @isControlTicketDrawn, @couponReservationId, @refCouponDocuNo, @isCouponDrawn, @isRebateTicket, @loadSequence${giveawayApprovalInsertValues(hasGiveawayApproval)})
         `);
 
         if (l.couponReservationId) {
@@ -3630,7 +3661,7 @@ router.post('/bulk-cancel-delete', requireCapability('so.cancel'), async (req, r
     // 3. Execute inside single atomic transaction
     await require('../services/so-rebate-transaction').withSoRebateTransaction(async (tx) => {
       for (const { so, op } of loadedSos) {
-        await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
+        await require('../services/so-rebate-transaction').releaseTicketsForCancelledBooking(tx,so,{reason:`${op==='DELETE'?'ลบ':'ยกเลิก'}ใบสั่งจองใน Sale-App`,userId:req.user?.sub||null});
         await require('../services/coupon-authorization-hold').assertCarrierHasNoActiveAuthorization(tx,so.Id,so.WfRef);
         if (op === 'DELETE') {
           const isWebDraft = !so.ImportedDocuNo;
@@ -3820,7 +3851,7 @@ async function releaseRebateOnCancel(tx, so, isDraft) {
 
 /** One cancellation for the Cancel button and for an approved cancel request, so both leave WinSpeed the same. */
 async function cancelBillInTx(tx, so, { reasonCode, reasonText, user, ip }) {
-  await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
+  await require('../services/so-rebate-transaction').releaseTicketsForCancelledBooking(tx,so,{reason:reasonText,userId:user?.sub||null});
   await require('../services/coupon-authorization-hold').assertCarrierHasNoActiveAuthorization(tx,so.Id,so.WfRef);
   const { logChangeEvent } = require('../services/policy-contract');
   const cancelReason = reasonText;
@@ -3954,7 +3985,7 @@ router.delete('/:id', requireCapability('so.cancel'), requireSoInScope, async (r
     const delReason = reasonDelCheck.reasonText;
 
     await require('../services/so-rebate-transaction').withSoRebateTransaction(async (tx) => {
-      await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
+      await require('../services/so-rebate-transaction').releaseTicketsForCancelledBooking(tx,so,{reason:'ลบใบสั่งจองใน Sale-App',userId:req.user?.sub||null});
       await require('../services/coupon-authorization-hold').assertCarrierHasNoActiveAuthorization(tx,so.Id,so.WfRef);
       const isWebDraft = !so.ImportedDocuNo;
       let deletedTripId = so.TripId ? Number(so.TripId) : null;

@@ -47,6 +47,8 @@ if (backgroundWorkersDisabled) {
 require('./services/scale-ship-sync').start();
 // Opt-in only; independently disabled by DISABLE_BACKGROUND_WORKERS.
 require('./services/rebate-evidence-discovery-worker').createWorker().start();
+// Owner, 22 Nov 2026: Rebate ticket lines become final at their 116, or go back when the 103 is cancelled in WinSpeed.
+require('./services/rebate-ticket-settlement-worker').createWorker().start();
 
 // CORS — supports comma-separated origins or '*'
 // Set CORS_ORIGIN in env, e.g.: https://app.example.com,http://localhost:5173

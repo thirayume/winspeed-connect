@@ -164,6 +164,12 @@ async function evaluateLinePrice(line, custId, asOfDate = null, options = {}) {
   // D1 / R5-2 / R6-1 / R7-4: Validated coupon reservation lines are ฿0 and skip announced price approval by default.
   // CRITICAL SECURITY: Never trust client flags or line markers.
   // Exemption strictly requires server-side validated set passed via options.isCouponValidated === true.
+  // A Rebate ticket line (migration 258) is the ticket's goods at price 0. The caller passes this only after
+  // rebate-ticket-lines.validateDraftTicketLines accepted the line in the same request.
+  if (options.isRebateTicketValidated === true && line.isRebateTicket) {
+    return { isGiveaway: false, isRebateTicket: true, requiresApproval: false, announcedPrice: 0, requestedPrice: 0,
+      deviationPerTon: 0, totalDeviation: 0, reason: 'ตั๋ว Rebate ราคา 0 ไม่ต้องอนุมัติราคา' };
+  }
   const isCouponValidated = Boolean(options.isCouponValidated === true);
   if (isCouponValidated) {
     return {

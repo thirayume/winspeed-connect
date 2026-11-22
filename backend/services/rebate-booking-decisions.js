@@ -31,6 +31,13 @@ async function prepareRebateBookingDecisions(query, { draft, lines, saleDate, li
         fail('REBATE_NONCOMMERCIAL_PROOF_UNAVAILABLE');
       continue;
     }
+    // A Rebate ticket line (migration 258) is the ticket's goods at price 0: no Rebate price, no snapshot. Its
+    // tickets are deducted by rebate-ticket-lines.reserveTicketLinesAtConfirm in the same transaction.
+    if (line.IsRebateTicket) {
+      if (line.IsCouponDrawn || line.IsControlTicketDrawn || line.RebatePricingMode || Number(line.PricePerTon)!==0)
+        fail('REBATE_NONCOMMERCIAL_PROOF_UNAVAILABLE');
+      continue;
+    }
     // Drawn tickets remain held until their native 103 contract is verified.
     if (line.IsCouponDrawn || line.IsControlTicketDrawn)
       fail('REBATE_NONCOMMERCIAL_PROOF_UNAVAILABLE');

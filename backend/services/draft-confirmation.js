@@ -144,6 +144,13 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
         const {finalizeBookingPriceSnapshots}=require('./rebate-booking-transaction');
         await finalizeBookingPriceSnapshots(rebateQuery,{bookingId:newSoid,decisions:rebatePriceDecisions});
       }
+      // Owner, 22 Nov 2026: a Rebate ticket line deducts its tickets when the 103 is issued (migration 258).
+      if(lines.some(l=>l.IsRebateTicket)) {
+        const {transactionQuery:ticketTransactionQuery}=require('./rebate-sql');
+        const window=await require('./global-data-window-store').readGlobalDataWindow();
+        await require('./rebate-ticket-lines').reserveTicketLinesAtConfirm(ticketTransactionQuery(confirmationTx,sql),{
+          user,bookingId:Number(newSoid),draft:so,lines,startDate:window.businessDate});
+      }
 
       // 3. Ensure native SO preserves PickupDueDate, PickupDueType, ConfirmedAt, PickupPolicySnapshotId, NoTruckRequired (SO-03, C1)
       // R9-8: Remove redundant UPDATE dbo.SOHD SET TransRegistration (sp_ConfirmSalesOrder already wrote the plate)

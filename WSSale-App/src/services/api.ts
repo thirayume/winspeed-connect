@@ -1161,6 +1161,12 @@ export const deleteGiveawayBudgetLine = (id: number, options: { expectedToken: s
 /** Discount limits in force (App Settings REBATE_STANDARD_LIMIT_PER_TON / REBATE_MAX_LIMIT_PER_TON). */
 export const fetchRebatePoolLimits = () => req<{ standard: number; max: number; step: number }>('/rebate-pool/limits');
 
+// Owner, 22 Nov 2026: a customer's usable Rebate tickets, for a price-0 ticket line in a bill.
+export type UsableRebateTicket = { id: number; ticketNo: string; goodId: number; goodCode: string; goodName: string;
+  issuedTon: string; remainingTon: string; issuedDate: string; expiryDate: string; status: string };
+export const fetchUsableRebateTickets = (custId: string) =>
+  req<{ custId: number; tickets: UsableRebateTicket[] }>(`/rebate-pool/tickets/usable?custId=${encodeURIComponent(custId)}`);
+
 export const calculateRebatePoolOrder = (payload: {
   basePrice: number;
   sellingPrice: number;
@@ -1639,7 +1645,7 @@ export const approvePriceBookSpecial = (spId: number, approvedPrice: number) =>
   req<{ id: number; approvedPrice: number; winSpeedSynced?: boolean }>(`/pricebook/special/${spId}`, { method: 'PATCH', body: JSON.stringify({ approvedPrice }) });
 // price colour per bill line (owner 2026-10-09): RED / YELLOW below the announced price, GREEN above, no amounts
 export type PriceLevel = 'RED' | 'YELLOW' | 'GREEN' | 'EQUAL' | 'NONE' | 'SKIP' | 'BELOW_STANDARD' | 'OFF_STEP';
-export const fetchPriceIndicator = (payload: { custId: string; deliveryDate?: string; rebateDiscountAmt?: number; lines: { key: string; goodId: string; goodCode?: string; pricePerTon: number; qtyTon?: number; isGiveaway?: boolean; isCouponDrawn?: boolean; isControlTicketDrawn?: boolean }[] }) =>
+export const fetchPriceIndicator = (payload: { custId: string; deliveryDate?: string; rebateDiscountAmt?: number; lines: { key: string; goodId: string; goodCode?: string; pricePerTon: number; qtyTon?: number; isGiveaway?: boolean; isCouponDrawn?: boolean; isRebateTicket?: boolean; isControlTicketDrawn?: boolean }[] }) =>
   req<{ lines: { key: string; level: PriceLevel; belowThreshold?: boolean; missingCost?: boolean }[]; belowThreshold?: boolean; priceStep?: number }>('/so/price-indicator', { method: 'POST', body: JSON.stringify(payload) });
 export const fetchEffectivePrices = (priceBookId: number, custId?: string) =>
   req<EffectivePriceRow[]>(`/pricebook/${priceBookId}/effective${custId ? `?custId=${encodeURIComponent(custId)}` : ''}`);

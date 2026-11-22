@@ -9,6 +9,7 @@ import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { ThaiDateTimePicker } from '../ui/ThaiDateTimePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { CouponPickerModal, type CouponItem } from './CouponPickerModal';
+import { RebateTicketPickerModal } from './RebateTicketPickerModal';
 import { CustomerCreditAlertBanner } from './CustomerCreditAlertBanner';
 import { useAuthStore } from '../../store/auth-store';
 import { useTripStore } from '../../store/trip-store';
@@ -28,6 +29,8 @@ type DraftLine = SalesOrderLine & {
   couponReservationId?: number;
   refCouponDocuNo?: string;
   isCouponDrawn?: boolean;
+  // Owner, 22 Nov 2026: a Rebate ticket line - the ticket's goods at price 0 (migration 258)
+  isRebateTicket?: boolean;
 };
 type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; isControlTicket?: boolean; wfRef?: string; custId?: string; custName?: string; };
 
@@ -135,6 +138,7 @@ export function CreateSODialog({
   const [ticketDetails, setTicketDetails] = useState<{ ListNo: number; GoodID: string; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number; NetPricePerTon: number; BagPerTon: number }[]>([]);
   const [ticketLoading, setTicketLoading] = useState(false);
   const [isCouponPickerOpen, setIsCouponPickerOpen] = useState(false);
+  const [isRebateTicketPickerOpen, setIsRebateTicketPickerOpen] = useState(false);
   const [persistedReservationIds, setPersistedReservationIds] = useState<Set<string | number>>(new Set());
   const [isSaveCommitted, setIsSaveCommitted] = useState(false);
   const [editingNative, setEditingNative] = useState(false);
@@ -337,6 +341,7 @@ export function CreateSODialog({
             isGiveaway: !!(l.isGiveaway || l.IsGiveaway),
             isControlTicketDrawn: !!(l.isControlTicketDrawn || l.IsControlTicketDrawn),
             isCouponDrawn: !!(l.isCouponDrawn || l.IsCouponDrawn),
+            isRebateTicket: !!(l.isRebateTicket || l.IsRebateTicket),
             refCouponDocuNo: l.refCouponDocuNo || l.RefCouponDocuNo,
             couponReservationId: l.couponReservationId || l.CouponReservationId
           }))
@@ -435,7 +440,7 @@ export function CreateSODialog({
   const activeRebateAmt = canSeeRebate ? (Number(activeBill?.rebateDiscountAmt) || 0) : 0;
   const levelKey = JSON.stringify([
     activeRebateAmt,
-    (activeBill?.lines || []).map(l => [l.tempId, l.goodId, l.pricePerTon, l.qtyTon, !!l.isGiveaway, !!l.isCouponDrawn, !!l.isControlTicketDrawn]),
+    (activeBill?.lines || []).map(l => [l.tempId, l.goodId, l.pricePerTon, l.qtyTon, !!l.isGiveaway, !!l.isCouponDrawn, !!l.isControlTicketDrawn, !!l.isRebateTicket]),
   ]);
   useEffect(() => {
     const lines = activeBill?.lines || [];
@@ -462,6 +467,7 @@ export function CreateSODialog({
           isGiveaway: !!l.isGiveaway,
           isCouponDrawn: !!l.isCouponDrawn,
           isControlTicketDrawn: !!l.isControlTicketDrawn,
+          isRebateTicket: !!l.isRebateTicket,
         })),
       })
         .then(r => {
@@ -873,6 +879,40 @@ export function CreateSODialog({
     setBills(prev => prev.map(b => b.id === activeBillId ? { ...b, lines: [...b.lines, newLine] } : b));
     setIsCouponPickerOpen(false);
   }
+
+  // Owner, 22 Nov 2026: a Rebate ticket line is the ticket's goods at price 0; the server checks the tickets again on
+  // save and deducts them when the 103 is issued.
+  function handleRebateTicketAdd(t: { goodId: string; goodCode: string; goodName: string; bags: number }) {
+    if (!activeBill) return;
+    const qty = Number((t.bags / 20).toFixed(3));
+    const newLine: DraftLine = {
+      tempId: `rebate-ticket-${t.goodId}-${Date.now()}`,
+      lineNo: activeBill.lines.length + 1,
+      goodId: String(t.goodId),
+      goodName: t.goodName,
+      goodCode: t.goodCode,
+      qtyTon: qty,
+      qtyBag: t.bags,
+      pricePerTon: 0,
+      netPricePerTon: 0,
+      isGiveaway: false,
+      isControlTicketDrawn: false,
+      isCouponDrawn: false,
+      isRebateTicket: true,
+      rebatePricingMode: null,
+      masterQty: qty,
+      childQty: 0,
+    };
+    setBills(prev => prev.map(b => b.id === activeBillId ? { ...b, lines: [...b.lines, newLine] } : b));
+  }
+  const rebateTicketBagsInTrip = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const b of bills) {
+      if (!activeBill?.custId || b.custId !== activeBill.custId) continue;
+      for (const l of b.lines) if (l.isRebateTicket) out[String(l.goodId)] = (out[String(l.goodId)] || 0) + Math.round(Number(l.qtyTon) * 20);
+    }
+    return out;
+  }, [bills, activeBill?.custId]);
 
   async function removeActiveLine(tempId: string) {
     const lineToRemove = activeBill?.lines.find(l => l.tempId === tempId);
@@ -1692,6 +1732,21 @@ export function CreateSODialog({
                         <Ticket size={14} className="text-blue-600" />
                         <span>ใช้ตั๋วปุ๋ย</span>
                       </button>
+                      {rebatePoolOn && can('rebate.ticket-redeem') && !editingNative && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!activeBill?.custId) { setError('กรุณาเลือกลูกค้าประจำบิลนี้ก่อนใช้ตั๋ว Rebate'); return; }
+                            setIsRebateTicketPickerOpen(true);
+                          }}
+                          className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors shadow-sm"
+                          data-testid="btn-open-rebate-ticket-picker"
+                          title="ใช้ตั๋ว Rebate ของลูกค้ารายนี้เป็นบรรทัดสินค้าราคา 0"
+                        >
+                          <Ticket size={14} className="text-emerald-600" />
+                          <span>ใช้ตั๋ว Rebate</span>
+                        </button>
+                      )}
                       <div className="flex items-center gap-1">
                         <span className="text-[10px] text-gray-500 font-bold">ประเภทบิล</span>
                         <select 
@@ -1871,7 +1926,7 @@ export function CreateSODialog({
                       const priceBand = getPriceBand(priceLevels[l.tempId], priceStep);
                       const shortfall = l.isGiveaway ? null : stockShortfall(good);
                       return (
-                      <div key={l.tempId} data-testid={l.isCouponDrawn ? 'cart-coupon-line' : `cart-line-${l.goodId}`} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : l.isCouponDrawn ? 'border-blue-200 bg-blue-50/70' : 'border-gray-100 bg-white'}`}>
+                      <div key={l.tempId} data-testid={l.isCouponDrawn ? 'cart-coupon-line' : l.isRebateTicket ? 'cart-rebate-ticket-line' : `cart-line-${l.goodId}`} className={`p-3 rounded-lg border ${l.isControlTicketDrawn ? 'border-amber-200 bg-amber-50' : l.isCouponDrawn ? 'border-blue-200 bg-blue-50/70' : l.isRebateTicket ? 'border-emerald-200 bg-emerald-50/70' : 'border-gray-100 bg-white'}`}>
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <div className="text-xs font-bold text-gray-800 line-clamp-2">{l.goodName}</div>
@@ -1886,6 +1941,12 @@ export function CreateSODialog({
                                 <span>ตั๋วปุ๋ย: {l.refCouponDocuNo || 'ตั๋วร่วม'}</span>
                               </div>
                             )}
+                            {l.isRebateTicket && (
+                              <div className="text-[10px] text-emerald-700 font-bold bg-emerald-100 inline-flex items-center gap-1 px-1.5 py-0.5 rounded mt-1">
+                                <Ticket size={11} className="inline mr-0.5" />
+                                <span>ตั๋ว Rebate {Math.round(Number(l.qtyTon) * 20)} กระสอบ</span>
+                              </div>
+                            )}
                           </div>
                           <button onClick={() => removeActiveLine(l.tempId)} data-testid={l.isCouponDrawn ? 'btn-remove-coupon-line' : 'btn-remove-line'} className="text-gray-400 hover:text-red-500 shrink-0"><X size={14}/></button>
                         </div>
@@ -1898,10 +1959,10 @@ export function CreateSODialog({
                           <div className="flex justify-between items-end">
                             <div className="flex flex-col gap-1.5">
                               <div className="flex items-center gap-2">
-                                {l.isCouponDrawn ? (
+                                {l.isCouponDrawn || l.isRebateTicket ? (
                                   <div className="flex items-center border border-blue-200 rounded bg-white px-2 py-1">
                                     <span className="text-xs font-mono font-bold text-blue-900">{l.qtyTon}</span>
-                                    <span className="text-[9px] text-blue-500 ml-1 font-medium">(ล็อกตามยอดจอง)</span>
+                                    <span className="text-[9px] text-blue-500 ml-1 font-medium">{l.isRebateTicket ? '(ตามตั๋ว Rebate ที่เลือก)' : '(ล็อกตามยอดจอง)'}</span>
                                   </div>
                                 ) : (
                                   <div className="flex items-center border border-gray-200 rounded bg-white">
@@ -1948,6 +2009,13 @@ export function CreateSODialog({
                                       ✓ ไม่ต้องอนุมัติราคา
                                     </div>
                                   </div>
+                              ) : l.isRebateTicket ? (
+                                  <div className="flex flex-col items-end gap-0.5">
+                                    <div className="text-xs font-bold text-emerald-700">฿0 (ใช้ตั๋ว Rebate)</div>
+                                    <div className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                      ✓ ไม่ต้องอนุมัติราคา
+                                    </div>
+                                  </div>
                               ) : l.isGiveaway ? (
                                   <div className="text-xs font-bold text-blue-600">ของแถม (฿0)</div>
                               ) : (
@@ -1974,16 +2042,16 @@ export function CreateSODialog({
                                       className="h-6 w-6 shrink-0 rounded border border-gray-200 bg-white text-xs font-bold text-gray-600 hover:bg-gray-50">+</button>
                                   </div>
                               )}
-                              {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && belowThresholdMap[l.tempId] ? (
+                              {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isRebateTicket && !l.isGiveaway && belowThresholdMap[l.tempId] ? (
                                 <div className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-400 bg-red-50 text-red-700 text-right max-w-[190px]">
                                   ไม่อยู่ในเกณฑ์ที่บริษัทกำหนด กรุณาตรวจสอบและแก้ไขราคา
                                 </div>
-                              ) : !l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && priceBand.label && (
+                              ) : !l.isControlTicketDrawn && !l.isCouponDrawn && !l.isRebateTicket && !l.isGiveaway && priceBand.label && (
                                 <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${priceBand.className}`}>
                                   {priceBand.label}
                                 </div>
                               )}
-                              {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && missingCostMap[l.tempId] && (
+                              {!l.isControlTicketDrawn && !l.isCouponDrawn && !l.isRebateTicket && !l.isGiveaway && missingCostMap[l.tempId] && (
                                 <div className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-800 text-right max-w-[190px]">
                                   ยังตรวจเกณฑ์ราคาของรายการนี้ไม่ได้ สามารถดำเนินการต่อได้
                                 </div>
@@ -1991,7 +2059,7 @@ export function CreateSODialog({
                             </div>
                           </div>
 
-                          {!l.isControlTicketDrawn && (
+                          {!l.isControlTicketDrawn && !l.isRebateTicket && (
                             <label className="mt-1 inline-flex w-fit items-center gap-1.5 rounded border border-green-100 bg-green-50 px-2 py-1 text-[10px] font-bold text-green-700">
                               <input
                                 type="checkbox"
@@ -2004,7 +2072,7 @@ export function CreateSODialog({
                             </label>
                           )}
                           
-                          {rebatePoolOn && !editingNative && !l.isControlTicketDrawn && !l.isCouponDrawn && !l.isGiveaway && (
+                          {rebatePoolOn && !editingNative && !l.isControlTicketDrawn && !l.isCouponDrawn && !l.isRebateTicket && !l.isGiveaway && (
                             <label className="mt-2 flex flex-wrap items-center gap-2 text-xs font-medium text-gray-700">
                               ประเภทส่วนลด
                               <select aria-label={`ประเภทส่วนลด ${l.goodName}`} value={l.rebatePricingMode || ''}
@@ -2173,6 +2241,15 @@ export function CreateSODialog({
         customerName={activeBill?.custName || customers.find(c => c.CustID === activeBill?.custId)?.CustName}
         billPrefix={activeBill?.soPrefix}
         onReserved={handleCouponReserved}
+      />
+
+      <RebateTicketPickerModal
+        isOpen={isRebateTicketPickerOpen}
+        onClose={() => setIsRebateTicketPickerOpen(false)}
+        customerId={activeBill?.custId || ''}
+        customerName={activeBill?.custName || customers.find(c => c.CustID === activeBill?.custId)?.CustName}
+        usedBagsByGood={rebateTicketBagsInTrip}
+        onAdd={handleRebateTicketAdd}
       />
 
       {/* Customer Truck Quick-Picker Modal */}

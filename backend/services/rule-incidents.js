@@ -30,6 +30,8 @@ const INCIDENT_TYPES = Object.freeze({
   // Owner, 21 Nov 2026: Sale-App refuses a price that is not a whole step from the announced price.
   BOOKING_PRICE_OFF_STEP: { label: 'ใบสั่งจองจาก WinSpeed ราคาไม่ลง step การเพิ่มหรือลดราคา', severity: 'HIGH' },
   BOOKING_CHANGED_IN_WINSPEED: { label: 'ใบสั่งจองจาก Sale-App ถูกแก้สินค้า ราคา หรือจำนวนใน WinSpeed', severity: 'HIGH' },
+  // Owner, 22 Nov 2026: a Rebate ticket line is the ticket's goods at price 0; its 103 and 104 must stay that way.
+  REBATE_TICKET_DOCUMENT_MISMATCH: { label: 'บรรทัดตั๋ว Rebate ไม่ตรงกับเอกสาร WinSpeed (ยังไม่ตัดตั๋วเป็นที่สุด)', severity: 'HIGH' },
 });
 
 const INSERT_INCIDENT_SQL = `

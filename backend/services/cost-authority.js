@@ -34,7 +34,9 @@ function isNonCommercialLine(line = {}) {
     line.couponReservationId || line.CouponReservationId ||
     line.refCouponDocuNo || line.RefCouponDocuNo ||
     line.isControlTicketDrawn || line.IsControlTicketDrawn ||
-    line.refControlTicketNo || line.RefControlTicketNo
+    line.refControlTicketNo || line.RefControlTicketNo ||
+    // A Rebate ticket line is the ticket's goods at price 0 (migration 258).
+    line.isRebateTicket || line.IsRebateTicket
   );
 }
 

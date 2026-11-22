@@ -79,7 +79,9 @@ const SCHEMA_FIXTURE = {
     'GiveawayApprovedAt', 'GiveawayApprovalNote', 'LoadSequence', 'MasterQty',
     'ChildQty', 'CouponReservationId', 'RefCouponDocuNo', 'IsCouponDrawn',
     // Added by migration 206; this is expected schema, not evidence of a live deployment.
-    'RebatePricingMode'
+    'RebatePricingMode',
+    // Added by migration 258 (Rebate ticket line at price 0).
+    'IsRebateTicket'
   ],
   SalesOrderLineExt: [
     'SOID', 'ListNo', 'NetPricePerTon', 'IsGiveaway', 'RebateBooked',
