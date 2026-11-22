@@ -28,7 +28,7 @@ test('unavailable global window fails before any coupon reads or settlement',asy
   try{await assert.rejects(service.getCouponsForCustomer('1',{settle:false}),/WINDOW_UNAVAILABLE/);assert.equal(db.calls.length,before);}finally{store.readGlobalDataWindow=original;}
 });
 test('customer coupon balances count expired active authorizations without hiding old tickets',async()=>{
- nativeHoldSchema={NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
+ nativeHoldSchema={...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
  try{
   const result=await service.getCouponsForCustomer('1',{settle:false,billPrefix:'I'});
   assert.equal(result.length,3);assert.equal(result[0].sourceDocuNo,null);

@@ -47,7 +47,7 @@ test('partially consumed reservations reserve only their outstanding amount',asy
  assert.match(lastReservationSql,/cr\.ReservedQty\s*-\s*ISNULL\(cr\.ConsumedQty,\s*0\)/i);
 });
 test('reserve and coverage include expired holds with active native authorization under locks',async()=>{
- nativeHoldSchema={NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
+ nativeHoldSchema={...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
  nativeRemaining=0.3;active={ActiveReserved:0.3,InvalidReservations:0};
  await assert.rejects(svc.reserveCoupon({couponId:42,beneficiaryCustId:'10',reservedQty:0.1,userId:1,idempotencyKey:'held-auth'}),e=>e.status===400);
  assert.match(lastReservationSql,/ahl\.ReservationId=cr\.Id AND ah\.State='ACTIVE'/);

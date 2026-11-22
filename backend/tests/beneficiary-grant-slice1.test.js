@@ -65,7 +65,7 @@ function createTxRequest(state) {
     async query(queryText) {
       const q = queryText.trim();
 
-      if (q.includes('NATIVE_HOLD_SCHEMA_V1')) return { recordset: [{NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:0,HeaderVisible:0,LineVisible:0,SchemaSelect:1}] };
+      if (q.includes('NATIVE_HOLD_SCHEMA_V1')) return { recordset: [{...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:0,HeaderVisible:0,LineVisible:0,SchemaSelect:1}] };
 
       // Two-level rule 1: Owner as Beneficiary check
       if (q.includes('FROM wf.CouponBeneficiary') && q.includes('BeneficiaryCustId = @own AND Status = \'ACTIVE\'')) {

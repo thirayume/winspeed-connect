@@ -10,7 +10,7 @@ function fixture(){
  const tx={request(){const args={};return {input(k,t,v){args[k]=v;return this;},async query(text){
   calls.push(text);
   if(text.includes('COUPON_RECOVERY_READINESS_V1')) {
-   if(flags.editHold)return {recordset:[{RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger231:1,RecoveryVisible:1,RecoverySelect:1,Ledger232:1,EditHoldVisible:1,EditHoldSelect:1}]};
+   if(flags.editHold)return {recordset:[{...require('./helpers/coupon-bridge-metadata').absent,RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger231:1,RecoveryVisible:1,RecoverySelect:1,Ledger232:1,EditHoldVisible:1,EditHoldSelect:1}]};
    return require('./helpers/native-hold-legacy.cjs')(text);
   }
   if(text.includes('AS ReceiptVisible'))return {recordset:[{

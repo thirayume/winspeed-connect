@@ -35,7 +35,7 @@ const callsOf = async (id) => { const before = db.calls.length; const r = await 
 test.afterEach(()=>{nativeHoldSchema=null;nativeAuthorizationActive=false;});
 
 test('cancel holds a bill with an active native authorization before any business writes', async()=>{
-  nativeHoldSchema={NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
+  nativeHoldSchema={...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
   nativeAuthorizationActive=true;const before=db.calls.length;
   const response=await cancel(900);assert.equal(response.status,409);
   const writes=db.calls.slice(before).filter(c=>/\b(INSERT|UPDATE|DELETE|MERGE)\b/i.test(c.text));

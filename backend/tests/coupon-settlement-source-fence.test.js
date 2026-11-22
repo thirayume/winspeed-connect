@@ -4,7 +4,7 @@ const h=require('./helpers/route-harness.cjs');
 let conflict=false,recovery=false;
 const db=h.installDbStub(({text})=>/AS SourceConflict/.test(text)&&conflict?[{SourceConflict:1}]:
   /AS RecoveryExists/.test(text)&&recovery?[{RecoveryExists:1}]:[],
-  {nativeRecoverySchema:()=>recovery?{RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1}:{RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:0,RecoveryVisible:0,SchemaSelect:1}});
+  {nativeRecoverySchema:()=>recovery?{...require('./helpers/coupon-bridge-metadata').absent,RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1}:{...require('./helpers/coupon-bridge-metadata').absent,RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:0,RecoveryVisible:0,SchemaSelect:1}});
 const {assertSettledSourcesUnchanged}=require('../services/coupon-settlement-source-fence');
 test.beforeEach(()=>{conflict=false;recovery=false;db.calls.length=0;});
 test('checks every historical settlement under locks and scopes by coupon',async()=>{

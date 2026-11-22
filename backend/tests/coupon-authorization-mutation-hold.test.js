@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/route-harness.cjs');
-const current={NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
+const current={...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
 const reservation={Id:12,CouponId:42,CouponNo:'C-TEST',GoodId:3,ReservedQty:1,ConsumedQty:0,Status:'RESERVED',BeneficiaryCustId:'1',OwnerCustId:'1',CreatedBy:1};
 const db=h.installDbStub(({text})=>{
  if(text.includes('FROM wf.CouponReservation WITH (UPDLOCK, ROWLOCK)'))return [reservation];

@@ -3,6 +3,18 @@ const router=require('express').Router();
 const {requireAuth}=require('../middleware/auth');
 const {nativeDocument,httpError}=require('../services/native-document-service');
 router.use(requireAuth);
+router.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
+router.get('/bridge/queue',async(req,res)=>{
+ try{res.json(await require('../services/coupon-bridge-service').bridgeOperation({operation:'queue',user:req.user}));}
+ catch(e){const r=require('../services/coupon-bridge-service').httpError(e);res.status(r.status).json({...r,message:r.code});}
+});
+for(const operation of ['inspect','publish','adopt','release','withdraw','recover'])router.post('/bridge/'+operation,async(req,res)=>{
+ try{
+  const body=req.body||{};
+  res.json(await require('../services/coupon-bridge-service').bridgeOperation({operation,user:req.user,nativeId:body.nativeId,docuNo:body.docuNo,custId:body.custId,
+   requestId:body.requestId,permitId:body.permitId,operationType:body.operationType,lines:body.lines,data:body.data,fingerprint:body.fingerprint,reason:body.reason}));
+ }catch(e){const r=require('../services/coupon-bridge-service').httpError(e);res.status(r.status).json({...r,message:r.code});}
+});
 router.get('/credit-requests',async(req,res)=>{
  try{res.json(await require('../services/native-document-context').listCreditRequests(req.user));}
  catch(e){const result=httpError(e);res.status(result.status).json({...result,message:result.code});}

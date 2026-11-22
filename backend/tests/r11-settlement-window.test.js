@@ -73,7 +73,7 @@ const base = { reservationId: 20, redemptionId: 183005, reason: 'UAT R11 manual 
 test('manual preflight refuses legacy cut calculation when a recovery exists',async()=>{
   const f=makeDeps({cutDate:'2026-10-06T00:00:00Z'});const prior=f.deps.wfQuery;let cutRead=false;
   f.deps.wfQuery=async(text,params)=>{
-    if(text.includes('COUPON_RECOVERY_READINESS_V1'))return {recordset:[{RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1}]};
+    if(text.includes('COUPON_RECOVERY_READINESS_V1'))return {recordset:[{...require('./helpers/coupon-bridge-metadata').absent,RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1}]};
     if(text.includes('AS RecoveryExists'))return {recordset:[{RecoveryExists:1}]};
     if(text.includes('FROM dbo.WFRedemtionDT rd'))cutRead=true;
     return prior(text,params);

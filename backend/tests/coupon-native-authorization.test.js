@@ -11,7 +11,7 @@ function fixture(){
   calls.push({text,args:{...args}});
   const legacyRecovery=require('./helpers/native-hold-legacy.cjs')(text);
   if(text.includes('COUPON_RECOVERY_READINESS_V1'))return legacyRecovery;
-  if(text.includes('NATIVE_HOLD_SCHEMA_V1'))return {recordset:[{NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1,SchemaSelect:1}]};
+  if(text.includes('NATIVE_HOLD_SCHEMA_V1'))return {recordset:[{...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1,SchemaSelect:1}]};
   if(text.includes('NATIVE_CUT_EVIDENCE_SCHEMA_V1'))return {recordset:[{EvidenceSchemaState:'NATIVE_CUT_EVIDENCE_SCHEMA_V1',Ledger223:1,EvidenceVisible:1,EvidenceSelect:flags.evidenceUnavailable?0:1,SchemaSelect:1}]};
   if(text.includes('AS ActiveNativeAuthorization'))return {recordset:flags.closedEvidence&&args.rid===11?[{ActiveNativeAuthorization:1}]:[]};
   if(text.includes('FROM wf.SystemSetting'))return {recordset:[{SettingValue:flags.window||'2026-01-01'}]};

@@ -228,7 +228,8 @@
     "tests/native-document-migration-safety.test.js",
     "tests/native-document-report.test.js",
     "tests/native-document-metadata.test.js",
-    "tests/native-v3-qa-profile.test.js"
+    "tests/native-v3-qa-profile.test.js",
+    "tests/coupon-bridge.test.js"
   ],
   "test:unit": [
     "tests/policy-contract.test.js",

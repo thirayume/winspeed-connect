@@ -67,7 +67,7 @@ async function verifyInvoiceMetadata(q, target){
  const nativeRows = withoutDisabledHooks(rows);
  validateMetadata(isFz8 ? removeReviewedFz8Triggers(nativeRows) : nativeRows);
 }
-async function verifyOperationalMetadata(q){
+async function verifyOperationalMetadata(q,_target,{env=process.env}={}){
  // The operational principal reads only the reviewed trigger definitions. It
  // does not impersonate the old environment's migration login.
  const reviewed=require('./native-document-metadata.json');
@@ -75,7 +75,19 @@ async function verifyOperationalMetadata(q){
  const rows=(await q(`SELECT OBJECT_NAME(t.parent_id) AS TableName,t.name,t.is_disabled,m.definition
   FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id
   WHERE t.parent_id IN(${tables})`)).recordset||[];
- validateOperationalMetadataRows(rows,reviewed.triggers);
+ let expected=reviewed.triggers;
+ if(env.NATIVE_COUPON_BRIDGE_ENABLED==='true'){
+  const bridge=require('./coupon-bridge-hooks');
+  const contract=(await q(`SELECT Enabled,ModulesHash,
+   (SELECT COUNT(*) FROM wf.SchemaMigration WITH(HOLDLOCK) WHERE FileName IN
+    ('273_coupon_bridge_native_session.sql','274_coupon_bridge_native_detail_finalize.sql','275_coupon_bridge_native_set_options.sql',
+     '276_native_redemption_id_history.sql')) AS NativeProtocols
+   FROM wf.CouponBridgeContract WITH(HOLDLOCK) WHERE Version='116-BRIDGE-v1'`)).recordset||[];
+  if(contract.length!==1||Number(contract[0].Enabled)!==1||contract[0].ModulesHash!==bridge.moduleHash
+   ||Number(contract[0].NativeProtocols)!==4)throw Error('IP_METADATA_UNSUPPORTED');
+  expected=bridge.expectedTriggers(expected);
+ }
+ validateOperationalMetadataRows(rows,expected);
 }
 function validateOperationalMetadataRows(rows,expected){
  if(!Array.isArray(rows)||rows.length!==expected.length)throw Error('IP_METADATA_UNSUPPORTED');

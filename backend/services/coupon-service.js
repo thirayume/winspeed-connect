@@ -729,16 +729,18 @@ async function reserveCoupon({
       .input('unit', sql.VarChar(20), goodUnit || 'ตัน')
       .input('hash', sql.VarChar(64), payloadHash)
       .query(`
+        DECLARE @ReservedIds TABLE(Id bigint);
         INSERT INTO wf.CouponReservation (
           CouponId, CouponNo, GoodId, CarrierSoId, CarrierDocuNo, TripId,
           BeneficiaryCustId, OwnerCustId, ReservedQty, Status, ReservedAt, ExpiresAt,
           CreatedBy, Revision, IdempotencyKey, GoodUnit, PayloadHash
-        ) OUTPUT inserted.Id
+        ) OUTPUT inserted.Id INTO @ReservedIds(Id)
         VALUES (
           @cid, @cno, @gid, @so, @doc, @trip,
           @ben, @own, @qty, 'RESERVED', GETUTCDATE(), @exp,
           @uid, 1, @key, @unit, @hash
-        )
+        );
+        SELECT Id FROM @ReservedIds;
       `);
 
     const newId = insertRes.recordset[0].Id;
@@ -1537,14 +1539,16 @@ async function manualSettleCouponCut(params = {}, options = {}) {
         .input('resId', sql.BigInt, resId)
         .input('qty', sql.Decimal(12, 4), settleQty)
         .query(`
+          DECLARE @SettledReservations TABLE(Status varchar(20));
           UPDATE wf.CouponReservation
           SET ConsumedQty = ISNULL(ConsumedQty, 0) + @qty,
               Status = CASE WHEN ISNULL(ConsumedQty, 0) + @qty >= ReservedQty THEN 'CONSUMED' ELSE Status END,
               UpdatedAt = GETUTCDATE()
-          OUTPUT INSERTED.Status
+          OUTPUT INSERTED.Status INTO @SettledReservations(Status)
           WHERE Id = @resId AND Status = 'RESERVED'
             AND (ExpiresAt IS NULL OR ExpiresAt > GETUTCDATE())
-            AND ISNULL(ConsumedQty, 0) + @qty <= ReservedQty
+            AND ISNULL(ConsumedQty, 0) + @qty <= ReservedQty;
+          SELECT Status FROM @SettledReservations;
         `);
 
       if (!updRes.rowsAffected?.[0] || !updRes.recordset?.length) {

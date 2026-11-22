@@ -13,7 +13,7 @@ const matchQuery=async text=>{
 test('automatic preflight refuses legacy cut calculation when a recovery exists',async()=>{
   state={settlements:[],consumed:0,events:[]};let cutRead=false;
   const query=async text=>{
-    if(text.includes('COUPON_RECOVERY_READINESS_V1'))return {recordset:[{RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1}]};
+    if(text.includes('COUPON_RECOVERY_READINESS_V1'))return {recordset:[{...require('./helpers/coupon-bridge-metadata').absent,RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1}]};
     if(text.includes('AS RecoveryExists'))return {recordset:[{RecoveryExists:1}]};
     if(text.includes('FROM dbo.WFRedemtionDT rd'))cutRead=true;
     return matchQuery(text);

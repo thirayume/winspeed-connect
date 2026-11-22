@@ -52,7 +52,7 @@ test.beforeEach(() => { user = mapped(); visible = true; hasConsumedColumn = fal
 const ticketQuery = () => db.calls.find(c => /WFCoupon/.test(c.text) && /h104\.DocuDate/.test(c.text));
 
 test('control ticket list stops before reading balances when recovery rows exist',async()=>{
-  nativeRecoverySchema={RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1};
+  nativeRecoverySchema={...require('./helpers/coupon-bridge-metadata').absent,RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1};
   recoveryRows=[{RecoveryExists:1}];
   const result=await app.call('GET','/api/master/control-tickets');
   assert.equal(result.status,409);assert.equal(result.body.code,'COUPON_RECOVERY_REVIEW_REQUIRED');assert.equal(ticketQuery(),undefined);
@@ -102,7 +102,7 @@ test('scoped coupon detail does not reveal a changed source balance or an intern
   result=await app.call('GET',path);
   assert.equal(result.status,503);assert.equal(result.body.code,'COUPON_SOURCE_HOLD_UNAVAILABLE');
   failSourceCheck=false;
-  nativeRecoverySchema={RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1};
+  nativeRecoverySchema={...require('./helpers/coupon-bridge-metadata').absent,RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,SchemaSelect:1};
   recoveryRows=[{RecoveryExists:1}];
   result=await app.call('GET',path);
   assert.equal(result.status,409);assert.equal(result.body.code,'COUPON_RECOVERY_REVIEW_REQUIRED');
@@ -118,7 +118,7 @@ test('ticket balances account for partial settlement while older schemas stay co
 });
 
 test('ticket balances retain expired active authorizations and partial schema is rejected', async () => {
-  nativeHoldSchema={NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
+  nativeHoldSchema={...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:'NATIVE_HOLD_SCHEMA_V1',Ledger220:1,HeaderVisible:1,LineVisible:1,HeaderSelect:1,LineSelect:1};
   assert.equal((await app.call('GET','/api/master/control-tickets')).status,200);
   assert.match(ticketQuery().text,/ahl\.ReservationId=cr\.Id AND ah\.State='ACTIVE'/);
   nativeHoldSchema={...nativeHoldSchema,LineVisible:0};db.calls.length=0;

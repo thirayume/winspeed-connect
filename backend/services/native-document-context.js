@@ -11,7 +11,7 @@ async function inspectBooking({soid,user,couponNo=''},options={}){
  id(soid);
  if(typeof couponNo!=='string'||couponNo.length>25||/[^\x20-\x7e]/.test(couponNo))fail('ND_COUPON_SEARCH_INVALID',400);
  return (options.transaction||wfTransaction)(async tx=>{
-  const q=queryFor(tx);await assertTarget(q,options.env||process.env);
+  const q=queryFor(tx),bridge=(options.env||process.env).NATIVE_COUPON_BRIDGE_ENABLED==='true';await assertTarget(q,options.env||process.env);
   const ids=businessIds(user),who=await liveUser(q,ids.effective,ids.actor,Number(user.sub??user.id),Number(user.actorSub??user.actorId??user.sub??user.id));
   const permissions={};
   for(const code of ['so.approve-native','so.create-native-delivery','credit.approve-native','coupon.request116','coupon.manual116','invoice.post-native'])
@@ -42,6 +42,7 @@ async function inspectBooking({soid,user,couponNo=''},options={}){
     CONVERT(varchar(40),CONVERT(decimal(18,4),cr.ReservedQty-ISNULL(cr.ConsumedQty,0))) AS remaining
     FROM wf.CouponReservation cr WHERE cr.CouponId=@c AND cr.BeneficiaryCustId=@cust AND cr.Status='RESERVED'
      AND(cr.ExpiresAt IS NULL OR cr.ExpiresAt>GETUTCDATE()) AND cr.ReservedQty>ISNULL(cr.ConsumedQty,0)
+     ${hold.bridge?'AND wf.fn_CouponBridgeReservationHeld(cr.Id)=0':''}
      AND NOT EXISTS(SELECT 1 FROM wf.CouponNativeCutAuthorizationLine al JOIN wf.CouponNativeCutAuthorization ah ON ah.Id=al.AuthorizationId
       WHERE al.ReservationId=cr.Id AND(ah.State='ACTIVE' OR EXISTS(SELECT 1 FROM wf.CouponNativeCutEvidence e WHERE e.AuthorizationLineId=al.Id)))
     ORDER BY cr.Id`,{...p,c:input(sql.Int,c.id),start:input(sql.DateTime2,window.utcInstant)})).recordset;
@@ -81,8 +82,12 @@ async function inspectBooking({soid,user,couponNo=''},options={}){
    CONVERT(varchar(40),CONVERT(decimal(18,4),d.GoodQty)) AS quantity,CONVERT(varchar(10),h.DocuDate,120) AS docDate
    FROM dbo.WFRedemtionDT d JOIN dbo.WFRedemtionHD h ON h.RedemtionID=d.RedemtionID AND h.DocuType=116
    JOIN dbo.WFCoupon c ON c.CouponID=d.CouponID JOIN dbo.SODT s ON s.SOID=c.DocuID AND s.ListNo=c.RefListno
-   JOIN wf.NativeDocumentReceipt r ON r.NativeId=h.RedemtionID AND r.DocuType=116 AND r.NativeAfterHash IS NOT NULL
+   ${bridge?`LEFT JOIN wf.NativeDocumentReceipt r ON r.NativeId=h.RedemtionID AND r.DocuType=116 AND r.NativeAfterHash IS NOT NULL
+   LEFT JOIN wf.CouponBridgeDocument b ON b.NativeId=h.RedemtionID AND b.State='ACTIVE'`:
+   'JOIN wf.NativeDocumentReceipt r ON r.NativeId=h.RedemtionID AND r.DocuType=116 AND r.NativeAfterHash IS NOT NULL'}
    WHERE s.RefSOID=@s AND h.DocuStatus='N' AND d.PostInv='N' AND d.SOInvID IS NULL AND d.RemaQty=d.GoodQty
+   ${bridge?`AND(r.RequestId IS NOT NULL OR b.NativeId IS NOT NULL)
+    AND NOT EXISTS(SELECT 1 FROM wf.CouponBridgePermit bp WHERE bp.NativeId=h.RedemtionID AND bp.ReleasedAtUtc IS NULL AND bp.State<>'CANCELLED')`:''}
    ORDER BY c.DocuID,h.DocuDate,d.RedemtionID,d.Listno`,p)).recordset;
   const credit=permissions['credit.approve-native']||permissions['so.create-native-delivery']
    ?await require('./native-document-source').creditSummary(q,row.custId,deliveries.length?'0.0000':row.net):null;

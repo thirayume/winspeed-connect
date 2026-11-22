@@ -22,7 +22,7 @@ async function assertLegacySettlementSchema(query) {
 // already in the caller's scoped result may be returned. This is a display
 // hold, not an atomic authorization: mutation paths must recheck under locks.
 async function findSettlementSourceConflicts(query,ids,settlementSource='wf.CouponReservationSettlement') {
-  if (!['wf.CouponReservationSettlement','wf.CouponEffectiveSettlement'].includes(settlementSource)) throw unavailable();
+  if (!['wf.CouponReservationSettlement','wf.CouponEffectiveSettlement','wf.CouponBridgeEffectiveSettlement'].includes(settlementSource)) throw unavailable();
   const unique=[...new Set(ids.map(Number))];
   if(unique.some(id=>!Number.isSafeInteger(id)||id<=0||id>2147483647))
     throw unavailable('COUPON_SOURCE_HOLD_INVALID');

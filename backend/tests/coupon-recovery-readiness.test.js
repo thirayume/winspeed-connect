@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const {assertRecoveryReadiness}=require('../services/coupon-recovery-readiness');
-const meta=(overrides={})=>({RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:0,RecoveryVisible:0,SchemaSelect:1,RecoverySelect:0,...overrides});
+const meta=(overrides={})=>({...require('./helpers/coupon-bridge-metadata').absent,RecoverySchemaState:'COUPON_RECOVERY_READINESS_V1',Ledger232:0,EditHoldVisible:0,Ledger231:0,RecoveryVisible:0,SchemaSelect:1,RecoverySelect:0,...overrides});
 function fixture(metadata,rows=[],release={Ledger236:0,ViewVisible:0}) {
   const calls=[];
   return {calls,query:async text=>{
@@ -56,6 +56,18 @@ test('reviewed releases select effective settlement while unreleased rows still 
   await assert.rejects(assertRecoveryReadiness(blocked.query),{code:'COUPON_NATIVE_EDIT_HOLD_REVIEW_REQUIRED'});
   const hidden=fixture(metadata,[],{...release,ViewSelect:0});
   await assert.rejects(assertRecoveryReadiness(hidden.query),{code:'COUPON_RECOVERY_SCHEMA_UNAVAILABLE'});
+});
+
+test('unreleased bridge blocks opening arithmetic without cutoff; completed release selects additive effective view',async()=>{
+ const metadata=meta({...require('./helpers/coupon-bridge-metadata').current,Ledger231:1,RecoveryVisible:1,RecoverySelect:1,
+  Ledger232:1,EditHoldVisible:1,EditHoldSelect:1}),release={Ledger236:1,ViewVisible:1,ViewSelect:1,ReleaseSelect:1};
+ const f=fixture(metadata,[],release);
+ assert.equal(await assertRecoveryReadiness(f.query),'wf.CouponBridgeEffectiveSettlement');
+ const pending=f.calls.find(s=>s.includes('AS PendingCouponBridge'));
+ assert.match(pending,/State IN\('STARTED','COMPLETE'\) AND ReleasedAtUtc IS NULL/);assert.doesNotMatch(pending,/DocuDate|ExpiresAt|startDate/);
+ const held=fixture(metadata,[{PendingCouponBridge:1}],release);
+ await assert.rejects(assertRecoveryReadiness(held.query),{code:'COUPON_BRIDGE_REVIEW_REQUIRED'});
+ await assert.rejects(assertRecoveryReadiness(fixture({...metadata,Ledger232:0,EditHoldVisible:0},[],release).query),{code:'COUPON_RECOVERY_SCHEMA_UNAVAILABLE'});
 });
 test('missing metadata, inconsistent migration or inaccessible schema fails closed',async()=>{
   for(const m of [null,meta({SchemaSelect:0}),meta({Ledger231:0,RecoveryVisible:1}),

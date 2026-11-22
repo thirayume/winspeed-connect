@@ -102,6 +102,30 @@ async function run(){
    key:{type:sql.NVarChar(120),value:requestId()},coupon:{type:sql.Int,value:l.CouponId}})).recordset[0];
   reservations.set(l.CouponId,result.Id);
  }
+ const bridgeEnabled=process.env.NATIVE_COUPON_BRIDGE_ENABLED==='true';
+ const bridge=async(operation,extra)=>require('../services/coupon-bridge-service').bridgeOperation({operation,user,...extra},options);
+ async function withdraw(permitId){
+  const args={permitId,reason:'QA rollback reviewed unstarted permit withdrawal'};
+  const reviewed=await bridge('withdraw',args);assert.equal(reviewed.reviewRequired,true);
+  return bridge('withdraw',{...args,fingerprint:reviewed.fingerprint});
+ }
+ if(bridgeEnabled){
+  const lines=delivery.lines.map(l=>({couponId:l.CouponId,quantity:'0.1',settlements:[{reservationId:reservations.get(l.CouponId),quantity:'0.1'}]})),
+   data={docDate:f.Today,slipNo:String(f.SlipBase+8),receiver:'QA bridge lease recipient',plate:'QA-BRIDGE-LEASE'},rid=requestId();
+  const p=await act(116,f.CustId,'preview',{lines,data});
+  await act(116,f.CustId,'request',{requestId:rid,fingerprint:p.fingerprint,reason:'QA bridge native request',lines,data});
+  await act(116,f.CustId,'approve',{requestId:rid,reason:'QA bridge manager decision'});
+  const preview=await bridge('inspect',{operationType:'C',requestId:rid});
+  const permit=await bridge('publish',{operationType:'C',requestId:rid,fingerprint:preview.fingerprint,reason:'QA exact approved native plan'});
+  assert.equal(permit.status,'APPROVED');
+  await assert.rejects(act(116,f.CustId,'apply',{requestId:rid}),{code:'ND_REQUEST_IN_WINSPEED'});
+  await assert.rejects(act(116,f.CustId,'cancel',{requestId:rid,reason:'QA active native lease cannot be closed'}),{code:'ND_REQUEST_IN_WINSPEED'});
+  await assert.rejects(require('../services/coupon-authorization-hold').assertNoActiveAuthorization(tx,Number(reservations.values().next().value)),
+   {code:'COUPON_NATIVE_AUTH_RESERVATION_HELD'});
+  assert.equal((await withdraw(permit.permitId)).completed,true);
+  await act(116,f.CustId,'cancel',{requestId:rid,reason:'QA cancel only after withdrawing native lease'});
+  console.log('NATIVE_V3_REAL_APP_BRIDGE_CREATE_LEASE_SCOPE_HOLD_WITHDRAW=PASS');
+ }
  await assert.rejects(act(116,f.CustId,'preview',{lines:delivery.lines.map(l=>({couponId:l.CouponId,quantity:'0.1'})),
   data:{docDate:f.Today,slipNo:String(f.SlipBase+9),receiver:'QA held balance',plate:'QA-HELD'}}));
  console.log('NATIVE_V3_REAL_SQL_OTHER_RESERVATIONS_NOT_SPENDABLE=PASS');
@@ -124,11 +148,22 @@ async function run(){
   return preview.plan;
  }
  const first=await cut('0.2',1);console.log('NATIVE_V3_REAL_SQL_MULTILINE_PARTIAL_116=PASS');
- await q('SAVE TRANSACTION QA_MUTATED_CUT');
- await q('EXEC wf.usp_QaNativeV3Fixture @MutateRedemptionId=@r',{r:{type:sql.Int,value:first.nativeId}});
- await assert.rejects(invoice(first),{code:'ND_CUT_DIVERGED'});
- await q('ROLLBACK TRANSACTION QA_MUTATED_CUT');
- console.log('NATIVE_V3_REAL_SQL_EDITED_NATIVE_CUT_REJECTED_BEFORE_107=PASS');
+ if(bridgeEnabled){
+  assert.equal((await require('../services/coupon-bridge-proof').currentProof(q,first.nativeId)).Revision,1);
+  const args={nativeId:first.nativeId,custId:f.CustId,operationType:'E',lines:delivery.lines.map(l=>({couponId:l.CouponId,quantity:'0.1'}))};
+  const inspected=await bridge('inspect',args);assert.equal(inspected.plan.allocations.length,2);
+  assert(inspected.plan.allocations.every(a=>a.delta==='-0.1000'));
+  const permit=await bridge('publish',{...args,fingerprint:inspected.fingerprint,reason:'QA real app reviewed two-line reduction'});
+  await assert.rejects(require('../services/coupon-bridge-proof').currentProof(q,first.nativeId),{code:'ND_CUT_BRIDGE_REVIEW_REQUIRED'});
+  await withdraw(permit.permitId);
+  console.log('NATIVE_V3_REAL_APP_BRIDGE_EDIT_PREVIEW_RETURN_PLAN_AND_INVOICE_FENCE=PASS');
+ }else{
+  await q('SAVE TRANSACTION QA_MUTATED_CUT');
+  await q('EXEC wf.usp_QaNativeV3Fixture @MutateRedemptionId=@r',{r:{type:sql.Int,value:first.nativeId}});
+  await assert.rejects(invoice(first),{code:'ND_CUT_DIVERGED'});
+  await q('ROLLBACK TRANSACTION QA_MUTATED_CUT');
+  console.log('NATIVE_V3_REAL_SQL_EDITED_NATIVE_CUT_REJECTED_BEFORE_107=PASS');
+ }
  const firstInvoice=await invoice(first);console.log('NATIVE_V3_REAL_SQL_PARTIAL_107=PASS');
  const last=await cut('0.4',2),lastInvoice=await invoice(last);
  const {fixed}=require('../services/native-document-plan');

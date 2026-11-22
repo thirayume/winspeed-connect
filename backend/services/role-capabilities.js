@@ -179,6 +179,7 @@ function featureEnabled(action, env = process.env) {
 // Features that are not tied to one permission, e.g. the discount-mode choice on a draft bill.
 function enabledFeatures(env = process.env) {
   return [...(env[REBATE_POOL_SWITCH] === 'true' ? ['rebate-pool-103'] : []),
-    ...(env.NATIVE_DOCUMENT_WRITER_VERSION==='v3'?['native-documents-v3']:[])];
+    ...(env.NATIVE_DOCUMENT_WRITER_VERSION==='v3'?['native-documents-v3']:[]),
+    ...(env.NATIVE_DOCUMENT_WRITER_VERSION==='v3'&&env.NATIVE_COUPON_BRIDGE_ENABLED==='true'?['native-coupon-bridge']:[])];
 }
 module.exports = { ROLES, ROLE_RANK, ACCESS_AS_ACTOR_ROLES, MENUS, ACTIONS, capabilitiesFor, rolesFor, roleRank, userRoles, hasRole, hasPermission, featureEnabled, enabledFeatures };

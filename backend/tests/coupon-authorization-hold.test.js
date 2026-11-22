@@ -2,11 +2,16 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const {authorizationHoldsAvailable,resolveHoldPolicy,heldReservationExpirySql,assertNoActiveAuthorization,assertCarrierHasNoActiveAuthorization,assertBeneficiaryHasNoActiveAuthorization}=require('../services/coupon-authorization-hold');
 const marker='NATIVE_HOLD_SCHEMA_V1';
-const legacy={NativeHoldSchemaState:marker,Ledger220:0,HeaderVisible:0,LineVisible:0,SchemaSelect:1};
-const current={NativeHoldSchemaState:marker,Ledger220:1,HeaderVisible:1,LineVisible:1,SchemaSelect:1,HeaderSelect:1,LineSelect:1};
+const legacy={...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:marker,Ledger220:0,HeaderVisible:0,LineVisible:0,SchemaSelect:1};
+const current={...require('./helpers/coupon-bridge-metadata').absent,NativeHoldSchemaState:marker,Ledger220:1,HeaderVisible:1,LineVisible:1,SchemaSelect:1,HeaderSelect:1,LineSelect:1};
 const legacyEvidence={EvidenceSchemaState:'NATIVE_CUT_EVIDENCE_SCHEMA_V1',Ledger223:0,EvidenceVisible:0,SchemaSelect:1};
 const currentEvidence={...legacyEvidence,Ledger223:1,EvidenceVisible:1,EvidenceSelect:1};
 const query=row=>async()=>({recordset:[row]});
+test('a started bridge keeps an expired reservation held across every expiry predicate',()=>{
+ const sql=heldReservationExpirySql('cr',{auth:true,evidence:true,bridge:true},true);
+ assert.match(sql,/ExpiresAt>GETUTCDATE\(\) OR wf\.fn_CouponBridgeReservationHeld\(cr.Id\)=1/);
+ assert.match(sql,/CouponNativeCutEvidence/);
+});
 test('legacy and migrated databases select their correct hold policy',async()=>{
  assert.equal(await authorizationHoldsAvailable(query(legacy)),false);
  assert.equal(await authorizationHoldsAvailable(query(current)),true);

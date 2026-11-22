@@ -1,11 +1,13 @@
-import {useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {req} from '../../services/api';
 import {useCan} from '../../utils/capabilities';
 import {DOC_TYPES} from '../../utils/docTypes';
 import {NativeDocPrint} from '../reports/NativeDocPrint';
 import {NativeCreditSummary} from './NativeCreditSummary';
+import {CouponBridgeEdit,NativeBridgeCreate} from '../recon/CouponBridgePanel';
 import type {CustomerCreditStatus} from '../../types';
+import {useAuthStore} from '../../store/auth-store';
 
 type Stage=119|104|116|107;
 type Cut={redemptionId:number;redemptionNo:string;lineNo:number;deliveryId:number;couponNo:string;quantity:string;docDate:string};
@@ -46,26 +48,36 @@ export function NativeOperationalAction({soid,stage,onCreated}:{soid:string|numb
  const [slipNo,setSlipNo]=useState(''),[receiver,setReceiver]=useState(''),[plate,setPlate]=useState(''),[docDate,setDocDate]=useState('');
  const [invoiceGroup,setInvoiceGroup]=useState(''),[printing,setPrinting]=useState(false);
  const [couponSearch,setCouponSearch]=useState('');
+ const token=useAuthStore(s=>s.token),identityEpoch=useRef(0);
+ useEffect(()=>{
+  identityEpoch.current++;setOpen(false);setBusy(false);setContext(null);setPreview(null);setCommand(null);setReceipt(null);setPrinting(false);
+  setReason('');setQuantities({});setSettlements({});setSlipNo('');setReceiver('');setPlate('');setDocDate('');setInvoiceGroup('');setCouponSearch('');setError('');
+ },[token,soid,stage]);
  if(!can(permission[stage])&&!(stage===116&&can('coupon.manual116')))return null;
  async function load(search=''){
+  const epoch=identityEpoch.current;
   const c=await req<Context>(`/native-documents/booking/${soid}${search?'?couponNo='+encodeURIComponent(search):''}`);
+  if(epoch!==identityEpoch.current)throw Error('ND_SESSION_CHANGED');
   setContext(old=>search&&old?{...c,coupons:[...old.coupons.filter(p=>!c.coupons.some(n=>n.id===p.id)),...c.coupons]}:c);
   setDocDate(old=>old||c.today);return c;
  }
  async function findCoupon(){
   if(busy||!couponSearch.trim())return;setBusy(true);setError('');setPreview(null);
+  const epoch=identityEpoch.current;
   try{const c=await load(couponSearch.trim());if(!c.coupons.length)setError('ไม่พบตั๋วคงเหลือในขอบเขตลูกค้ารายนี้');}
-  catch(e){setError(describe(e));}finally{setBusy(false);}
+  catch(e){if(epoch===identityEpoch.current)setError(describe(e));}finally{if(epoch===identityEpoch.current)setBusy(false);}
  }
  async function inspect(){
+  const epoch=identityEpoch.current;
   setOpen(true);setBusy(true);setError('');
-  try{await load();}catch(e){setError(describe(e));}finally{setBusy(false);}
+  try{await load();}catch(e){if(epoch===identityEpoch.current)setError(describe(e));}finally{if(epoch===identityEpoch.current)setBusy(false);}
  }
  async function send(operation:string,c:Command){
   return req<Receipt&Pending>(`/native-documents/${stage}/${c.sourceId}/${operation}`,{method:'POST',body:JSON.stringify(c)});
  }
  async function prepare(){
   if(!context||busy)return;setBusy(true);setError('');setPreview(null);setReceipt(null);
+  const epoch=identityEpoch.current;
   try{
    const lines=stage===116?context.coupons.filter(c=>Number(quantities[c.id])>0).map(c=>({couponId:c.id,quantity:quantities[c.id],
     settlements:c.reservations.filter(r=>Number(settlements[r.id])>0).map(r=>({reservationId:r.id,quantity:settlements[r.id]}))}))
@@ -74,25 +86,30 @@ export function NativeOperationalAction({soid,stage,onCreated}:{soid:string|numb
    const data:Record<string,string>=stage===116?{docDate,slipNo,receiver,plate}:stage===107?{docDate:invoiceGroup.split(':')[1]}:{};
    const c:Command={sourceId,lines,data,requestId:crypto.randomUUID(),reason:reason.trim()};
    const p=await req<Preview>(`/native-documents/${stage}/${sourceId}/preview`,{method:'POST',body:JSON.stringify(c)});
+   if(epoch!==identityEpoch.current)return;
    setCommand({...c,fingerprint:p.fingerprint});setPreview(p);
-  }catch(e){setError(describe(e));}finally{setBusy(false);}
+  }catch(e){if(epoch===identityEpoch.current)setError(describe(e));}finally{if(epoch===identityEpoch.current)setBusy(false);}
  }
  async function commit(){
   if(!command||!preview||busy)return;setBusy(true);setError('');
+  const epoch=identityEpoch.current;
   try{
    const result=await send(stage===104||stage===116?'request':'apply',command);
+   if(epoch!==identityEpoch.current)return;
    if(stage===119||stage===107)setReceipt(result);
    setPreview(null);await load();onCreated();
-  }catch(e){setError(describe(e));}finally{setBusy(false);}
+  }catch(e){if(epoch===identityEpoch.current)setError(describe(e));}finally{if(epoch===identityEpoch.current)setBusy(false);}
  }
  async function decision(r:Pending,operation:'approve'|'reject'|'cancel'|'apply'){
   if(busy)return;setBusy(true);setError('');
+  const epoch=identityEpoch.current;
   try{
    const c:Command={sourceId:r.sourceId,requestId:r.requestId,reason:reason.trim(),lines:[],data:{}};
    const result=await send(operation,c);
+   if(epoch!==identityEpoch.current)return;
    if(operation==='apply')setReceipt(result);
    await load();onCreated();
-  }catch(e){setError(describe(e));}finally{setBusy(false);}
+  }catch(e){if(epoch===identityEpoch.current)setError(describe(e));}finally{if(epoch===identityEpoch.current)setBusy(false);}
  }
  const pending=context?.requests.filter(r=>r.docuType===stage)||[];
  const groups=[...new Set(context?.cuts.map(c=>`${c.deliveryId}:${c.docDate}`)||[])];
@@ -148,8 +165,10 @@ export function NativeOperationalAction({soid,stage,onCreated}:{soid:string|numb
        {r.status==='PENDING'&&r.canApprove&&<><button disabled={busy||reason.trim().length<5} onClick={()=>decision(r,'approve')} className="rounded bg-emerald-700 px-3 py-2 text-white">อนุมัติ</button><button disabled={busy||reason.trim().length<5} onClick={()=>decision(r,'reject')} className="rounded border px-3 py-2">ไม่อนุมัติ</button></>}
        {r.isRequester&&<button disabled={busy||reason.trim().length<5} onClick={()=>decision(r,'cancel')} className="rounded border px-3 py-2">ยกเลิกคำขอ</button>}
        {r.status==='APPROVED'&&((stage===104&&r.isRequester)||(stage===116&&context.permissions['coupon.manual116']))&&<button disabled={busy} onClick={()=>decision(r,'apply')} className="rounded bg-blue-800 px-3 py-2 text-white">ยืนยันบันทึก</button>}
+       {stage===116&&r.status==='APPROVED'&&<NativeBridgeCreate requestId={r.requestId} reason={reason} onDone={()=>{void load();onCreated();}}/>}
       </div>
      </div>)}
+     {stage===116&&<CouponBridgeEdit custId={context.custId} coupons={context.coupons} onDone={onCreated}/>}
      <label className="block">เหตุผลการทำรายการ / พิจารณา<textarea value={reason} onChange={e=>{setReason(e.target.value);setPreview(null);}} maxLength={500} className="mt-1 w-full rounded border p-2"/></label>
      {preview&&<div className="rounded bg-blue-50 p-3">
       <p className="font-bold">ตรวจข้อมูลก่อนยืนยัน · {preview.plan.lines.length} บรรทัด</p>

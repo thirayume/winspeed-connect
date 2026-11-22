@@ -2,6 +2,7 @@ import { canDo } from '../../utils/capabilities';
 import { AccountBooksPanel } from './AccountBooksPanel';
 import { WinspeedSyncPanel } from './WinspeedSyncPanel';
 import { NativeCutReviewQueue } from './NativeCutReviewQueue';
+import { CouponBridgeQueue } from './CouponBridgePanel';
 import { NativeEditApprovalForm } from './NativeEditApprovalForm';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { Scale, RefreshCw, AlertTriangle, CheckCircle, ShieldCheck, FileCheck2, Info, Ticket, CheckCircle2, AlertCircle, X } from 'lucide-react';
@@ -336,6 +337,7 @@ export function ReconciliationPage() {
             <AccountBooksPanel />
 
             <NativeCutReviewQueue canReview={canSettle} />
+            <CouponBridgeQueue />
 
             <section className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5" aria-labelledby="verify-116-title">
               <h3 id="verify-116-title" className="text-sm font-bold text-gray-800">ตรวจใบขนหลังบันทึกใน WinSpeed</h3>

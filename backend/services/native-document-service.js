@@ -105,11 +105,12 @@ async function nativeProof(q,receipt){
  if(parts.some(s=>s===''))fail('ND_RECEIPT_DIVERGED');
  return hash(parts);
 }
-async function assertInvoiceCutProof(q,plan,proof=nativeProof){
+async function assertInvoiceCutProof(q,plan,proof=nativeProof,{bridge=false}={}){
  // A non-null receipt hash is not proof that a WinSpeed user has not edited
  // the transport since then. Verify the whole physical cut, including other
  // lines in a mixed-order slip, under the invoice transaction's locks.
  for(const nativeId of [...new Set(plan.lines.map(l=>id(l.redemptionId)))].sort((a,b)=>a-b)){
+  if(bridge&&await require('./coupon-bridge-proof').currentProof(q,nativeId))continue;
   const rows=(await q('SELECT * FROM wf.NativeDocumentReceipt WITH(UPDLOCK,HOLDLOCK) WHERE DocuType=116 AND NativeId=@n',
    {n:input(sql.Int,nativeId)})).recordset||[];
   if(rows.length!==1||!rows[0].NativeAfterHash)fail('ND_CUT_PROOF_REQUIRED');
@@ -135,11 +136,19 @@ async function nativeDocument(args,options={}){
   const p={request:input(sql.VarChar(36),args.requestId||null)},request=operation==='preview'?null:
    (await q('SELECT * FROM wf.NativeDocumentRequest WITH(UPDLOCK,HOLDLOCK) WHERE RequestId=@request',p)).recordset?.[0];
   if(request&&(request.DocuType!==type||Number(request.SourceId)!==Number(sourceId)||request.PolicyVersion!==target.POLICY))fail('ND_REQUEST_CONFLICT');
+  if(request&&env.NATIVE_COUPON_BRIDGE_ENABLED==='true'&&['apply','cancel','approve','reject'].includes(operation)
+   &&(await q("SELECT TOP 1 PermitId FROM wf.CouponBridgePermit WITH(UPDLOCK,HOLDLOCK) WHERE RequestId=@request AND State<>'CANCELLED' AND ReleasedAtUtc IS NULL",p)).recordset?.length)
+   fail('ND_REQUEST_IN_WINSPEED');
   const isOwner=request&&Number(request.UserId)===who.effective&&Number(request.ActorUserId)===who.actor
    &&Number(request.PrimaryUserId)===who.primaryEffective&&Number(request.PrimaryActorId)===who.primaryActor;
   if(operation==='apply'&&request?.Status==='CONSUMED'){
    await requirePermission(q,who,type===116?'coupon.manual116':PERMISSIONS[type]);
    const receipt=(await q('SELECT * FROM wf.NativeDocumentReceipt WITH(UPDLOCK,HOLDLOCK) WHERE RequestId=@request',p)).recordset?.[0];
+   if(type===116&&env.NATIVE_COUPON_BRIDGE_ENABLED==='true'){
+    if(!receipt)fail('ND_COMPLETED_IN_WINSPEED');
+    const current=await require('./coupon-bridge-proof').currentProof(q,receipt.NativeId);
+    if(current&&current.Revision!==1)fail('ND_DOCUMENT_AMENDED');
+   }
    if(!receipt||receipt.UserId!==who.effective||receipt.ActorUserId!==who.actor||receipt.PrimaryUserId!==who.primaryEffective||receipt.PrimaryActorId!==who.primaryActor
     ||!receipt.NativeAfterHash||await nativeProof(q,receipt)!==receipt.NativeAfterHash)fail('ND_REQUEST_CONFLICT');
    await source.assertReplayScope(q,receipt,request,who.user);
@@ -176,7 +185,7 @@ async function nativeDocument(args,options={}){
   if(type===107){
    const parent=(await q('SELECT * FROM wf.NativeDocumentReceipt WITH(UPDLOCK,HOLDLOCK) WHERE DocuType=104 AND NativeId=@n',{n:input(sql.Int,Number(sourceId))})).recordset?.[0];
    if(!parent||!parent.NativeAfterHash||await nativeProof(q,parent)!==parent.NativeAfterHash)fail('ND_DELIVERY_DIVERGED');
-   await assertInvoiceCutProof(q,current.plan);
+   await assertInvoiceCutProof(q,current.plan,nativeProof,{bridge:env.NATIVE_COUPON_BRIDGE_ENABLED==='true'});
   }
   if([104,107].includes(type)&&Number(current.row.tax)>0&&!await readApprovedSalesVat(q,{dbName:actualTarget.database,soid:Number(sourceId),docuType:type===104?103:104,setting:env.NATIVE_SALES_VAT_APPROVAL}))fail('ND_VAT_APPROVAL_REQUIRED');
   const xml=(await q('SELECT CONVERT(nvarchar(max),CONVERT(xml,@plan)) AS CanonicalPlan',{plan:input(sql.Xml,planXml(current.plan,Number(sourceId)))})).recordset?.[0]?.CanonicalPlan;
@@ -215,7 +224,7 @@ async function nativeDocument(args,options={}){
    if(type!==116&&!isOwner)fail('ND_REQUEST_OWNER_REQUIRED',403);
    if(request.Status!=='APPROVED')fail('ND_APPROVAL_REQUIRED');
   }else fail('ND_OPERATION_INVALID',400);
-  await (options.verifyMetadata||verifyOperationalMetadata)(q,{ServerName:actualTarget.server,DbName:actualTarget.database});
+  await (options.verifyMetadata||verifyOperationalMetadata)(q,{ServerName:actualTarget.server,DbName:actualTarget.database},{env});
   const receipt=(await q(`EXEC wf.usp_ApplyNativeDocument @RequestId=@request,@UserId=@u,@ActorId=@a,@PrimaryUserId=@pu,@PrimaryActorId=@pa`,
    {...p,u:input(sql.Int,who.effective),a:input(sql.Int,who.actor),pu:input(sql.Int,who.primaryEffective),pa:input(sql.Int,who.primaryActor)})).recordset?.[0];
   if(!receipt||receipt.DocuType!==type||receipt.SourceBeforeHash!==current.sourceHash)fail('ND_WRITER_INCOMPLETE',503);
@@ -236,7 +245,8 @@ async function nativeDocument(args,options={}){
  },{isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE});
 }
 function httpError(e){
- const code=e.code&&/^ND_[A-Z0-9_]+$/.test(e.code)?e.code:/\b(ND_[A-Z0-9_]+)\b/.exec(String(e.message))?.[1];
+ const code=e.code&&(/^(ND_|BRIDGE_|COUPON_BRIDGE_)[A-Z0-9_]+$/.test(e.code)||['LOCK_TIMEOUT','DEADLOCK_RETRY'].includes(e.code))
+  ?e.code:/\b((?:ND_|BRIDGE_)[A-Z0-9_]+)\b/.exec(String(e.message))?.[1];
  return {status:e.status||(code?409:503),code:code||'ND_OPERATION_FAILED'};
 }
 module.exports={nativeDocument,queryFor,liveUser,permission,requirePermission,approveAllowed,planXml,nativeProof,assertInvoiceCutProof,httpError};

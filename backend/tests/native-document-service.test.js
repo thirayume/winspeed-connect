@@ -36,6 +36,9 @@ test('HTTP errors expose stable codes rather than native SQL or customer details
  assert.deepEqual(httpError(Object.assign(Error('no'),{code:'ND_SOURCE_CHANGED',status:409})),{status:409,code:'ND_SOURCE_CHANGED'});
  assert.deepEqual(httpError(Error('SQL failed at a private value')),{status:503,code:'ND_OPERATION_FAILED'});
  assert.deepEqual(httpError(Error('ND_COUPON_INSUFFICIENT')),{status:409,code:'ND_COUPON_INSUFFICIENT'});
+ assert.deepEqual(httpError(Object.assign(Error('private SQL lock details'),{code:'LOCK_TIMEOUT',status:409})),{status:409,code:'LOCK_TIMEOUT'});
+ assert.deepEqual(httpError(Error('BRIDGE_NATIVE_PENDING_RECOVERY')),{status:409,code:'BRIDGE_NATIVE_PENDING_RECOVERY'});
+ assert.deepEqual(httpError(Object.assign(Error('hold'),{code:'COUPON_BRIDGE_REVIEW_REQUIRED',status:409})),{status:409,code:'COUPON_BRIDGE_REVIEW_REQUIRED'});
 });
 test('locked credit policies run serially on one transaction connection and retain opening debt',async()=>{
  const {creditSummary}=require('../services/native-document-source');

@@ -127,7 +127,7 @@ async function redemption(q,tx,source,user,selection,inputData){
   const held=(await q(`SELECT CONVERT(varchar(30),cr.Id) AS id,cr.CouponId AS couponId,cr.BeneficiaryCustId AS custId,cr.Revision AS revision,
    ${amount('ISNULL(cr.ConsumedQty,0)')} AS consumed,${amount('cr.ReservedQty-ISNULL(cr.ConsumedQty,0)')} AS remaining,
    CONVERT(bit,CASE WHEN cr.Status='RESERVED' AND(cr.ExpiresAt IS NULL OR cr.ExpiresAt>GETUTCDATE()) THEN 1 ELSE 0 END) AS active,
-   CONVERT(bit,CASE WHEN EXISTS(SELECT 1 FROM wf.CouponNativeCutAuthorizationLine al WITH(UPDLOCK,HOLDLOCK)
+   CONVERT(bit,CASE WHEN ${holdPolicy.bridge?'wf.fn_CouponBridgeReservationHeld(cr.Id)=1 OR ':''}EXISTS(SELECT 1 FROM wf.CouponNativeCutAuthorizationLine al WITH(UPDLOCK,HOLDLOCK)
     JOIN wf.CouponNativeCutAuthorization ah WITH(UPDLOCK,HOLDLOCK) ON ah.Id=al.AuthorizationId
     WHERE al.ReservationId=cr.Id AND(ah.State='ACTIVE' OR EXISTS(SELECT 1 FROM wf.CouponNativeCutEvidence e WITH(UPDLOCK,HOLDLOCK) WHERE e.AuthorizationLineId=al.Id))) THEN 1 ELSE 0 END) AS nativeHeld
    FROM wf.CouponReservation cr WITH(UPDLOCK,HOLDLOCK) WHERE cr.CouponId=@coupon ORDER BY cr.Id`,p)).recordset||[];
