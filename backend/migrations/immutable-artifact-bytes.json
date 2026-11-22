@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "reason": "Original bytes verified against the installed migration ledger; Git archives must preserve them without newline normalization.",
+  "sha256": {
+    "262_separate_116_requester_recorder.sql": "8f5aa03173115a83f70962cb733c8299d0b431f769bb6419ea5a91d27f622e7d",
+    "264_native_document_allocators.sql": "a8e6ea03d94a6884b724cafbd07ef5ea2f5af644faceafe91d268b1ba4af58ab",
+    "266_native_multiline_delivery_104.sql": "f28dfa178159abd749212fa2d6c35f372d18b77b86a54edc9e7fe77d45875232",
+    "267_native_partial_invoice_dispatch.sql": "4b687e5c5b4d10cb1ef30e0878c31a4dd6e8007aba1a7e32e2a510e427141a9e",
+    "271_coupon_bridge_native_dispatch.sql": "8c7b8d4aa71a71a2d2f9d95a8911f711b5610613150b7d35457ee2d072bb7713",
+    "273_coupon_bridge_native_session.sql": "855b7f8ebd214d6602d33f632c7ef24ce6169d36e0fc9c8b08699d62485a377c",
+    "274_coupon_bridge_native_detail_finalize.sql": "dbbda965396ae512c2e0e9f4783d2c98e598d30e91261fcc8e5bfb72e2ab86bc",
+    "275_coupon_bridge_native_set_options.sql": "c398ee73c14af0fc4d2d78f7a00d345eee67cd5969c691cf92406b3d938a6aed",
+    "276_native_redemption_id_history.sql": "0d006fb46179b34935800f83c21da1c84377b45c6db0b6d6ab3b02b54f9910c9"
+  }
+}

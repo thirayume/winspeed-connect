@@ -7,6 +7,18 @@ const os = require('os');
 const path = require('path');
 const { sha256, splitBatches, validateMigrationPolicy, classifyMigration, buildPlan } = require('./run_migrations');
 
+test('installed migration originals retain their exact artifact bytes', () => {
+  const directory = path.join(__dirname, 'migrations');
+  const pins = JSON.parse(fs.readFileSync(path.join(directory, 'immutable-artifact-bytes.json'), 'utf8'));
+  assert.equal(pins.schemaVersion, 1);
+  assert.equal(Object.keys(pins.sha256).length, 9);
+  for (const [file, expected] of Object.entries(pins.sha256)) {
+    const original = fs.readFileSync(path.join(directory, file), 'utf8');
+    assert.equal(sha256(original), expected, file + ' must match the installed original without newline normalization');
+    assert.notEqual(sha256(original.replace(/\r\n/g, '\n')), expected, file + ' must not silently switch to LF');
+  }
+});
+
 // The runner refuses a policy that excludes a file the folder does not have, so a temporary
 // migrations folder needs a placeholder for every file the real policy excludes (e.g. 246, 250).
 const writeExcludedPlaceholders = directory => {

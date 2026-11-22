@@ -9,9 +9,15 @@ See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public in
 
 Actual WinSpeed initially exposed two different paths: a partial autocommit save, then a fresh edit with a single explicit transaction. Transaction-owned application locks cannot prove the first path. Protocol 273 binds it to the real connection GUID, login SID/time and SPID; another connection is rejected. Incomplete commits remain held. Protocol 274 can write the exact approved balance vector only when the whole physical 116 is complete, with settlement and audit in that last statement's transaction. It does **not** pretend the client's earlier autocommit statements roll back together. Protocol 275 sets required SQL options inside wf execution scope only. The owner then saved a freshly loaded two-line WinSpeed document successfully: seven callbacks shared one transaction, quantities/balances were unchanged, exactly one completion audit, and explicit review/release passed. SQL autocommit tests separately proved reduction/restoration, connection rejection, baseline/NET recovery, legacy caller option preservation, and cancellation with exact reservation returns. Legacy adoption observes current facts and never invents historical consumption or operators.
 
-**Clean Rebate-on Full Loop round 09: 391/391 checks, 14 phases, zero failed checks; all owned test users retired.** Both books, distinct products, mixed C/D partial cuts, concurrent API apply, 202/107, report/Excel/print/trace, roles/Access As, giveaway loans/repayments, accrual, approval, conversion and ticket use passed. Round 07 retained its grouped-107 failure before repair; round 08 retained its ID-reuse failure after cancellation. Neither is presented as clean acceptance. Migration 276 fixes that allocator failure by preserving ownership from immutable receipts and other retained native-ID history. Their accounts are also retired. Final QA summary: no unreleased STARTED/COMPLETE native saves, no active loop users, seven bridge migrations recorded. Backend 1340/1340, offline 98/98, UI regression 6/6 and frontend build passed.
+**Clean Rebate-on Full Loop round 10: 391/391 checks, 14 phases, zero failed checks; all seven owned test users retired and their private passwords removed.** Both books, distinct products, mixed C/D partial cuts, concurrent API apply, 202/107, report/Excel/print/trace, roles/Access As, giveaway loans/repayments, accrual, approval, conversion and ticket use passed. Round 09 remains the earlier clean baseline. Rounds 07/08 retain their failures and are not presented as clean acceptance. Final QA summary: no unreleased STARTED/COMPLETE native saves, no active loop users, no temporary pause objects and seven bridge migrations recorded. Backend 1341/1341 and migration-runner tests 14/14 passed. Earlier offline 98/98, UI regression 6/6 and frontend build results remain separate evidence for unchanged code.
 
-**No UAT/PROD deployment, push, live feature/reset change or secondary business write occurred.** This is QA simulation acceptance; VAT/GL remain accounting's WinSpeed work. Desktop evidence covers an actual edit/resave, not every creation/cancellation or real GUI/API race. Those native-client acceptance cases and legacy 104 financial shapes still require review before production promotion. The complete native create/edit/cancel protocol must not be inferred solely from the App Full Loop or SQL adapter tests. Private logs/state and acceptance summary remain on the isolated QA host and in the ignored local evidence directory.
+**Direct WinSpeed acceptance now includes actual mixed C/D creation, quantity reduction, repeated save and deletion.** Each completed save has one completion audit and one transaction for its native callbacks. Reducing one line returned exactly 0.05 tonne; deletion returned the remaining 0.15 tonne. The additive return ledger retains the original settlements. Both coupons then had three tonnes available, original consumed quantities were zero, and all owned rehearsal reservations were cancelled through the API. Authenticated list/reconcile reads agreed and did not mutate the ledger. The bridge driver recorded 59 successful checks; these are separate from the 391 App Full Loop checks.
+
+Both real-client concurrency orders passed. Native-first rejects an overlapping reservation with `COUPON_BRIDGE_REVIEW_REQUIRED` until explicit review/release; retry and replay then create one reservation/audit. App-first has measured `LCK_M_U` waiting behind the API transaction, after which both valid operations complete once. The bounded wf-only pause triggers were removed. Earlier missing-marker, unchanged-form and failed-activation attempts remain recorded as non-acceptance evidence. A missing error code in the reserve route was repaired and retested before the successful repeat.
+
+The final artifact check exposed nine originals whose installed bytes had been normalized by a Git archive. Their unchanged local originals matched both ledger hashes exactly; normalized SQL text also matched the previous Git content. Explicit `-text` attributes and `immutable-artifact-bytes.json` now preserve those exact original blobs, including mixed endings. No SQL statements, schema or ledger checksums were changed. The staged archive passed all nine byte checks and the restored QA source reports **272 unchanged, zero pending/drift**.
+
+**No UAT/PROD deployment, push, live feature/reset change or secondary business write occurred.** These are isolated QA simulations with synthetic transport evidence; VAT/GL remain accounting's WinSpeed work. Promotion still requires review of the combined release and its live migration/target plan, including legacy 104 financial-shape/adoption limits. Private logs/state and acceptance summaries remain on the isolated QA host and in the ignored local evidence directory. This is not a claim of 100% live parity.
 
 **Observed on R740, 22 November:** UAT checkout `9b42bdd`, healthy backend, migration 259 applied;
 Production checkout `fbbc139`, healthy backend, migration 254 applied on `dbwins_worldfert9`.
@@ -122,19 +128,15 @@ removed, and their database password hashes replaced by a non-login sentinel wit
 The private reviewer and QA schema remain for unfinished bridge work. Live deployment/switches/secondary writes
 were untouched.
 
-**Release still blocked:** the ten existing WinSpeed reservation/evidence/edit hooks remain disabled. Direct
-WinSpeed 116 creation, edit and cancellation have not passed concurrent acceptance with this writer. Complete and
-rehearse that bridge/recovery contract before enabling it; do not enable the old hooks merely because they exist.
-The Rebate-on Sale-App workflow above has passed; direct WinSpeed concurrent create/edit/cancel is still open.
-The old native consumer still contains an expiry rejection inconsistent with the owner's warning-only rule.
-Its enabled-source/reservation-fence requirements also conflict with the current edit-approval bridge check.
-These hooks must be replaced as one reviewed protocol; enabling them separately is unsafe. Positive VAT still
-needs the reviewed accounting mapping, and
-existing cost/unsupported-shape guards remain. A v3 107 currently requires v3 delivery and cut receipts; arbitrary
+**Promotion gate:** the complete bridge and two concurrency orders have now passed isolated QA as recorded above.
+Four reviewed bridge hooks are enabled only there; six superseded hooks remain disabled. Do not enable the old
+hooks independently. The shared protocol uses the owner's warning-only expiry rule. Positive VAT still needs
+the reviewed accounting mapping; VAT/GL work continues in WinSpeed after Sale-App closes at complete 107.
+Existing cost/unsupported-shape guards remain. A v3 107 requires v3 delivery and cut receipts; arbitrary
 old native deliveries/cuts need reviewed adoption or completion in WinSpeed. Existing pilot receipts remain
 verifiable/replayable; new pilot writes are closed when v3 is selected, so pending pilot work must be resolved
 before transition. Review company 2 before any role/schema migration there. The owner requires the remaining
-Full Loop and readiness review before deployment; these partial acceptances do not establish 100% live parity.
+combined-release readiness review before deployment; isolated QA acceptance does not establish 100% live parity.
 See [current approval rules](../../sale-app/handover/APPROVAL-POLICIES.md).
 
 Older paragraphs below are history.
