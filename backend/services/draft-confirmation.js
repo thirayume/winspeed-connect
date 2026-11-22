@@ -140,9 +140,12 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
       
       newSoid = spRes.output.NewSoid;
       if (!newSoid) throw new Error('ย้ายข้อมูลไปยัง Winspeed ไม่สำเร็จ (ไม่ได้ SOID กลับมา)');
-      if(rebatePriceDecisions) {
+      if(rebatePriceDecisions && rebatePriceDecisions.length) {
         const {finalizeBookingPriceSnapshots}=require('./rebate-booking-transaction');
-        await finalizeBookingPriceSnapshots(rebateQuery,{bookingId:newSoid,decisions:rebatePriceDecisions});
+        // Rebate ticket lines (price 0) have no price decision; the 103 numbers its sale lines 1..n in draft order.
+        const ticketLineNos=lines.filter(l=>!l.IsGiveaway).sort((a,b)=>Number(a.LineNum)-Number(b.LineNum))
+          .map((l,i)=>l.IsRebateTicket?i+1:null).filter(Boolean);
+        await finalizeBookingPriceSnapshots(rebateQuery,{bookingId:newSoid,decisions:rebatePriceDecisions,ticketLineNos});
       }
       // Owner, 22 Nov 2026: a Rebate ticket line deducts its tickets when the 103 is issued (migration 258).
       if(lines.some(l=>l.IsRebateTicket)) {

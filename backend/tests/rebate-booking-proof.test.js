@@ -30,3 +30,16 @@ test('missing, duplicated or changed native source fails without accepting a pro
   await assert.rejects(verifyBookingPricing(fixture([line]).query,{bookingId:52,decisions:[{...decision,quantity:'2.000'}]}),{code:'REBATE_BOOKING_PROOF_INVALID'});
   await assert.rejects(verifyBookingPricing(fixture([line]).query,{bookingId:52,decisions:[{...decision,calculation:{...decision.calculation,requiresManagerApproval:false}}]}),{code:'REBATE_BOOKING_PROOF_INVALID'});
 });
+
+// Owner, 22 Nov 2026: a Rebate ticket line (migration 258) has no price decision and must be a price-0 line.
+test('a named Rebate ticket line is accepted only at price 0; an unnamed extra line still fails', async () => {
+  const ticket = { ...line, ListNo: 2, GoodPrice2: '0' };
+  assert.deepEqual(await verifyBookingPricing(fixture([line, ticket]).query, { bookingId: 52, decisions: [decision], ticketLineNos: [2] }),
+    { bookingId: 52, matched: 1 });
+  await assert.rejects(verifyBookingPricing(fixture([line, ticket]).query, { bookingId: 52, decisions: [decision] }), { code: 'REBATE_BOOKING_PROOF_MISMATCH' });
+  await assert.rejects(verifyBookingPricing(fixture([line, { ...ticket, GoodPrice2: '100' }]).query, { bookingId: 52, decisions: [decision], ticketLineNos: [2] }),
+    { code: 'REBATE_BOOKING_PROOF_MISMATCH' });
+  await assert.rejects(verifyBookingPricing(fixture([line]).query, { bookingId: 52, decisions: [decision], ticketLineNos: [2] }), { code: 'REBATE_BOOKING_PROOF_MISMATCH' });
+  for (const bad of [[1], [2, 2], [0]])
+    await assert.rejects(verifyBookingPricing(fixture([line, ticket]).query, { bookingId: 52, decisions: [decision], ticketLineNos: bad }), { code: 'REBATE_BOOKING_PROOF_INVALID' });
+});

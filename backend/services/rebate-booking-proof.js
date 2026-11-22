@@ -10,8 +10,9 @@ const { fingerprintRebateDecision } = require('./rebate-price-authority');
 function fail(code) { throw Object.assign(new Error(code), { code, status: 409 }); }
 const positive = n => Number.isSafeInteger(n) && n > 0 && n <= 2147483647;
 
-async function verifyBookingPricing(query, { bookingId, decisions } = {}) {
-  if (typeof query !== 'function' || !positive(bookingId) || !Array.isArray(decisions) || !decisions.length) fail('REBATE_BOOKING_PROOF_INVALID');
+async function verifyBookingPricing(query, { bookingId, decisions, ticketLineNos = [] } = {}) {
+  if (typeof query !== 'function' || !positive(bookingId) || !Array.isArray(decisions) || !decisions.length ||
+      !Array.isArray(ticketLineNos) || !ticketLineNos.every(positive) || new Set(ticketLineNos).size !== ticketLineNos.length) fail('REBATE_BOOKING_PROOF_INVALID');
   const seen = new Set();
   for (const d of decisions) {
     if (!positive(d?.lineNo) || !positive(d?.goodId) || !isValidStartDate(d?.saleDate) ||
@@ -20,6 +21,8 @@ async function verifyBookingPricing(query, { bookingId, decisions } = {}) {
     catch (_) { fail('REBATE_BOOKING_PROOF_INVALID'); }
     seen.add(d.lineNo);
   }
+  // Owner, 22 Nov 2026: Rebate ticket lines (migration 258) carry no price decision; each must be a price-0 line.
+  if (ticketLineNos.some(n => seen.has(n))) fail('REBATE_BOOKING_PROOF_INVALID');
   const rows = (await query(`SELECT h.SOID,h.DocuType,CONVERT(varchar(10),h.DocuDate,23) AS SaleDate,
       d.ListNo,d.GoodID,d.GoodQty2,d.GoodPrice2,DB_NAME() AS DatabaseName,
       CONVERT(nvarchar(128),SERVERPROPERTY('ServerName')) AS ServerName
@@ -34,7 +37,11 @@ async function verifyBookingPricing(query, { bookingId, decisions } = {}) {
   }
   // Until non-commercial line exclusions have their own verified contract,
   // do not accept a subset of the native order as proof of the whole booking.
-  if (native.size!==decisions.length) fail('REBATE_BOOKING_PROOF_MISMATCH');
+  if (native.size!==decisions.length+ticketLineNos.length) fail('REBATE_BOOKING_PROOF_MISMATCH');
+  for (const n of ticketLineNos) {
+    const row = native.get(n);
+    if (!row || shipmentUnits(row.GoodPrice2, 2)!==0n) fail('REBATE_BOOKING_PROOF_MISMATCH');
+  }
   for (const d of decisions) {
     const row = native.get(d.lineNo);
     if (!row || String(row.DatabaseName||'').trim().toLowerCase()!==d.source.database.toLowerCase() ||

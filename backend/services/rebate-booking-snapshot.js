@@ -20,8 +20,8 @@ async function assertBookingSnapshotEditable(query, bookingId) {
     {code:'REBATE_BOOKING_RECONCILIATION_REQUIRED',status:409});
 }
 
-async function saveBookingPriceSnapshots(query, { bookingId, decisions } = {}) {
-  await verifyBookingPricing(query, { bookingId, decisions });
+async function saveBookingPriceSnapshots(query, { bookingId, decisions, ticketLineNos = [] } = {}) {
+  await verifyBookingPricing(query, { bookingId, decisions, ticketLineNos });
   const saved = [];
   for (const d of decisions) {
     const params = { bookingId, lineNo:d.lineNo, draftId:d.draftId, revision:d.revision, fingerprint:d.fingerprint };

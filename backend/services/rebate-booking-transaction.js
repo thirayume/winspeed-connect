@@ -29,7 +29,7 @@ async function stageBookingInvoicePrices(query,{draft,lines,saleDate}={}) {
   return decisions;
 }
 
-async function finalizeBookingPriceSnapshots(query,{bookingId,decisions}={}) {
-  return saveBookingPriceSnapshots(query,{bookingId:Number(bookingId),decisions});
+async function finalizeBookingPriceSnapshots(query,{bookingId,decisions,ticketLineNos=[]}={}) {
+  return saveBookingPriceSnapshots(query,{bookingId:Number(bookingId),decisions,ticketLineNos});
 }
 module.exports={stageBookingInvoicePrices,finalizeBookingPriceSnapshots};
