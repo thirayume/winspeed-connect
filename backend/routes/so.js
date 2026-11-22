@@ -69,8 +69,9 @@ function manualRedemptionAction(operation){return async(req,res)=>{
   res.json(result);
  }catch(e){const x=manualRedemptionHttpError(e);res.status(x.status).json({code:x.code,message:x.code});}
 };}
-router.get('/:id/native-redemption/preview',requireCapability('coupon.manual116'),manualRedemptionAction('preview'));
-router.post('/:id/native-redemption/requests',requireCapability('coupon.manual116'),manualRedemptionAction('request'));
+const requireCutRequest = (req,res,next) => requireCapability(hasPermission(req.user,'coupon.request116')?'coupon.request116':'coupon.manual116')(req,res,next);
+router.get('/:id/native-redemption/preview',requireCutRequest,manualRedemptionAction('preview'));
+router.post('/:id/native-redemption/requests',requireCutRequest,manualRedemptionAction('request'));
 router.post('/:id/native-redemption/requests/:requestId/approve',requireCapability('coupon.manual116'),manualRedemptionAction('approve'));
 router.post('/:id/native-redemption',requireCapability('coupon.manual116'),manualRedemptionAction('apply'));
 

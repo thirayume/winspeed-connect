@@ -1118,6 +1118,20 @@ export const fetchGiveawayItems = (params?: string | { brand?: string; includeIn
 };
 
 export const fetchGiveawayBorrowRequests = () => req<unknown[]>('/giveaway/borrow-requests');
+export type GiveawayLoanOption = { Id:number; SalesUserId:number; Region:string; DisplayName:string; GoodId:string;
+  GoodName:string; ItemName:string; RemainingQty:number; canBorrowInto:boolean };
+export type GiveawayQuotaLoan = { id:number; status:string; revision:number; quantity:number; returnedQty:number;
+  outstanding:number; lenderName:string; borrowerName:string; goodName:string; reason:string|null; isOpening:boolean;
+  canDecide:boolean; canCancel:boolean; canRepay:boolean };
+export const fetchGiveawayLoanOptions = (year:number,borrowerBudgetId?:number) =>
+  req<{database:string;items:GiveawayLoanOption[]}>(`/giveaway/quota-loans/options?year=${year}${borrowerBudgetId?`&borrowerBudgetId=${borrowerBudgetId}`:''}`);
+export const fetchGiveawayQuotaLoans = (before?:number) => req<{database:string;items:GiveawayQuotaLoan[];nextCursor?:number|null}>(`/giveaway/quota-loans${before?`?before=${before}`:''}`);
+export const createGiveawayQuotaLoan = (input:{requestId:string;expectedDatabase:string;lenderBudgetId:number;borrowerBudgetId:number;quantity:string;reason:string}) =>
+  req<{Id:number;replayed:boolean}>('/giveaway/quota-loans/requests',{method:'POST',body:JSON.stringify(input)});
+export const decideGiveawayQuotaLoan = (id:number,input:{expectedDatabase:string;revision:number;action:'approve'|'reject'|'cancel';reason:string}) =>
+  req(`/giveaway/quota-loans/${id}/decision`,{method:'POST',body:JSON.stringify(input)});
+export const repayGiveawayQuotaLoan = (id:number,input:{requestId:string;expectedDatabase:string;quantity:string;reason:string}) =>
+  req(`/giveaway/quota-loans/${id}/repay`,{method:'POST',body:JSON.stringify(input)});
 export const resolveGiveawayBorrowRequest = (id: number, approve: boolean, note?: string) => 
   req<{ ok: boolean; status: string }>(`/giveaway/borrow-requests/${id}/resolve`, {
     method: 'PATCH',

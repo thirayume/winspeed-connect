@@ -30,8 +30,13 @@ const FALLBACK_ACTIONS: Record<string, string[]> = {
   'access-as': ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'COUNTER_SALES'],
 };
 
-export function canDo(user: { role?: string; capabilities?: { actions: string[] } } | null | undefined, action: string): boolean {
+export function canDo(user: { role?: string; roles?: string[]; capabilities?: { actions: string[] } } | null | undefined, action: string): boolean {
   if (!user) return false;
+  const roles = user.roles || [user.role || ''];
+  if (roles.includes('SEPARATION')) return false;
+  if (['so.create-native-delivery', 'so.control-ticket'].includes(action) &&
+      !roles.some(role => ['COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'].includes(role))) return false;
+  if (action === 'coupon.manual116' && !roles.some(role => ['COUNTER_SALES','APPROVER','WAREHOUSE','ACCOUNTING','MANAGER','C_LEVEL','ADMIN'].includes(role))) return false;
   if (user.capabilities?.actions) return user.capabilities.actions.includes(action);
   return Boolean(user.role && (FALLBACK_ACTIONS[action] || []).includes(user.role));
 }

@@ -7,9 +7,10 @@ const {sql,wfTransaction}=require('../db');
 const {nativeFingerprint}=require('./initial-booking-ai');
 const {deliverySnapshot,verifyReceipt,verifyDeliveryAccount}=require('./initial-delivery');
 const {isInitialRedemptionTransition}=require('./redemption-transition');
-const {getVisibleScope,inScope}=require('./visible-scope');
-const {ACCESS_AS_ACTOR_ROLES,roleRank}=require('./role-capabilities');
-const {CREATORS,REVIEWERS,mayCreate,decision,mayApproveOwnException}=require('./manual-redemption-policy');
+const {roleRank}=require('./role-capabilities');
+const {REVIEWERS,REQUESTERS,mayRequest,mayApply,decision,mayApproveOwnException}=require('./manual-redemption-policy');
+const {businessIds,actorPerspective}=require('./business-identity');
+const {nativeOwnerInScope}=require('./native-document-scope');
 const POLICY='O25-116-MANUAL-UAT2-v1';
 const input=(type,value)=>({type,value});
 const hash=value=>createHash('sha256').update(JSON.stringify(value),'utf8').digest('hex');
@@ -18,18 +19,20 @@ function queryFor(tx){return async(text,inputs={})=>{
  const r=tx.request();for(const [key,{type,value}] of Object.entries(inputs))r.input(key,type,value);
  return r.query('SET ARITHABORT ON; SET ANSI_WARNINGS ON; '+text);
 };}
-async function identity(q,user){
- const effective=Number(user?.sub),actor=Number(user?.actorSub||user?.sub);
+async function identity(q,user,operation){
+ const {effective,actor}=businessIds(user);
  if(![effective,actor].every(v=>Number.isSafeInteger(v)&&v>0))fail('MR_ACTOR_INVALID',401);
  const rows=(await q('SELECT Id,Role,IsActive,MustChangePassword,EmpId FROM wf.AppUser WITH(UPDLOCK,HOLDLOCK) WHERE Id IN(@user,@actor)',{user:input(sql.Int,effective),actor:input(sql.Int,actor)})).recordset||[];
  const me=rows.find(r=>Number(r.Id)===effective),real=rows.find(r=>Number(r.Id)===actor);
  if(![me,real].every(r=>r&&(r.IsActive===true||r.IsActive===1)&&!r.MustChangePassword))fail('MR_ACTOR_UNAVAILABLE',403);
  if(me.Role!==user.role||real.Role!==(user.actorRole||user.role))fail('MR_ROLE_CHANGED',403);
  if(actor!==effective&&(!hasPermission({role:real.Role,roles:user.actorRoles,permissions:user.actorPermissions},'access-as')||roleRank(real.Role)<roleRank(me.Role)))fail('MR_ACCESS_AS_FORBIDDEN',403);
- if(!hasRole(user,...CREATORS,...REVIEWERS) || !hasPermission(user,'coupon.manual116'))fail('MR_ROLE_FORBIDDEN',403);
+ const permission=u=>['preview','request'].includes(operation)
+  ? hasPermission(u,'coupon.request116')||hasPermission(u,'coupon.manual116') : hasPermission(u,'coupon.manual116');
+ if(!hasRole(user,...REQUESTERS,...REVIEWERS,'APPROVER')||!permission(user)||!permission(actorPerspective(user)))fail('MR_ROLE_FORBIDDEN',403);
  return {effective,actor,role:userRoles(user),empId:me.EmpId};
 }
-// The requester's employee becomes WinSpeed's recorder (SaveEmpID); the approver's
+// The applying employee becomes WinSpeed's recorder (SaveEmpID); the approver's
 // employee must be enabled in wf.NativeApproverEmployee and is kept in wf only.
 async function employee(q,empId,code){
  if(!/^\d+$/.test(String(empId||'')))fail(code,403);
@@ -42,7 +45,7 @@ async function context(q,source,user){
  const r=(await q(`SELECT r.*,h.DocuNo AS SourceNo,h.EmpID,e.SalesUserId FROM wf.NativeDeliveryReceipt r WITH(UPDLOCK,HOLDLOCK)
   JOIN dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) ON h.SOID=r.SourceSOID AND h.DocuType=103 AND h.BrchID=1
   LEFT JOIN wf.SalesOrderExt e ON e.SOID=CONVERT(varchar(50),h.SOID) WHERE r.SourceSOID=@source`,sourceInputs(source))).recordset?.[0];
- if(!r||!inScope(await getVisibleScope(user,q),{userId:r.SalesUserId,empId:r.EmpID}))fail('MR_SOURCE_NOT_FOUND',404);
+ if(!await nativeOwnerInScope(user,r,q))fail('MR_SOURCE_NOT_FOUND',404);
  try{await verifyDeliveryAccount(q,r.SourceNo,r);await verifyReceipt(q,r);}catch{fail('MR_DELIVERY_DIVERGED');}
  return r;
 }
@@ -126,8 +129,8 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
   const q=queryFor(tx);
   const target=(await q("SELECT CONVERT(nvarchar(128),SERVERPROPERTY('ServerName')) AS ServerName,DB_NAME() AS DbName,DB_ID() AS DbId")).recordset?.[0];
   if(!isInitialNativeUatTarget(target))fail('MR_TARGET_NOT_SUPPORTED',403);
-  const who=await identity(q,user);
-  if(['request','apply'].includes(operation)&&!mayCreate(who.role))fail('MR_ROLE_FORBIDDEN',403);
+  const who=await identity(q,user,operation);
+  if(operation==='request'&&!mayRequest(who.role)||operation==='apply'&&!mayApply(who.role))fail('MR_ROLE_FORBIDDEN',403);
   const lock=(await q("DECLARE @r int; EXEC @r=sp_getapplock @Resource='WF_INITIAL_DELIVERY_104',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000; SELECT @r AS LockResult")).recordset?.[0]?.LockResult;
   if(!Number.isInteger(lock)||lock<0)fail('MR_BUSY');
   const parent=await context(q,soid,user);
@@ -141,12 +144,12 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
   if(operation==='preview'){
    const r=(await q("SELECT TOP 1 * FROM wf.NativeManualRedemptionRequest WITH(UPDLOCK,HOLDLOCK) WHERE SourceSOID=@source AND Status IN('PENDING','APPROVED') ORDER BY RequestedAt DESC",sourceInputs(soid))).recordset?.[0];
    const slip=await slipFor(q,parent,current.qty);
-   return {soid,...current,slip:slipView(slip,current),completed:false,evidenceMode:'UAT_SIMULATION',physicalShipmentVerified:false,canCreate:mayCreate(who.role),request:r&&r.Fingerprint===current.fingerprint?requestView(r,who):null};
+   return {soid,...current,slip:slipView(slip,current),completed:false,evidenceMode:'UAT_SIMULATION',physicalShipmentVerified:false,
+    canCreate:mayRequest(who.role),canApply:mayApply(who.role)&&hasPermission(user,'coupon.manual116'),request:r&&r.Fingerprint===current.fingerprint?requestView(r,who):null};
   }
   let r=(await q('SELECT * FROM wf.NativeManualRedemptionRequest WITH(UPDLOCK,HOLDLOCK) WHERE RequestId=@request',requestInputs(requestId))).recordset?.[0];
   const owned=r&&Number(r.SourceSOID)===soid&&r.Fingerprint===fingerprint&&r.PolicyVersion===POLICY;
   if(operation==='request'){
-   await employee(q,who.empId,'MR_RECORDER_MAPPING_REQUIRED');
    const scale=await slipFor(q,parent,current.qty);
    let use=scale;
    if(scale.source==='MANUAL'){
@@ -201,7 +204,7 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
    r=(await q('SELECT * FROM wf.NativeManualRedemptionRequest WHERE RequestId=@request',requestInputs(requestId))).recordset?.[0];
    if(!r||r.Status!=='APPROVED')fail('MR_REQUEST_UNAVAILABLE',503);return requestView(r,who);
   }
-  if(r.Status!=='APPROVED'||Number(r.RequestedById)!==who.effective||Number(r.RequesterActorId)!==who.actor)fail('MR_APPROVAL_REQUIRED');
+  if(r.Status!=='APPROVED')fail('MR_APPROVAL_REQUIRED');
   await employee(q,who.empId,'MR_RECORDER_MAPPING_REQUIRED');
   const beforeParts=await deliverySnapshot(q,parent.DeliverySOID);
   const result=(await q('EXEC wf.usp_CreateInitialManualRedemption @SOID=@source,@RequestId=@request,@Fingerprint=@fingerprint,@UserId=@user,@ActorId=@actor',{
@@ -210,10 +213,10 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
   const proof=(await q(`SELECT d.RedemtionID FROM dbo.WFRedemtionDT d JOIN dbo.WFRedemtionHD h ON h.RedemtionID=d.RedemtionID AND h.DocuType=116
    JOIN dbo.WFCoupon c ON c.CouponID=d.CouponID
    JOIN wf.NativeManualRedemptionRequest rr ON rr.RequestId=@request
-   JOIN wf.AppUser ru ON ru.Id=rr.RequestedById JOIN dbo.EMEmp rec ON CONVERT(varchar(30),rec.EmpID)=ru.EmpId
+   JOIN wf.AppUser ru ON ru.Id=@recorder JOIN dbo.EMEmp rec ON CONVERT(varchar(30),rec.EmpID)=ru.EmpId
    JOIN wf.AppUser au ON au.Id=rr.ApprovedById LEFT JOIN dbo.EMEmp apv ON CONVERT(varchar(30),apv.EmpID)=au.EmpId
    JOIN wf.NativeDocumentApproval na ON na.DocuType=116 AND na.NativeDocID=h.RedemtionID AND na.NativeDocNo=h.DocuNo AND na.RequestId=rr.RequestId
-    AND na.RecorderUserId=rr.RequestedById AND na.RecorderActorId=rr.RequesterActorId AND na.RecorderEmpID=rec.EmpID
+    AND na.RecorderUserId=@recorder AND na.RecorderActorId=@recorderActor AND na.RecorderEmpID=rec.EmpID
     AND na.ApproverUserId=rr.ApprovedById AND na.ApproverActorId=rr.ApproverActorId
     AND(na.ApproverEmpID=apv.EmpID OR(na.ApproverEmpID IS NULL AND apv.EmpID IS NULL AND au.EmpId IS NULL))
     AND na.SelfApproval=rr.SelfApproval AND na.ApprovedAt=rr.ApprovedAt
@@ -225,7 +228,8 @@ async function initialManualRedemption({operation='preview',soid,user,requestId,
     AND h.DocuDate=CONVERT(datetime,CONVERT(varchar(10),DATEADD(hour,7,GETUTCDATE()),120),120)
     AND d.RemaQty=d.GoodQty AND d.PostInv='N' AND d.SOInvID IS NULL AND d.SOListNo IS NULL AND d.IsCheck='Y'
     AND h.DocuStatus='N' AND h.IsCheckAll='Y' AND h.SumGoodQty=d.GoodQty AND c.RemaQty=0`,{
-    ...requestInputs(requestId),id:input(sql.Int,result.RedemptionID),coupon:input(sql.Int,parent.CouponID),no:input(sql.VarChar(25),result.RedemptionNo),
+    ...requestInputs(requestId),recorder:input(sql.Int,who.effective),recorderActor:input(sql.Int,who.actor),
+    id:input(sql.Int,result.RedemptionID),coupon:input(sql.Int,parent.CouponID),no:input(sql.VarChar(25),result.RedemptionNo),
     audit:input(sql.Int,result.NativeAuditId),event:input(sql.Int,result.NativeEventId)})).recordset||[];
   if(proof.length!==1||await nativeFingerprint(q,soid)!==parent.SourceAfterHash)fail('MR_RECEIPT_DIVERGED');
   const afterParts=await deliverySnapshot(q,parent.DeliverySOID);

@@ -4,7 +4,7 @@ require('./helpers/route-harness.cjs').installDbStub(()=>[]);
 const {initialDelivery,deliveryHttpError,POLICY}=require('../services/initial-delivery');
 const {capabilitiesFor}=require('../services/role-capabilities');
 const key='11111111-2222-4333-8444-555555555555';
-const sales={sub:11,role:'SALES',actorSub:99,actorRole:'ADMIN'};
+const sales={sub:11,role:'COUNTER_SALES',actorSub:99,actorRole:'ADMIN'};
 const account={sub:22,role:'ACCOUNTING',actorSub:99,actorRole:'ADMIN'};
 const base=['SOHD','SODT','SOHDRemark','SODTRemark'].map(t=>'original:'+t);
 const originalHash=createHash('sha256').update(JSON.stringify(base)).digest('hex');
@@ -12,7 +12,7 @@ function fixture(overrides={}) {
  const calls=[],events=[];
  const state={request:null,receipt:null,applied:false,sourceChanged:false,targetChanged:false,procCalls:0,
   sourceNo:'I69-00501',deliveryNo:'I69-00601',
-  accounts:[{Id:11,Role:'SALES',IsActive:true,MustChangePassword:false},
+  accounts:[{Id:11,Role:'COUNTER_SALES',IsActive:true,MustChangePassword:false},
    {Id:22,Role:'ACCOUNTING',IsActive:true,MustChangePassword:false},{Id:99,Role:'ADMIN',IsActive:true,MustChangePassword:false}],...overrides};
  const q=async(text,p={})=>{
   calls.push({text,p});const rows=recordset=>({recordset});
@@ -219,14 +219,16 @@ test('another authorized user cannot supersede the request owner',async()=>{
  await assert.rejects(f.call('request',{...command,user:account,requestId:'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'}),{code:'DO_REQUEST_OWNED_BY_ANOTHER'});
  assert.equal(f.state.request.RequestedById,11);
 });
-test('SALES cannot approve credit; actual/effective disabled or stale roles fail before mutations',async()=>{
+test('the counter cannot approve credit; actual/effective disabled or stale roles fail before mutations',async()=>{
  const f=fixture();const command=await request(f);
  await assert.rejects(f.call('approve',{...command,reason:'not authorized'}),{code:'DO_ROLE_FORBIDDEN'});
  for(const mutate of [s=>{s.accounts[2].IsActive=false;},s=>{s.accounts[0].MustChangePassword=true;},s=>{s.accounts[0].Role='MANAGER';}]){
   const x=fixture();mutate(x.state);await assert.rejects(x.call('preview'),e=>['DO_ACTOR_UNAVAILABLE','DO_ROLE_CHANGED'].includes(e.code));assert.equal(x.state.procCalls,0);}
 });
-test('scope uses effective user, not the senior Access As actor',async()=>{
- const f=fixture({owner:12});await assert.rejects(f.call('preview'),{code:'DO_SOURCE_NOT_FOUND',status:404});assert.equal(f.state.procCalls,0);
+test('a senior Access As actor cannot let a SALES-only identity issue a native ticket',async()=>{
+ const f=fixture({owner:12});f.state.accounts[0].Role='SALES';
+ await assert.rejects(f.call('preview',{user:{...sales,role:'SALES'}}),{code:'DO_ROLE_FORBIDDEN',status:403});
+ assert.equal(f.state.procCalls,0);
 });
 test('target, absent locks and insufficient Access As rank fail closed',async()=>{
  for(const [overrides,code] of [[{dbName:'foreign'},'DO_TARGET_NOT_SUPPORTED'],[{lockResult:null},'DO_BUSY'],[{lockResult:-1},'DO_BUSY']]){

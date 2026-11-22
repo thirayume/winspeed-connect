@@ -18,16 +18,16 @@ test('credit list and approve routes admit ACCOUNTING and ADMIN; AI permission g
  assert.equal(calls.at(-1).requestId,'key');assert.equal(calls.at(-1).user.actorSub,99);
 });
 test('request and apply route keep typed SOID, fingerprint and UUID; warehouse cannot create104',async()=>{
- for(const role of ['SALES','COUNTER_SALES','ACCOUNTING','MANAGER','C_LEVEL','ADMIN']){
+ for(const role of ['COUNTER_SALES','ACCOUNTING','MANAGER','C_LEVEL','ADMIN']){
   const user={sub:11,role};assert.equal((await app.call('GET','/api/so/501/native-delivery/preview',{user})).status,200);
   assert.equal((await app.call('POST','/api/so/501/native-delivery/requests',{user,body:{requestId:'uuid',fingerprint:'fp'}})).status,200);
   assert.equal(calls.at(-1).operation,'request');assert.equal(calls.at(-1).soid,'501');assert.equal(calls.at(-1).requestId,'uuid');
   assert.equal((await app.call('POST','/api/so/501/native-delivery',{user,body:{requestId:'uuid',fingerprint:'fp'}})).status,200);
  }
- for(const role of ['WAREHOUSE','WEIGHBRIDGE','APPROVER']){const before=calls.length;assert.equal((await app.call('POST','/api/so/501/native-delivery',{user:{sub:11,role},body:{}})).status,403);assert.equal(calls.length,before);}
+ for(const role of ['SALES','WAREHOUSE','WEIGHBRIDGE','APPROVER']){const before=calls.length;assert.equal((await app.call('POST','/api/so/501/native-delivery',{user:{sub:11,role},body:{}})).status,403);assert.equal(calls.length,before);}
 });
 test('authentication and public SQL error sanitization remain enforced',async()=>{
  const before=calls.length;assert.equal((await app.call('POST','/api/so/501/native-delivery',{body:{}})).status,401);assert.equal(calls.length,before);
- const r=await app.call('GET','/api/so/error/native-delivery/preview',{user:{sub:11,role:'SALES'}});
+ const r=await app.call('GET','/api/so/error/native-delivery/preview',{user:{sub:11,role:'COUNTER_SALES'}});
  assert.equal(r.status,503);assert.equal(r.body.code,'DO_FAILED');assert.ok(!JSON.stringify(r.body).includes('password'));
 });

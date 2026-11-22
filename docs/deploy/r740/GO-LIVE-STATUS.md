@@ -30,13 +30,37 @@ writers also pin the UAT database, require simulation evidence and support a res
 those controls or switching PROD flags alone is not a Production implementation. The common release needs native
 Production contracts and multi-line/mixed-ticket acceptance first.
 
-The owner now requires SALES to request cuts and its customers' Rebate use, with new fertilizer-ticket sales limited
-to COUNTER_SALES and explicitly authorized roles. Current default `so.create-native-delivery` still includes SALES;
-the native 116 workflow's creator policy still excludes SALES. These need separate request/approve/apply permissions
-and API tests. Giveaway borrowing currently transfers regional budgets, refuses same-region borrowing and has no
-explicit repayment route in `routes/giveaway.js`; individual salesperson borrowing/repayment needs implementation and
-acceptance. These are open gaps, not completed features. See the latest owner rules in
-`docs/sale-app/handover/APPROVAL-POLICIES.md`.
+**Further source work, not deployed:** migrations 260–262 separate `coupon.request116` from approval/recording,
+enforce the ticket-sale role ceiling in JavaScript and SQL even for stale/custom grants, and add individual giveaway
+quota loans and partial/full repayments. The requester may be SALES; the approved 116 is recorded by a different
+authorized employee, with that recorder in WinSpeed and the approval audit. Native document actions now check both
+Access As scopes. Role Management labels and the client follow the same permissions.
+
+Individual quota transfers support the same region, conserve the two budgets' total, use SERIALIZABLE transactions
+and ordered budget locks, and audit primary/business real/effective IDs. Pending requests move no quota. Approval
+rechecks the lender's available quota; repayments cannot exceed the outstanding or unused quota. Mutations recheck
+live account permissions inside the transaction. Linked budget identities and history cannot be deleted/reassigned;
+quantity adjustments remain available. Legacy regional requests and their history are preserved. The Rebate history
+tab no longer offers new legacy claims; existing claim details remain available, and the legacy server workflow has
+not been retired without reviewing its outstanding obligations.
+
+SQL UAT rehearsals passed migration up/down, service execution/audit rollback and history-preserving down refusal,
+all inside an outer rollback. Separate simultaneous SQL connections passed duplicate requests/repayments, competing
+approvals/returns and a withdrawal-lock case using uniquely named temporary tables only. These are integration
+checks, not a real-user Full Loop or Production acceptance. No migration ledger entry, native document, business
+quota, deployment, switch or secondary database was changed.
+
+The Full Loop runner now uses a distinct listed AI employee, Counter for 104, SALES requests and a different 116
+recorder, concurrent replay checks and an additional individual-quota loan/repayment phase. It creates seven isolated
+accounts on an explicitly selected UAT target and disables its own accounts on close. Its new live phases have not
+yet been executed against the proposed release. The old UAT invoice result above cannot certify these changes.
+
+**Release still blocked:** general Production-native contracts, multi-line/mixed-ticket and partial-cut acceptance,
+fresh real-user Full Loop with the proposed schema, and WinSpeed/Sale-App concurrency acceptance remain open.
+Do not remove the simulation target/evidence guards or equate unit/browser/rollback checks with those acceptances.
+The reviewed UAT has no untouched native delivery fixture left; a new isolated run must create its own chain.
+Review company 2 before applying role/schema migrations. The owner requires a passing Full Loop before deployment.
+See [current approval rules](../../sale-app/handover/APPROVAL-POLICIES.md).
 
 Older paragraphs below are history.
 

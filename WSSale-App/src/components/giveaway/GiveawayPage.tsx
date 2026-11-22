@@ -7,6 +7,7 @@ import {
 import { useAuthStore } from '../../store/auth-store';
 import { useCan } from '../../utils/capabilities';
 import { GiveawayQuotaSettings } from './GiveawayQuotaSettings';
+import { GiveawayQuotaLoansPanel } from './GiveawayQuotaLoansPanel';
 import { SearchableSelect, type SearchableSelectOption } from '../ui/SearchableSelect';
 import { formatThaiDate } from '../../utils/date';
 import { appAlert, appPrompt, appConfirm } from '../ui/AppAlert';
@@ -30,6 +31,7 @@ export function GiveawayPage() {
   const [tab, setTab]           = useState<'budget' | 'log' | 'requests' | 'settings'>('budget');
   const can = useCan();
   const [showWd, setShowWd]     = useState(false);
+  const [showLoans,setShowLoans] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -101,11 +103,16 @@ export function GiveawayPage() {
           </h1>
           <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">งบส่งเสริมการขายรายเขต & พนักงานขายตามผังองค์กร ปี 2569 · ผูกข้อมูลหลัก 98 รายการ</p>
         </div>
+        {can('giveaway.borrow')&&<button onClick={()=>setShowLoans(true)} className="rounded border border-blue-200 px-3 py-2 text-sm font-semibold text-[#0C447C]">ยืม/คืนระหว่างเซลล์</button>}
         <button onClick={load} className="h-10 w-10 flex items-center justify-center rounded-xl border border-gray-200 bg-white">
           <RefreshCw size={16} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
         </button>
       </div>
 
+      {showLoans&&<div role="dialog" aria-modal="true" aria-label="ยืมคืนโควต้าของแถม" className="fixed inset-0 z-50 overflow-y-auto bg-white p-4">
+        <button onClick={()=>{setShowLoans(false);void load();if(selected)void openRegion(selected);}} className="rounded border px-3 py-2">ปิดยืม/คืน</button>
+        <GiveawayQuotaLoansPanel />
+      </div>}
       <div className="flex-1 overflow-hidden flex">
         {/* Region / Org roster sidebar */}
         <div className={`${selected ? 'hidden lg:block' : 'w-full'} lg:w-full lg:max-w-xs border-r border-gray-200 overflow-y-auto p-4`}>

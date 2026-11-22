@@ -51,6 +51,7 @@ const names: Record<string, string> = {
   "so.approve-native": "อนุมัติ AI",
   "so.create-native-delivery": "ออกใบสั่งขาย 104",
   "credit.approve-native": "อนุมัติเกินวงเงิน",
+  "coupon.request116": "ยื่นขอตัดตั๋ว 116",
   "coupon.manual116": "ตัดตั๋ว 116",
   "invoice.post-native": "Post Invoice 107",
   "native.print-104": "พิมพ์ 104",

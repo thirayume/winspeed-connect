@@ -141,11 +141,13 @@ function filteredCapabilities(user) {
       "so.approve-native",
       "so.create-native-delivery",
       "credit.approve-native",
+      "coupon.request116",
+      "coupon.manual116",
       "invoice.post-native",
     ].some((k) => hasPermission(user, k))
   )
     inherited.add("papertrail");
-  if (hasPermission(user, "coupon.manual116")) inherited.add("control-ticket");
+  if (["coupon.request116","coupon.manual116"].some(k=>hasPermission(user,k))) inherited.add("control-ticket");
   if (
     ["master.manage", "pricing.view", "pricing.manage", "cost.view", "cost.manage"].some((k) =>
       hasPermission(user, k),

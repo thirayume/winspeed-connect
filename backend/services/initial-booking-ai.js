@@ -1,11 +1,12 @@
 'use strict';
 const {hasPermission}=require('./role-capabilities');
 const { approvalIdentity, adminApprovesOwn } = require('./approval-identity');
+const { businessIds, actorPerspective } = require('./business-identity');
+const { nativeOwnerInScope } = require('./native-document-scope');
 // Initial UAT simulation contract. Below-price and credit override use separate policies.
 const { createHash } = require('crypto');
 const { sql, wfTransaction, wfQuery } = require('../db');
-const { getVisibleScope, inScope } = require('./visible-scope');
-const { rolesFor, roleRank, ACCESS_AS_ACTOR_ROLES } = require('./role-capabilities');
+const { roleRank } = require('./role-capabilities');
 const { isInitialNativeUatTarget } = require('./initial-native-uat-target');
 const POLICY = 'O11-AI-INITIAL-UAT2-v1';
 const fail = (code, status = 409) => { throw Object.assign(new Error(code), { code, status }); };
@@ -45,21 +46,21 @@ async function captureBookingOrigin({ query, soid, sourceDraftId, salesUserId, u
     VALUES (@soid,@draft,@sales,@effective,@actor,@fingerprint,@policy)`, {
     ...idInput(Number(soid)), draft: { type: sql.Int, value: Number(sourceDraftId) },
     sales: { type: sql.Int, value: Number(salesUserId) },
-    effective: { type: sql.Int, value: Number(user.sub) },
-    actor: { type: sql.Int, value: Number(user.actorSub || user.sub) },
+    effective: { type: sql.Int, value: businessIds(user).effective },
+    actor: { type: sql.Int, value: businessIds(user).actor },
     fingerprint: { type: sql.VarChar(64), value: fingerprint }, policy: { type: sql.VarChar(40), value: POLICY },
   });
   return true;
 }
 async function identity(query, user) {
-  const effective = Number(user?.sub), actor = Number(user?.actorSub || user?.sub);
+  const {effective,actor} = businessIds(user);
   if (![effective, actor].every(n => Number.isSafeInteger(n) && n > 0)) fail('AI_ACTOR_INVALID', 401);
   const rows = (await query(`SELECT Id,Role,IsActive,MustChangePassword,EmpId,Username FROM wf.AppUser WITH (UPDLOCK,HOLDLOCK)
     WHERE Id IN (@effective,@actor)`, { effective: { type: sql.Int, value: effective }, actor: { type: sql.Int, value: actor } })).recordset || [];
   const current = rows.find(r => Number(r.Id) === effective), real = rows.find(r => Number(r.Id) === actor);
   if (![current, real].every(r => r && (r.IsActive === true || r.IsActive === 1) && !r.MustChangePassword)) fail('AI_ACTOR_UNAVAILABLE', 403);
   if (current.Role !== user.role || real.Role !== (user.actorRole || user.role)) fail('AI_ROLE_CHANGED', 403);
-  if (!hasPermission(user,'so.approve-native')) fail('AI_ROLE_FORBIDDEN', 403);
+  if (![user,actorPerspective(user)].every(u=>hasPermission(u,'so.approve-native'))) fail('AI_ROLE_FORBIDDEN', 403);
   if (actor !== effective && (!hasPermission({role:real.Role,roles:user.actorRoles,permissions:user.actorPermissions},'access-as') || roleRank(real.Role) < roleRank(current.Role))) fail('AI_ACCESS_AS_FORBIDDEN', 403);
   const empId = Number(current.EmpId);
   if (!Number.isSafeInteger(empId) || empId <= 0) fail('AI_APPROVER_EMPLOYEE_REQUIRED', 409);
@@ -88,8 +89,7 @@ async function initialBookingAi({ soid, user, fingerprint, requestId, preview = 
     const row = (await query(`SELECT h.SOID,h.DocuNo,h.EmpID,e.SalesUserId,h.AppvFlag,h.AppvDocuNo,h.Appvid
       FROM dbo.SOHD h WITH (UPDLOCK,HOLDLOCK) LEFT JOIN wf.SalesOrderExt e WITH (UPDLOCK,HOLDLOCK) ON e.SOID=CAST(h.SOID AS VARCHAR(50))
       WHERE h.SOID=@soid AND h.DocuType=103`, idInput(Number(soid)))).recordset?.[0];
-    const scope = await getVisibleScope(user, query);
-    if (!row || !inScope(scope, { userId: row.SalesUserId, empId: row.EmpID })) fail('AI_BOOKING_NOT_FOUND', 404);
+    if (!await nativeOwnerInScope(user,row,query)) fail('AI_BOOKING_NOT_FOUND', 404);
     // Owner, 20 Nov 2026: approving needs the role (so.approve-native), the WinSpeed approver list kept by ADMIN
     // (wf.NativeApproverEmployee) and the org-chart scope checked above; nobody approves a bill they sell, except
     // ADMIN acting as itself (owner, 21 Nov 2026: ADMIN, the highest role, may approve its own work).

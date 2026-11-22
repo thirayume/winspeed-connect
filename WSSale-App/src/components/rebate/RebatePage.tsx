@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Coins, RefreshCw, ArrowLeft, Scissors, X, Info, Download } from 'lucide-react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { Coins, RefreshCw, ArrowLeft, X, Info, Download } from 'lucide-react';
 import {
   fetchRebatePools, fetchRebateLedger, fetchRebateClaims,
 } from '../../services/api';
@@ -7,7 +7,7 @@ import { useAuthStore } from '../../store/auth-store';
 import { useExport } from '../../hooks/useExport';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import type { RebatePool, RebateLedger, RebateClaim } from '../../types';
-import { ClaimDialog, ClaimDetailDialog } from './RebateClaimForm';
+import { ClaimDetailDialog } from './RebateClaimForm';
 import { RebatePoolPanel } from './RebatePoolPanel';
 import { formatThaiDate } from '../../utils/date';
 
@@ -25,7 +25,6 @@ const STATUS_TONE: Record<string, string> = {
 export function RebatePage() {
   const user = useAuthStore(s => s.user);
   const role = user?.role;
-  const canClaim = [role, ...(user?.roles || [])].some(r => ['SALES', 'COUNTER_SALES', 'ACCOUNTING', 'ADMIN', 'C_LEVEL', 'MANAGER'].includes(String(r)));
   const [viewTab, setViewTab] = useState<'pool-fifo' | 'legacy'>('pool-fifo');
   // owner 2026-10-09: a salesperson sees no rebate amount here either; the server sends none
   const seeMoney = canViewRebateAmounts(role);
@@ -34,9 +33,9 @@ export function RebatePage() {
   const [selectedPool, setSelectedPool] = useState<RebatePool | null>(null);
   const [ledger, setLedger]     = useState<RebateLedger[]>([]);
   const [loading, setLoading]   = useState(true);
-  const [showClaim, setShowClaim] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [detailId, setDetailId] = useState<number | null>(null);
+  const legacyRequest = useRef(0);
   const { exportData } = useExport();
 
   const handleExportClaims = () => {
@@ -67,20 +66,24 @@ export function RebatePage() {
   };
 
   const load = useCallback(async () => {
+    const seq=++legacyRequest.current;
+    if(viewTab!=='legacy'){setLoading(false);return;}
     setLoading(true);
     try {
       const [p, c] = await Promise.all([fetchRebatePools(), fetchRebateClaims()]);
+      if(seq!==legacyRequest.current)return;
       setPools(p);
       setClaims(c);
-    } catch (e) { console.error(e); }
-    setLoading(false);
-  }, []);
-  useEffect(() => { load(); }, [load]);
+    } catch (e) { if(seq===legacyRequest.current){setPools([]);setClaims([]);console.error(e);} }
+    if(seq===legacyRequest.current)setLoading(false);
+  }, [viewTab,user?.id,user?.actorId]);
+  useEffect(() => {setSelectedPool(null);setLedger([]);setDetailId(null);void load();return()=>{legacyRequest.current++;};}, [load]);
 
   async function openPool(pool: RebatePool) {
+    const seq=legacyRequest.current;
     setSelectedPool(pool);
-    try { setLedger(await fetchRebateLedger({ poolId: pool.Id })); }
-    catch (e) { console.error(e); setLedger([]); }
+    try {const rows=await fetchRebateLedger({ poolId: pool.Id });if(seq===legacyRequest.current)setLedger(rows);}
+    catch (e) { if(seq===legacyRequest.current){console.error(e);setLedger([]);} }
   }
 
   const monthLabel = (p: RebatePool) => `${p.PeriodMonth}/${p.PeriodYear < 2500 ? p.PeriodYear + 543 : p.PeriodYear}`;
@@ -117,12 +120,6 @@ export function RebatePage() {
           </div>
           {viewTab === 'legacy' && (
             <>
-              {canClaim && (
-                <button onClick={() => setShowClaim(true)} data-testid="open-customer-claim-button"
-                  className="px-3 py-2 rounded-xl bg-[#0C447C] text-white text-xs font-bold flex items-center gap-1.5">
-                  <Scissors size={14} /> ยื่นเคลียร์จากยอดลูกค้า
-                </button>
-              )}
               <button onClick={handleExportClaims} disabled={claims.length === 0}
                 className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-xs font-bold text-[#0C447C] flex items-center gap-1.5 shadow-sm disabled:opacity-50">
                 <Download size={14} /> ส่งออกคำขอ (Excel)
@@ -148,7 +145,7 @@ export function RebatePage() {
             <div>
               <h2 className="text-xs font-bold uppercase text-gray-400 mb-2">กองรีเบทรายเดือน (ประวัติเดิม)</h2>
               {pools.length === 0 ? (
-                <p className="text-xs text-gray-400 py-4 text-center">ไม่มีกองรายเดือนเดิม กด “ยื่นเคลียร์จากยอดลูกค้า” เพื่อเลือกยอดคงเหลือและยอดยกมา</p>
+                <p className="text-xs text-gray-400 py-4 text-center">ไม่มีกองรายเดือนเดิม รายการใหม่ให้ยื่นใช้ Rebate ในหน้ากองรายลูกค้า</p>
               ) : pools.map(p => {
                 const avail = p.AvailableAmt !== undefined ? Number(p.AvailableAmt) : (Number(p.AccruedAmt) - Number(p.ClaimedAmt) - Number(p.UsedAmt || 0));
                 const isSel = selectedPool?.Id === p.Id;
@@ -205,13 +202,6 @@ export function RebatePage() {
                     <h2 className="font-bold text-gray-800 hidden lg:block">{selectedPool.SalesName} · {monthLabel(selectedPool)}</h2>
                     <p className="text-xs text-gray-400"><span className="lg:hidden">{monthLabel(selectedPool)} · </span>ตัดจากรายการเก่าสุดก่อน</p>
                   </div>
-                  {canClaim && (
-                    <button onClick={() => setShowClaim(true)}
-                      data-testid="open-claim-dialog-button"
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold" style={{ background: '#0C447C' }}>
-                      <Scissors size={13} /> ยื่นเคลียร์รีเบท
-                    </button>
-                  )}
                 </div>
                 <div className="flex-1 overflow-y-auto p-4">
                   <div className="overflow-x-auto">
@@ -262,11 +252,6 @@ export function RebatePage() {
         )}
       </div>
 
-      {showClaim && (
-        <ClaimDialog pool={selectedPool} onClose={() => setShowClaim(false)}
-          onDone={() => { setShowClaim(false); load(); if (selectedPool) openPool(selectedPool); }} />
-      )}
-
       {detailId != null && (
         <ClaimDetailDialog claimId={detailId} onClose={() => setDetailId(null)}
           onChanged={() => { load(); if (selectedPool) openPool(selectedPool); }} />
@@ -282,13 +267,9 @@ export function RebatePage() {
               <button onClick={() => setShowInfo(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <div className="text-sm text-gray-600 space-y-3">
-              <p>เมื่อฝ่ายขายสร้างบิลใน Sale-App และตั้งราคาขาย (Price) สูงกว่าราคาสุทธิ (Net) —</p>
-              <div className="bg-blue-50 text-blue-800 p-3 rounded-lg font-mono text-xs border border-blue-100">
-                รีเบท = (PricePerTon − NetPricePerTon) × ตัน
-                <br/>→ สะสมในบัญชีพนักงาน
-              </div>
-              <p>ลูกค้าสามารถใช้รีเบทเป็นส่วนลดบิลใดก็ได้ → บัญชีออกใบลดหนี้ (109) ลดหนี้ให้ลูกค้า</p>
-              <p><strong>ลำดับการตัดยอด:</strong> ระบบจะตัดยอดจากรายการเก่าสุดก่อนเสมอ</p>
+              <p>แท็บนี้เก็บประวัติและคำขอเดิมเพื่อให้ติดตามรายการที่ยังค้างอยู่ได้</p>
+              <p>รายการใหม่ให้ใช้หน้ากอง Rebate รายลูกค้า: ยื่นคำขอ จองยอด รอผู้มีสิทธิ์อนุมัติ และรับตั๋วไปใช้ในบิลของลูกค้ารายนั้น</p>
+              <p>ยอดสะสมใหม่มาจากการขนส่งที่ตรวจหลักฐานแล้ว รายการที่ข้อมูลไม่ครบจะอยู่ในคิวรอตรวจและยังใช้ยอดไม่ได้</p>
             </div>
           </div>
         </div>

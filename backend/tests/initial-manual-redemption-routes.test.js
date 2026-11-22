@@ -4,11 +4,14 @@ const h=require('./helpers/route-harness.cjs');h.installDbStub(()=>[],{activeUse
 const service=require('../services/initial-manual-redemption'),calls=[];
 service.initialManualRedemption=async cmd=>{calls.push(cmd);if(cmd.soid==='error')throw Error('private password');return {operation:cmd.operation,physicalShipmentVerified:false};};
 let app;test.before(async()=>{app=await h.startApp([['/api/so','../../routes/so']]);});test.after(async()=>{await app.close();});
-test('manual116 route boundary excludes Sales, counter, generic approver and scale roles',async()=>{
+test('Sales/counter may preview and request, while approval and recording stay restricted',async()=>{
  for(const role of ['SALES','COUNTER_SALES','APPROVER','WEIGHBRIDGE']){
   const user={sub:11,role},before=calls.length;
-  for(const [method,path] of [['GET','/preview'],['POST','/requests'],['POST','/requests/key/approve'],['POST','']])assert.equal((await app.call(method,'/api/so/501/native-redemption'+path,{user,...(method==='POST'?{body:{}}:{})})).status,403);
-  assert.equal(calls.length,before);
+  for(const [method,path] of [['GET','/preview'],['POST','/requests'],['POST','/requests/key/approve'],['POST','']]){
+   const mayRequest=['SALES','COUNTER_SALES'].includes(role)&&['/preview','/requests'].includes(path);
+   assert.equal((await app.call(method,'/api/so/501/native-redemption'+path,{user,...(method==='POST'?{body:{}}:{})})).status,mayRequest?200:403);
+  }
+  assert.equal(calls.length,before+(['SALES','COUNTER_SALES'].includes(role)?2:0));
  }
 });
 test('operational actors preserve actual/effective identities and cannot provide native IDs or approver IDs',async()=>{

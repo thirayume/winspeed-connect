@@ -2218,8 +2218,7 @@ export function CreateSODialog({
         brand={borrowReq.brand}
         itemName={borrowReq.itemName}
         requiredQty={borrowReq.requiredQty}
-        region={(userRole === 'ADMIN' ? 'ภาคเหนือ' : 'ภาคเหนือ')} // Assuming hardcoded for now, or fetch user's region
-        periodYear={new Date().getFullYear() + 543 - 2500 + 2500}
+        periodYear={new Date().getFullYear() + 543}
         onSuccess={() => {
           setBorrowModalOpen(false);
           // Refetch quota after borrowing (cards and the add check read RemainingQty from the goods list)
@@ -2227,7 +2226,7 @@ export function CreateSODialog({
           apiFetch<GiveawayQuota[]>(`/giveaway/my-quota?year=${currentYear}`).then(setMyQuota).catch(console.error);
           loadSaleGoods(salesUserId ? String(salesUserId) : undefined, editSoId && editSoId !== 'undefined' ? editSoId : undefined)
             .then(result => { setGoods(result.goods); setGoodsWarning(result.warning); });
-          void appAlert('ส่งคำขอยืมเรียบร้อยแล้ว กรุณารอการอนุมัติ', 'success');
+          void appAlert('บันทึกรายการยืม/คืนโควต้าแล้ว คำขอใหม่ต้องรอผู้ให้ยืมหรือผู้มีสิทธิ์อนุมัติก่อนใช้ยอด', 'success');
         }}
       />
 

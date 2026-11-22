@@ -29,6 +29,7 @@ const ROLE_RANK = Object.freeze({
 
 // O-5: senior operators keep Access As
 const ACCESS_AS_ACTOR_ROLES = Object.freeze(['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'COUNTER_SALES']);
+const TICKET_SALES_ROLES = Object.freeze(['COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN']);
 
 const ALL = ROLES;
 const MENUS = Object.freeze({
@@ -46,7 +47,7 @@ const MENUS = Object.freeze({
   aging: ['SALES', 'WAREHOUSE', 'ACCOUNTING', 'C_LEVEL', 'ADMIN'],
   rebate: ['SALES', 'COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'rebate-plan': ['APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  giveaway: ['SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  giveaway: ['SALES', 'COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   accounting: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   recon: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   incidents: ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
@@ -72,7 +73,8 @@ const ACTIONS = Object.freeze({
   'so.control-ticket': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   // Owner, 20 Nov 2026: booking approval moves from SALES to the desk, accounting and management roles.
   'so.approve-native': ['COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  'so.create-native-delivery': ['SALES', 'COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'so.create-native-delivery': ['COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'coupon.request116': ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'credit.approve-native': ['ACCOUNTING', 'ADMIN'],
   'coupon.manual116': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'invoice.post-native': ['ACCOUNTING', 'ADMIN'],
@@ -128,7 +130,7 @@ function capabilitiesFor(role, { positionCode = null } = {}) {
     actions: Object.keys(ACTIONS).filter(k => ACTIONS[k].includes(r)
       && (k !== 'so.approve-native' || process.env.NATIVE_BOOKING_AI_ENABLED === 'true')
       && (!['so.create-native-delivery','credit.approve-native'].includes(k) || process.env.NATIVE_DELIVERY_104_ENABLED === 'true')
-      && (k !== 'coupon.manual116' || process.env.NATIVE_MANUAL_116_ENABLED === 'true')
+      && (!['coupon.manual116','coupon.request116'].includes(k) || process.env.NATIVE_MANUAL_116_ENABLED === 'true')
       && (k !== 'invoice.post-native' || process.env.NATIVE_INVOICE_107_ENABLED === 'true')),
   };
 }
@@ -150,6 +152,11 @@ function hasRole(user, ...roles) { return userRoles(user).some(r => roles.includ
 function hasPermission(user, action) {
   if (userRoles(user).includes('SEPARATION')) return false;
   if (userRoles(user).includes('ADMIN') && Object.prototype.hasOwnProperty.call(ACTIONS, action)) return true;
+  // Owner, 22 Nov 2026: a SALES-only account must never sell a new fertilizer ticket, even through a stale
+  // session or a custom profile granting this action. Booking, drawing an existing ticket and Rebate use stay separate.
+  if (['so.create-native-delivery', 'so.control-ticket'].includes(action) &&
+      !userRoles(user).some(role => TICKET_SALES_ROLES.includes(role))) return false;
+  if (action === 'coupon.manual116' && !userRoles(user).some(role => [...TICKET_SALES_ROLES,'WAREHOUSE'].includes(role))) return false;
   if (Array.isArray(user?.permissions)) return user.permissions.includes(action);
   return !(user?.disabledActions || []).includes(action) && userRoles(user).some(r => rolesFor(action).includes(r));
 }
@@ -159,6 +166,7 @@ const REBATE_POOL_SWITCH = 'REBATE_POOL_103_ENABLED';
 const FEATURE_SWITCHES = Object.freeze({
   'so.approve-native': ['NATIVE_BOOKING_AI_ENABLED'], 'so.create-native-delivery': ['NATIVE_DELIVERY_104_ENABLED'],
   'credit.approve-native': ['NATIVE_DELIVERY_104_ENABLED'], 'coupon.manual116': ['NATIVE_MANUAL_116_ENABLED'],
+  'coupon.request116': ['NATIVE_MANUAL_116_ENABLED'],
   'invoice.post-native': ['NATIVE_INVOICE_107_ENABLED'],
   // Rebate Pool: price approval, evidence review, conversion and ticket actions exist only with the Pool on
   'rebate.approve-over-limit': [REBATE_POOL_SWITCH], 'rebate.evidence.verify': [REBATE_POOL_SWITCH],

@@ -8,8 +8,10 @@ require.cache[authPath] = { id:authPath, filename:authPath, loaded:true, exports
   requireAuth:(req,_res,next)=>{req.user=user;require('../services/request-context').runWithUser(user,next);},
   requireCapability:()=> (_req,_res,next)=>next(), requireRole:()=> (_req,_res,next)=>next(),
 } };
-let rows, audits, failAudit, missingWrite, duplicateBudget;
+let rows, audits, failAudit, missingWrite, duplicateBudget, loanHistory;
 const db = h.installDbStub(({kind,text,inputs}) => {
+  if (/AS LoanTable/.test(text)) return [{LoanTable:1}];
+  if (/SELECT TOP 1 Id FROM wf.GiveawayQuotaLoan/.test(text)) return loanHistory?[{Id:123}]:[];
   if (/COL_LENGTH\('wf\.GiveawayBudget'/.test(text)) return [{Len:50}];
   if (/COL_LENGTH\('wf\.ChangeEvent'/.test(text)) return [{HasCol:1}];
   if (/SELECT Id FROM wf\.GiveawayBudget WITH \(UPDLOCK,HOLDLOCK\) WHERE Id=@id/.test(text)) { assert.equal(kind,'tx'); return rows.filter(row=>row.Id===inputs.id).map(row=>({Id:row.Id})); }
@@ -27,7 +29,7 @@ db.stub.wfTransaction=async fn=>{const before=structuredClone({rows,audits});try
 let app;
 test.before(async()=>{app=await h.startApp([['/api/giveaway','../../routes/giveaway']]);});
 test.after(async()=>app.close());
-test.beforeEach(()=>{user={sub:1,actorSub:1,role:'ADMIN'};rows=[];audits=[];failAudit=false;missingWrite=false;duplicateBudget=false;});
+test.beforeEach(()=>{user={sub:1,actorSub:1,role:'ADMIN'};rows=[];audits=[];failAudit=false;missingWrite=false;duplicateBudget=false;loanHistory=false;});
 for(const [method,url,body,setup] of [
   ['POST','/api/giveaway/budgets',{region:'TEST',brand:'X',itemName:'Y',budgetQty:12},false],
   ['PUT','/api/giveaway/budgets/777',{budgetQty:12},true],
@@ -40,6 +42,22 @@ for(const [method,url,body,setup] of [
   failAudit=false;
   assert.equal((await app.call(method,url,{body})).status,200);
   assert.equal(audits.length,1);
+});
+
+test('even force-delete cannot remove an individual loan history; quantity edits remain available',async()=>{
+ rows=[{Id:777,Region:'TEST',PeriodYear:2569,Brand:'X',ItemName:'Y',BudgetQty:10,SalesUserId:11,GoodId:'500'}];loanHistory=true;
+ const expectedToken=require('../routes/giveaway').__testing.budgetEditToken({...rows[0],EditVersion:'0000000000000001',WithdrawnQty:0});
+ const result=await app.call('DELETE','/api/giveaway/budgets/777?force=true',{body:{expectedToken}});
+ assert.equal(result.status,409);assert.equal(result.body.code,'QUOTA_LOAN_BUDGET_HAS_HISTORY');assert.equal(rows.length,1);assert.equal(audits.length,0);
+ const edit=await app.call('PUT','/api/giveaway/budgets/777',{body:{expectedToken,budgetQty:12}});
+ assert.equal(edit.status,200);assert.equal(rows[0].BudgetQty,12);
+});
+
+test('a budget linked to loans cannot be reassigned to a different owner',async()=>{
+ rows=[{Id:777,Region:'TEST',PeriodYear:2569,Brand:'X',ItemName:'Y',BudgetQty:10,SalesUserId:11,GoodId:'500'}];loanHistory=true;
+ const expectedToken=require('../routes/giveaway').__testing.budgetEditToken({...rows[0],EditVersion:'0000000000000001',WithdrawnQty:0});
+ const result=await app.call('PUT','/api/giveaway/budgets/777',{body:{expectedToken,budgetQty:10,salesUserId:12}});
+ assert.equal(result.status,409);assert.equal(result.body.code,'QUOTA_LOAN_BUDGET_HAS_HISTORY');assert.equal(rows[0].SalesUserId,11);assert.equal(audits.length,0);
 });
 for(const [method,url,body] of [['PUT','/api/giveaway/budgets/777',{budgetQty:12}],['DELETE','/api/giveaway/budgets/777',{}]])
   test(`${method} does not audit a row removed before the write`,async()=>{

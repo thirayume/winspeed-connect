@@ -9,7 +9,7 @@ type ManualRequest={requestId:string;status:string;reason:string;receiver:string
  slipNo:string|null;slipSource:'SCALE'|'MANUAL'|null;exceptionRequired:boolean};
 type Slip={source:'SCALE'|'MANUAL';slipNo:string|null;plate:string|null;netKg:number|null;diffPct:number|null;couponTon:string;tolerancePct:number;exception:boolean};
 type Preview={soid:number;fingerprint:string;deliveryNo:string;couponNo:string;qty:string;
- completed:boolean;canCreate:boolean;request:ManualRequest|null;redemptionNo?:string;slip?:Slip};
+ completed:boolean;canCreate:boolean;canApply?:boolean;request:ManualRequest|null;redemptionNo?:string;slip?:Slip};
 const errors:Record<string,string>={
  MR_NOT_ENABLED:'ยังไม่เปิดขั้นใบตัดตั๋วปุ๋ย (116) สำหรับสภาพแวดล้อมนี้',
  MR_DELIVERY_DIVERGED:'ข้อมูลใบสั่งขายหรือตั๋วเปลี่ยน กรุณาให้ผู้ดูแลตรวจสอบ',
@@ -40,7 +40,7 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
  const [preview,setPreview]=useState<Preview|null>(null),[key,setKey]=useState({basis:'',id:''});
  const [printing,setPrinting]=useState(false);
  const [reason,setReason]=useState(''),[receiver,setReceiver]=useState('UAT2 TEST'),[plate,setPlate]=useState('UAT2-TEST'),[slipNo,setSlipNo]=useState('99');
- if(!can('coupon.manual116'))return null;
+ if(!can('coupon.request116')&&!can('coupon.manual116'))return null;
  function showError(e:unknown){const code=(e as {data?:{code?:string}}).data?.code||'';setError(errors[code]||'ดำเนินการไม่สำเร็จ กรุณาตรวจสถานะหรือติดต่อผู้ดูแล');}
  async function inspect(){setOpen(true);setBusy(true);setError('');try{
   const p=await req<Preview>(`/so/${soid}/native-redemption/preview`);setPreview(p);
@@ -84,7 +84,7 @@ export function NativeManualRedemptionButton({soid,onCreated}:{soid:string|numbe
      <button disabled={busy} onClick={inspect} className="rounded-lg border px-3 py-2">ตรวจใหม่</button>
      {preview.canCreate&&(!r||(r.isRequester&&expired))&&<button disabled={busy||reason.trim().length<10||(manual&&!/^\d{7}$/.test(slipNo))} onClick={()=>act('request')} className="rounded-lg bg-amber-700 px-3 py-2 text-white">ส่งคำขอ</button>}
      {r?.canApprove&&<button disabled={busy} onClick={()=>act('approve')} className="rounded-lg bg-blue-800 px-3 py-2 text-white">อนุมัติคำขอ</button>}
-     {r?.isRequester&&r.status==='APPROVED'&&!expired&&<button disabled={busy} onClick={()=>act('apply')} className="rounded-lg bg-blue-800 px-3 py-2 text-white">ยืนยันตัดตั๋วเต็มจำนวน</button>}
+     {preview.canApply&&can('coupon.manual116')&&r?.status==='APPROVED'&&!expired&&<button disabled={busy} onClick={()=>act('apply')} className="rounded-lg bg-blue-800 px-3 py-2 text-white">ยืนยันตัดตั๋วเต็มจำนวน</button>}
     </>}
    </div>
   </div></div>,document.body)}

@@ -8,11 +8,12 @@
  *
  *   docker exec -e UAT_LOOP_PHASE=prepare -e UAT_LOOP_RUN=R740UAT-YYYYMMDD-NN \
  *     -e UAT_LOOP_DB=<UAT database> -e UAT_LOOP_CUST_ID=<id> -e UAT_LOOP_GOOD_ID=<id> \
- *     -e UAT_LOOP_NET_PRICE=<per ton> -e UAT_LOOP_EMP_ID=<id> saleapp-uat-backend-1 node scripts/uat-full-loop.cjs
+ *     -e UAT_LOOP_NET_PRICE=<per ton> -e UAT_LOOP_EMP_ID=<sales employee> -e UAT_LOOP_APPROVER_EMP_ID=<different listed approver employee> \
+ *     saleapp-uat-backend-1 node scripts/uat-full-loop.cjs
  *
- * Phases, in order: prepare, I-booking, K-booking, I-104, K-104, I-116, K-116, I-107, K-107, audit, close.
+ * Phases: prepare, I-booking, K-booking, I-104, K-104, I-116, K-116, I-107, K-107, audit, giveaway-loans, close.
  * Before I-116, IT inserts the labelled scale record with docs/deploy/r740/sql/uat-simulated-scale-record.sql.
- * Run close only after everything passed: it disables the five test accounts and removes their passwords.
+ * Run close after completing or abandoning the run: it disables its test accounts and removes their passwords.
  *
  * Fixtures come from the environment: an existing customer with a default contact, a product packed in
  * 50 kg sacks with that net price on the delivery date (UAT_LOOP_DELIVERY_DATE, default 30 days ahead;
@@ -25,7 +26,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const {FZ8_DATABASE,fz8RuntimeEnabled,isInitialNativeUatTarget} = require('../services/initial-native-uat-target');
 
-const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-107', 'K-107', 'audit', 'close'];
+const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-107', 'K-107', 'audit', 'giveaway-loans', 'close'];
 const phase = process.env.UAT_LOOP_PHASE;
 const RUN = process.env.UAT_LOOP_RUN || '';
 const EXPECT_DB = process.env.UAT_LOOP_DB || '';
@@ -33,6 +34,7 @@ const CUST_ID = Number(process.env.UAT_LOOP_CUST_ID);
 const GOOD_ID = Number(process.env.UAT_LOOP_GOOD_ID);
 const NET_PRICE = Number(process.env.UAT_LOOP_NET_PRICE);
 const EMP_ID = Number(process.env.UAT_LOOP_EMP_ID);
+const APPROVER_EMP_ID = Number(process.env.UAT_LOOP_APPROVER_EMP_ID);
 const FINANCIAL_FIXTURE = process.env.UAT_LOOP_FINANCIAL_FIXTURE || '';
 
 function config() {
@@ -43,6 +45,8 @@ function config() {
   if (FINANCIAL_FIXTURE && (EXPECT_DB !== FZ8_DATABASE || !['full-discount', 'vat-excluded'].includes(FINANCIAL_FIXTURE)))
     throw Error('UAT_LOOP_FINANCIAL_FIXTURE_INVALID');
   if (![CUST_ID, GOOD_ID, NET_PRICE, EMP_ID].every(n => Number.isInteger(n) && n > 0)) throw Error('UAT_LOOP_FIXTURES_REQUIRED');
+  if (phase!=='close'&&(!Number.isSafeInteger(APPROVER_EMP_ID)||APPROVER_EMP_ID<=0||APPROVER_EMP_ID===EMP_ID))
+    throw Error('UAT_LOOP_DISTINCT_APPROVER_EMPLOYEE_REQUIRED');
 }
 
 // The runner stops here on a bad configuration, before db.js can open a pool.
@@ -131,7 +135,7 @@ async function loginAll() {
 }
 
 async function prepare() {
-  const roles = { sales: 'SALES', account: 'ACCOUNTING', warehouse: 'WAREHOUSE', warehouse2: 'WAREHOUSE', manager: 'MANAGER' };
+  const roles = { sales: 'SALES', sales2:'SALES', counter: 'COUNTER_SALES', account: 'ACCOUNTING', warehouse: 'WAREHOUSE', warehouse2: 'WAREHOUSE', manager: 'MANAGER' };
   if (!fixtures) {
     fixtures = { run: RUN, users: {} };
     for (const [key, role] of Object.entries(roles)) {
@@ -143,11 +147,14 @@ async function prepare() {
     prefix: param(db.sql.NVarChar(60), PREFIX + '%'),
   })).recordset;
   if (existing.length) {
-    check(existing.length === 5 && Object.entries(fixtures.users).every(([key, u]) =>
+    check(existing.length === Object.keys(roles).length && Object.keys(fixtures.users).length===Object.keys(roles).length && Object.entries(fixtures.users).every(([key, u]) =>
       existing.some(r => r.Username === u.username && r.Role === roles[key] && Number(r.Id) === Number(u.id))), 'EXISTING_FIXTURES_MATCH_OWN_RUN');
   } else {
     const emp = await query("SELECT COUNT(*) AS N FROM dbo.EMEmp WHERE EmpID=@emp AND EmpType='G' AND EmpStatus='1'", { emp: param(db.sql.Int, EMP_ID) });
     check(Number(emp.recordset[0].N) === 1, 'EXISTING_NATIVE_EMPLOYEE');
+    const approver=await query(`SELECT COUNT(*) AS N FROM dbo.EMEmp e JOIN wf.NativeApproverEmployee a ON a.EmpID=e.EmpID
+      WHERE e.EmpID=@emp AND e.EmpStatus='1' AND a.IsEnabled=1`,{emp:param(db.sql.Int,APPROVER_EMP_ID)});
+    check(Number(approver.recordset[0].N)===1,'DISTINCT_LISTED_AI_EMPLOYEE');
     const hashes = {};
     for (const [key, u] of Object.entries(fixtures.users)) hashes[key] = await bcrypt.hash(u.password, 12);
     await db.wfTransaction(async tx => {
@@ -160,13 +167,13 @@ async function prepare() {
           .input('h', db.sql.NVarChar(255), hashes[key])
           .input('d', db.sql.NVarChar(100), 'UAT loop ' + key)
           .input('r', db.sql.NVarChar(30), u.role)
-          .input('e', db.sql.NVarChar(20), String(EMP_ID))
+          .input('e', db.sql.NVarChar(20), key==='sales2'?null:String(key==='counter'?APPROVER_EMP_ID:EMP_ID))
           .query('INSERT INTO wf.AppUser(Username,PasswordHash,DisplayName,Role,EmpId,IsActive,MustChangePassword) OUTPUT inserted.Id VALUES(@u,@h,@d,@r,@e,1,0)');
         u.id = Number(r.recordset[0].Id);
       }
     });
     fs.writeFileSync(fixturePath, JSON.stringify(fixtures), { mode: 0o600 });
-    check(true, 'FIVE_ISOLATED_UAT_USERS_CREATED');
+    check(true, 'SEVEN_ISOLATED_UAT_USERS_CREATED');
   }
   await loginAll();
   const c = await call('GET', '/master/customers?q=' + CUST_ID + '&limit=50', undefined, 'sales');
@@ -259,19 +266,20 @@ async function booking(book, c) {
   c.bookingNo = rows[0].DocuNo;
   save();
   const route = '/so/' + c.soid + '/native-ai';
+  check((await call('GET',route+'/preview',undefined,'sales')).status===403,book+'_SALES_CANNOT_APPROVE_AI');
   if (!c.ai) {
-    const p = await call('GET', route + '/preview', undefined, 'sales');
+    const p = await call('GET', route + '/preview', undefined, 'counter');
     check(p.status === 200, book + '_AI_PREVIEW');
     c.aiCommand ||= { requestId: crypto.randomUUID(), fingerprint: p.data.fingerprint };
     save();
-    const r = await call('POST', route, c.aiCommand, 'sales');
+    const r = await call('POST', route, c.aiCommand, 'counter');
     if (r.status === 200) {
       c.ai = r.data;
       save();
     }
     check(r.status === 200 && !!r.data.approvalNo, book + '_AI_APPLIED');
   }
-  const replay = await call('POST', route, c.aiCommand, 'sales');
+  const replay = await call('POST', route, c.aiCommand, 'counter');
   check(replay.status === 200 && replay.data.replayed === true, book + '_AI_STABLE_REPLAY');
 }
 
@@ -303,10 +311,13 @@ async function concurrency(route, payload, key, label, c, field, idField) {
 async function delivery(book, c) {
   if (!c.soid) throw Error('BOOKING_REQUIRED');
   const route = '/so/' + c.soid + '/native-delivery';
-  let requester = 'sales';
+  check((await call('GET',route+'/preview',undefined,'sales')).status===403,book+'_SALES_CANNOT_ISSUE_104');
+  check((await call('POST',route+'/requests',{},'sales')).status===403,book+'_SALES_CANNOT_REQUEST_104');
+  check((await call('POST',route,{},'sales')).status===403,book+'_SALES_CANNOT_APPLY_104');
+  let requester = 'counter';
   if (book === 'K') {
-    const r = await call('POST', '/auth/access-as', { userId: fixtures.users.sales.id }, 'account');
-    check(r.status === 200 && r.data.user?.isImpersonating === true, 'K_ACCOUNT_REQUESTER_ACCESS_AS_SALES');
+    const r = await call('POST', '/auth/access-as', { userId: fixtures.users.counter.id }, 'account');
+    check(r.status === 200 && r.data.user?.isImpersonating === true, 'K_ACCOUNT_REQUESTER_ACCESS_AS_COUNTER');
     requester = r.data.accessToken;
   }
   try {
@@ -319,7 +330,7 @@ async function delivery(book, c) {
       const held = await call('POST', route, payload, requester);
       check(held.status === 409 && held.data.code === 'DO_CREDIT_APPROVAL_REQUIRED', book + '_104_HELD_FOR_CREDIT');
       const approve = route + '/requests/' + payload.requestId + '/approve';
-      for (const role of ['sales', 'manager', 'warehouse', 'warehouse2']) {
+      for (const role of ['sales', 'counter', 'manager', 'warehouse', 'warehouse2']) {
         check((await call('POST', approve, { ...payload, reason: RUN + ' credit test' }, role)).status === 403, book + '_CREDIT_DENY_' + role.toUpperCase());
       }
       const r = await call('POST', approve, { ...payload, reason: RUN + ' controlled UAT credit test' }, 'account');
@@ -337,8 +348,9 @@ async function delivery(book, c) {
 async function redemption(book, c) {
   if (!c.delivery) throw Error('DELIVERY_REQUIRED');
   const route = '/so/' + c.soid + '/native-redemption';
-  const creator = book === 'I' ? 'account' : 'warehouse2';
-  const approver = book === 'I' ? creator : 'manager';
+  const creator = book === 'I' ? 'sales' : 'warehouse2';
+  const recorder = book === 'I' ? 'warehouse' : 'warehouse2';
+  const approver = 'manager';
   const p = await call('GET', route + '/preview', undefined, creator);
   check(p.status === 200, book + '_116_PREVIEW');
   if (!c.manual && !c.manualApproval) {
@@ -354,10 +366,11 @@ async function redemption(book, c) {
     });
     save();
     check((await call('POST', route + '/requests', payload, creator)).status === 200, book + '_116_REQUEST');
-    const held = await call('POST', route, payload, creator);
+    check((await call('POST',route,payload,'sales')).status===403,book+'_SALES_CANNOT_RECORD_116');
+    const held = await call('POST', route, payload, recorder);
     check(held.status === 409 && held.data.code === 'MR_APPROVAL_REQUIRED', book + '_116_HELD_FOR_APPROVAL');
     const approve = route + '/requests/' + payload.requestId + '/approve';
-    for (const key of ['sales', 'warehouse', ...(book === 'K' ? ['account'] : [])]) {
+    for (const key of ['sales', 'counter', 'warehouse', 'account']) {
       check((await call('POST', approve, payload, key)).status === 403, book + '_116_CROSS_APPROVAL_DENY_' + key.toUpperCase());
     }
     if (book === 'K') {
@@ -365,11 +378,11 @@ async function redemption(book, c) {
       check(s2.status === 403 && s2.data.code === 'MR_EXCEPTION_APPROVER_REQUIRED', book + '_116_EXCEPTION_SELF_APPROVAL_DENIED');
     }
     const r = await call('POST', approve, payload, approver);
-    check(r.status === 200 && r.data.selfApproval === (book === 'I'), book + '_116_' + (book === 'I' ? 'ACCOUNTING_SELF_APPROVAL' : 'MANAGER_APPROVAL'));
+    check(r.status === 200 && r.data.selfApproval === false, book + '_116_MANAGER_APPROVAL');
     c.manualApproval = r.data;
     save();
   }
-  await concurrency(route, c.manualCommand, creator, book + '_116', c, 'manual', 'redemptionId');
+  await concurrency(route, c.manualCommand, recorder, book + '_116', c, 'manual', 'redemptionId');
   check(c.manual.evidenceMode === 'UAT_SIMULATION' && c.manual.physicalShipmentVerified === false, book + '_116_SIMULATION_ONLY');
   if (creator === 'account') check((await call('PATCH', '/so/' + c.soid + '/ship', {}, creator)).status === 403, book + '_ACCOUNTING_CANNOT_PHYSICALLY_SHIP');
   const held = await call('PATCH', '/so/' + c.soid + '/ship', {}, 'warehouse2');
@@ -422,11 +435,12 @@ async function invoice(book, c) {
 async function close() {
   if (!fixtures || fixtures.run !== RUN) throw Error('FIXTURE_SCOPE_REQUIRED');
   const ids = Object.values(fixtures.users).map(u => Number(u.id));
-  if (ids.length !== 5 || ids.some(id => !Number.isSafeInteger(id) || id < 1)) throw Error('FIXTURE_IDS_INVALID');
+  if (![5,6,7].includes(ids.length) || new Set(ids).size!==ids.length || ids.some(id => !Number.isSafeInteger(id) || id < 1)
+    || Object.entries(fixtures.users).some(([key,u])=>u.username!==PREFIX+key)) throw Error('FIXTURE_IDS_INVALID');
   const r = await query('UPDATE wf.AppUser SET IsActive=0 WHERE Username LIKE @prefix AND Id IN(' + ids.join(',') + '); SELECT @@ROWCOUNT AS N', {
     prefix: param(db.sql.NVarChar(60), PREFIX + '%'),
   });
-  check(Number(r.recordset[0].N) === 5, 'FIVE_OWNED_TEST_USERS_DISABLED');
+  check(Number(r.recordset[0].N) === ids.length, 'OWNED_TEST_USERS_DISABLED');
   for (const [key, u] of Object.entries(fixtures.users)) {
     const denied = await call('POST', '/auth/login', { username: u.username, password: u.password });
     check([401, 403].includes(denied.status) && !denied.data.accessToken, 'DISABLED_LOGIN_' + key.toUpperCase());
@@ -456,7 +470,7 @@ async function auditChain(book, c) {
     mr.SlipNo,mr.SlipSource,mr.ExceptionRequired,
     (SELECT COUNT(*) FROM wf.NativeDocumentApproval na
       WHERE na.DocuType=116 AND na.NativeDocID=cut.RedemtionID AND na.NativeDocNo=cut.DocuNo AND na.RequestId=m.RequestId
-        AND na.RecorderUserId=mr.RequestedById AND na.RecorderActorId=mr.RequesterActorId
+        AND na.RecorderUserId=m.AppliedById AND na.RecorderActorId=m.ApplierActorId
         AND na.ApproverUserId=mr.ApprovedById AND na.ApproverActorId=mr.ApproverActorId
         AND na.RecorderEmpID=@emp AND na.ApproverEmpID=@emp AND na.SelfApproval=mr.SelfApproval) AS WfApprovals,
     (SELECT COUNT(*) FROM dbo.ICStockDetail WHERE DocuID=i.SOInvID AND DocuType=107 AND StockFlag=-1 AND GoodQty2=1) AS StockRows,
@@ -485,7 +499,7 @@ async function auditChain(book, c) {
   check(Number(a.CouponRemaining) === 0 && Number(a.DeliveryRemaining) === 0 && Number(a.RedemptionRemaining) === 0 && a.RedemptionStatus === 'Y' && a.PostInv === 'Y', book + '_SQL_CONSUMPTION_COMPLETE');
   check(Number(a.FinanceAmount) === NET_PRICE && Number(a.InvoiceAmount) === NET_PRICE && a.FinanceCoupon === 'Y' && a.InvoiceCoupon === 'Y' && a.FinanceStock === 'N' && a.InvoiceStock === 'Y', book + '_SQL_202_107_CONTRACT_AR_REPORT_UNVERIFIED');
   check(Number(a.StockRows) === 1 && Number(a.NativeAudits) === 2 && Number(a.AppAudits) === 3, book + '_SQL_STOCK_AND_AUDIT_CARDINALITY');
-  check(Boolean(a.SelfApproval) === (book === 'I') && (Number(a.RequesterActorId) === Number(a.ApproverActorId)) === (book === 'I'), book + '_SQL_116_ACTUAL_ACTOR_APPROVAL');
+  check(Boolean(a.SelfApproval) === false && Number(a.RequesterActorId)!==Number(a.ApproverActorId), book + '_SQL_116_ACTUAL_ACTOR_APPROVAL');
   check(Number(a.SaveEmpID) === EMP_ID && a.AppvEmpID == null && Number(a.WfApprovals) === 1, book + '_SQL_116_RECORDER_SAVEEMP_AND_WF_APPROVER');
   check(a.CutNo === slipFor(c) && a.SlipNo === a.CutNo && c.manual.redemptionNo === a.CutNo && a.CutPlate === 'UAT2-R740-' + book
     && a.SlipSource === (book === 'I' ? 'SCALE' : 'MANUAL') && Boolean(a.ExceptionRequired) === (book === 'K'), book + '_SQL_116_NUMBER_IS_TRANSPORT_SLIP');
@@ -534,11 +548,61 @@ async function audit() {
   check((await call('GET', '/reports/native-print-log', undefined, 'sales')).status === 403, 'REPORT_PRINT_LOG_DENY_SALES');
 }
 
+async function giveawayLoans(){
+  if(!fixtures.users.sales2)throw Error('NEW_RUN_WITH_TWO_SALES_REQUIRED');
+  const c=state.giveaway||(state.giveaway={});
+  if(!c.good){
+    const good=(await query(`SELECT TOP 1 GoodID FROM dbo.EMGood WHERE GoodGroupID=1005 ORDER BY GoodID`)).recordset[0];
+    check(!!good,'GIVEAWAY_MASTER_GOOD_AVAILABLE');c.good=String(good.GoodID);save();
+  }
+  const database=EXPECT_DB,year=new Date(Date.now()+7*3600000).getUTCFullYear()+543;
+  for(const [key,quantity,actor] of [['borrower',20,'sales'],['lender',100,'sales2']]){
+    if(c[key])continue;
+    const r=await call('POST','/giveaway/budgets',{region:RUN,periodYear:year,salesUserId:fixtures.users[actor].id,
+      goodId:c.good,budgetQty:quantity,reason:RUN+' quota rehearsal'},'manager');
+    check(r.status===200&&Number.isSafeInteger(r.data.id),'GIVEAWAY_CREATE_'+key.toUpperCase());c[key]=r.data.id;save();
+  }
+  c.requestCommand||={requestId:crypto.randomUUID(),expectedDatabase:database,lenderBudgetId:c.lender,
+    borrowerBudgetId:c.borrower,quantity:'10.00',reason:RUN+' same region loan'};save();
+  const route='/giveaway/quota-loans';
+  check((await call('POST',route+'/requests',{...c.requestCommand,requestId:crypto.randomUUID()},'sales2')).status===403,'GIVEAWAY_OTHER_SALES_CANNOT_BORROW_INTO_THIS_BUDGET');
+  if(!c.loan){
+    const replies=await Promise.all([call('POST',route+'/requests',c.requestCommand,'sales'),call('POST',route+'/requests',c.requestCommand,'sales')]);
+    check(replies.every(r=>r.status===200)&&new Set(replies.map(r=>r.data.Id)).size===1
+      &&replies.map(r=>r.data.replayed).sort().join(',')==='false,true','GIVEAWAY_REQUEST_ONE_CREATE_ONE_REPLAY');
+    c.loan=replies[0].data.Id;save();
+  }
+  if(!c.approved){
+    const payload={expectedDatabase:database,revision:1,action:'approve',reason:RUN+' lender decision'};
+    check((await call('POST',route+'/'+c.loan+'/decision',payload,'sales')).status===403,'GIVEAWAY_BORROWER_CANNOT_APPROVE_FOR_LENDER');
+    const replies=await Promise.all([call('POST',route+'/'+c.loan+'/decision',payload,'sales2'),call('POST',route+'/'+c.loan+'/decision',payload,'sales2')]);
+    check(replies.filter(r=>r.status===200).length===1&&replies.filter(r=>r.status===409&&r.data.code==='QUOTA_LOAN_STALE').length===1,'GIVEAWAY_APPROVE_ONCE');
+    c.approved=true;save();
+  }
+  for(const qty of ['4.00','6.00']){
+    if(c['returned'+qty])continue;
+    c['returnKey'+qty]||=crypto.randomUUID();save();
+    const payload={expectedDatabase:database,requestId:c['returnKey'+qty],quantity:qty,reason:RUN+' repayment'};
+    const replies=await Promise.all([call('POST',route+'/'+c.loan+'/repay',payload,'sales'),call('POST',route+'/'+c.loan+'/repay',payload,'sales')]);
+    check(replies.every(r=>r.status===200)&&replies.map(r=>r.data.replayed).sort().join(',')==='false,true','GIVEAWAY_RETURN_ONCE_'+qty.replace('.','_'));
+    c['returned'+qty]=true;save();
+  }
+  const result=(await query(`SELECT l.Status,l.Quantity,l.ReturnedQty,a.BudgetQty AS LenderBudget,b.BudgetQty AS BorrowerBudget,
+    (SELECT COUNT(*) FROM wf.GiveawayQuotaRepayment p WHERE p.LoanId=l.Id) AS Repayments,
+    (SELECT COUNT(*) FROM wf.ChangeEvent e WHERE e.EntityType='GIVEAWAY_QUOTA_LOAN' AND e.EntityId=CONVERT(varchar(50),l.Id)) AS Audits
+    FROM wf.GiveawayQuotaLoan l JOIN wf.GiveawayBudget a ON a.Id=l.LenderBudgetId JOIN wf.GiveawayBudget b ON b.Id=l.BorrowerBudgetId
+    WHERE l.Id=@id AND l.RequestId=@request`,{id:param(db.sql.Int,c.loan),request:param(db.sql.VarChar(36),c.requestCommand.requestId)})).recordset[0];
+  check(result?.Status==='RETURNED'&&Number(result.Quantity)===10&&Number(result.ReturnedQty)===10
+    &&Number(result.LenderBudget)===100&&Number(result.BorrowerBudget)===20&&Number(result.Repayments)===2&&Number(result.Audits)===4,
+    'GIVEAWAY_SQL_BALANCES_AND_AUDIT');
+}
+
 async function main() {
   await target();
   if (phase === 'prepare') return prepare();
   if (phase === 'close') return close();
   await loginAll();
+  if (phase === 'giveaway-loans') return giveawayLoans();
   if (phase === 'audit') return audit();
   const [book, step] = phase.split('-');
   const c = state.cases[book] || (state.cases[book] = { book });

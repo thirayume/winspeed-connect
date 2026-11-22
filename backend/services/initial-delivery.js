@@ -1,13 +1,14 @@
 'use strict';
 const {hasPermission}=require('./role-capabilities');
-const {businessIds}=require('./business-identity');
+const {businessIds,actorPerspective}=require('./business-identity');
+const {nativeOwnerInScope}=require('./native-document-scope');
 // Restricted UAT simulation: full single-line whole-bag 104, numbered
 // C/D and202 receivable, with explicit Account credit approval. No116/107/GL.
 const { createHash } = require('crypto');
 const { sql, wfTransaction } = require('../db');
 const { nativeFingerprint } = require('./initial-booking-ai');
-const { getVisibleScope, inScope } = require('./visible-scope');
-const { rolesFor, roleRank, ACCESS_AS_ACTOR_ROLES } = require('./role-capabilities');
+const { getVisibleScope, scopeFilter } = require('./visible-scope');
+const { roleRank } = require('./role-capabilities');
 const { bookOf, couponSeriesForBill } = require('./account-books');
 const { isInitialNativeUatTarget } = require('./initial-native-uat-target');
 const { readApprovedSalesVat } = require('./native-sales-vat-approval');
@@ -32,8 +33,8 @@ async function identity(q, user, approval = false) {
  const current = rows.find(r => Number(r.Id) === effective), real = rows.find(r => Number(r.Id) === actor);
  if (![current,real].every(r => r && (r.IsActive === true || r.IsActive === 1) && !r.MustChangePassword)) fail('DO_ACTOR_UNAVAILABLE',403);
  if (current.Role !== user.role || real.Role !== (user.actorRole || user.role)) fail('DO_ROLE_CHANGED',403);
- if (!hasPermission(user,approval ? 'credit.approve-native' : 'so.create-native-delivery')) fail('DO_ROLE_FORBIDDEN',403);
  if (actor !== effective && (!hasPermission({role:real.Role,roles:user.actorRoles,permissions:user.actorPermissions},'access-as') || roleRank(real.Role) < roleRank(current.Role))) fail('DO_ACCESS_AS_FORBIDDEN',403);
+ if (![user,actorPerspective(user)].every(u=>hasPermission(u,approval ? 'credit.approve-native' : 'so.create-native-delivery'))) fail('DO_ROLE_FORBIDDEN',403);
  return { effective, actor };
 }
 async function target(q) {
@@ -83,7 +84,7 @@ async function context(q,soid,user) {
   CONVERT(bit,CASE WHEN h.VatAmnt>0 THEN 1 ELSE 0 END) AS HasPositiveVat
   FROM dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) LEFT JOIN wf.SalesOrderExt e WITH(UPDLOCK,HOLDLOCK) ON e.SOID=CONVERT(VARCHAR(50),h.SOID)
   WHERE h.SOID=@soid AND h.DocuType=103`,idInputs(soid))).recordset?.[0];
- if(!row || !inScope(await getVisibleScope(user,q),{userId:row.SalesUserId,empId:row.EmpID})) fail('DO_SOURCE_NOT_FOUND',404);
+ if(!await nativeOwnerInScope(user,row,q)) fail('DO_SOURCE_NOT_FOUND',404);
  if(!/^[IK]\d{2}-\d{5}$/.test(String(row.DocuNo||'')))fail('DO_ACCOUNT_MISMATCH');
  return row;
 }
@@ -181,10 +182,17 @@ async function initialDelivery({operation='preview',soid,user,requestId,fingerpr
   const lock=(await q(`DECLARE @r INT; EXEC @r=sp_getapplock @Resource='WF_INITIAL_DELIVERY_104',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=5000; SELECT @r AS LockResult`)).recordset?.[0]?.LockResult;
   if(!Number.isInteger(lock)||lock<0) fail('DO_BUSY');
   if(operation==='list') {
+   const inputs={},filters=[];
+   for(const [i,perspective] of [user,actorPerspective(user)].entries()){
+    const filter=scopeFilter(await getVisibleScope(perspective,q),{userCol:'e.SalesUserId',empCol:'h.EmpID',prefix:`creditOwner${i}`});
+    filters.push(filter.sql);Object.assign(inputs,filter.inputs);
+   }
    return (await q(`SELECT TOP 50 r.SOID AS soid,r.RequestId AS requestId,r.Fingerprint AS fingerprint,
     CONVERT(VARCHAR(40),r.Amount) AS amount,r.RequestedAt AS requestedAt,h.DocuNo AS docuNo,h.AppvDocuNo AS aiNo
     FROM wf.NativeDeliveryRequest r JOIN dbo.SOHD h ON h.SOID=r.SOID AND h.DocuType=103
-    WHERE r.Status='PENDING' AND r.PolicyVersion='O25-DO104-COMPLETE-UAT2-v2' ORDER BY r.Id`)).recordset||[];
+    LEFT JOIN wf.SalesOrderExt e ON e.SOID=CONVERT(varchar(50),h.SOID)
+    WHERE r.Status='PENDING' AND r.PolicyVersion='O25-DO104-COMPLETE-UAT2-v2'
+     AND ${filters.map(s=>`(${s})`).join(' AND ')} ORDER BY r.Id`,inputs)).recordset||[];
   }
   soid=Number(soid);const row=await context(q,soid,user);
   const old=(await q('SELECT * FROM wf.NativeDeliveryReceipt WITH(UPDLOCK,HOLDLOCK) WHERE SourceSOID=@soid',idInputs(soid))).recordset?.[0];

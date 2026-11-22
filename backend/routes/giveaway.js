@@ -204,6 +204,7 @@ async function loadOrgRoster(scope) {
 }
 
 router.use(requireAuth);
+router.use('/quota-loans', require('./giveaway-quota-loans'));
 
 // R12 item 8: ยืมได้สูงสุดกี่ % ของโควต้าคงเหลือของผู้ให้ยืม (wf.SystemSetting, ค่าเริ่มต้น 100)
 async function borrowMaxPct(queryFn = wfQuery) {
@@ -800,6 +801,9 @@ router.put('/budgets/:id', requireCapability('giveaway.budget'), async (req, res
     }
 
     const hasExt = await hasExtendedBudgetSchema();
+    await require('../services/giveaway-quota-loans').protectLoanBudget(
+      (text,inputs)=>budgetTxQuery(tx,text,require('../services/rebate-sql').normalizeInputs(sql,inputs)),
+      id,current,{SalesUserId:effSalesUserId,GoodId:effGoodId});
     const targetWhere = hasExt && effGoodId
       ? `Region=@rg AND PeriodYear=@y AND ISNULL(SalesUserId,0)=ISNULL(@su,0) AND (GoodId=@gid OR (GoodId IS NULL AND Brand=@br AND ItemName=@it))`
       : `Region=@rg AND PeriodYear=@y AND ${hasExt ? 'ISNULL(SalesUserId,0)=ISNULL(@su,0) AND ' : ''}Brand=@br AND ItemName=@it`;
@@ -877,6 +881,8 @@ router.delete('/budgets/:id', requireCapability('giveaway.budget'), async (req, 
     if (!current) throw budgetConflict();
     requireBudgetEditToken(current, req.body?.expectedToken);
 
+    await require('../services/giveaway-quota-loans').protectLoanBudget(
+      (text,inputs)=>budgetTxQuery(tx,text,require('../services/rebate-sql').normalizeInputs(sql,inputs)),id,current,null);
     if (Number(current.WithdrawnQty || 0) > 0 && !force) {
       return { conflict: {
         message: `รายการ "${current.GoodName || current.ItemName}" มียอดเบิกแล้ว ${Number(current.WithdrawnQty).toLocaleString()} ชิ้น กรุณายืนยันอีกครั้งหากต้องการลบ`,

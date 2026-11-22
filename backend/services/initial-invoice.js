@@ -1,13 +1,13 @@
 'use strict';
 const {hasPermission}=require('./role-capabilities');
-const {businessIds}=require('./business-identity');
+const {businessIds,actorPerspective}=require('./business-identity');
+const {nativeOwnerInScope}=require('./native-document-scope');
 const {isInitialNativeUatTarget}=require('./initial-native-uat-target');
 const {readApprovedSalesVat}=require('./native-sales-vat-approval');
 // Restricted UAT simulation for one full single-line coupon.
 const {createHash}=require('crypto');
 const {sql,wfTransaction}=require('../db');
-const {getVisibleScope,inScope}=require('./visible-scope');
-const {ACCESS_AS_ACTOR_ROLES,roleRank}=require('./role-capabilities');
+const {roleRank}=require('./role-capabilities');
 const {verifyReceipt,verifyDeliveryAccount,deliverySnapshot}=require('./initial-delivery');
 const {verifyCompleted,redemptionSnapshot,redemptionHash}=require('./initial-manual-redemption');
 const {verifyInvoiceMetadata}=require('./initial-invoice-metadata');
@@ -30,15 +30,15 @@ async function identity(q,user){
  const me=rows.find(r=>Number(r.Id)===effective),real=rows.find(r=>Number(r.Id)===actor);
  if(![me,real].every(r=>r&&(r.IsActive===true||r.IsActive===1)&&!r.MustChangePassword))fail('IP_ACTOR_UNAVAILABLE',403);
  if(me.Role!==user.role||real.Role!==(user.actorRole||user.role))fail('IP_ROLE_CHANGED',403);
- if(!hasPermission(user,'invoice.post-native'))fail('IP_ACCOUNT_REQUIRED',403);
  if(actor!==effective&&(!hasPermission({role:real.Role,roles:user.actorRoles,permissions:user.actorPermissions},'access-as')||roleRank(real.Role)<roleRank(me.Role)))fail('IP_ACCESS_AS_FORBIDDEN',403);
+ if(![user,actorPerspective(user)].every(u=>hasPermission(u,'invoice.post-native')))fail('IP_ACCOUNT_REQUIRED',403);
  return {effective,actor};
 }
 async function context(q,source,user){
  const parent=(await q(`SELECT r.*,h.DocuNo AS SourceNo,h.EmpID,e.SalesUserId FROM wf.NativeDeliveryReceipt r WITH(UPDLOCK,HOLDLOCK)
   JOIN dbo.SOHD h WITH(UPDLOCK,HOLDLOCK) ON h.SOID=r.SourceSOID AND h.DocuType=103 AND h.BrchID=1
   LEFT JOIN wf.SalesOrderExt e ON e.SOID=CONVERT(varchar(50),h.SOID) WHERE r.SourceSOID=@source`,sourceInputs(source))).recordset?.[0];
- if(!parent||!inScope(await getVisibleScope(user,q),{userId:parent.SalesUserId,empId:parent.EmpID}))fail('IP_SOURCE_NOT_FOUND',404);
+ if(!await nativeOwnerInScope(user,parent,q))fail('IP_SOURCE_NOT_FOUND',404);
  try{await verifyDeliveryAccount(q,parent.SourceNo,parent);await verifyReceipt(q,parent);}catch{fail('IP_DELIVERY_DIVERGED');}
  const manual=(await q('SELECT * FROM wf.NativeManualRedemptionReceipt WITH(UPDLOCK,HOLDLOCK) WHERE SourceSOID=@source',sourceInputs(source))).recordset?.[0];
  if(!manual||Number(manual.DeliverySOID)!==Number(parent.DeliverySOID)||Number(manual.CouponID)!==Number(parent.CouponID))fail('IP_MANUAL_116_REQUIRED');

@@ -1,5 +1,24 @@
 import { test, expect } from '@playwright/test';
 
+test('legacy history loads only on request and preserves old claims without offering new legacy claims',async({page})=>{
+ const requests:string[]=[];
+ await page.route('**/api/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  const headers={'access-control-allow-origin':'*','access-control-allow-headers':'*'};
+  if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
+  requests.push(path);
+  return route.fulfill({headers,json:path.endsWith('/rebate/claims')?[{Id:1,Status:'APPROVED',ClaimAmt:100,CreatedAt:'2026-11-22',CustName:'Fixture'}]:[]});
+ });
+ await page.goto('/tests/rebate-feature-gate.html');
+ await expect(page.getByText('Rebate Pool ยังไม่เปิดใช้งานในระบบนี้',{exact:true})).toBeVisible();
+ expect(requests.filter(p=>p.includes('/rebate/'))).toEqual([]);
+ await page.getByRole('button',{name:'ประวัติและคำขอเดิม',exact:true}).click();
+ await expect(page.getByText('อนุมัติแล้ว',{exact:true})).toBeVisible();
+ await expect(page.getByTestId('open-customer-claim-button')).toHaveCount(0);
+ await expect(page.getByTestId('open-claim-dialog-button')).toHaveCount(0);
+ expect(requests.filter(p=>p.includes('/rebate-pool/'))).toEqual([]);
+});
+
 test('Pool screens do not request Pool APIs until the server feature is present', async ({ page }) => {
   const requests: string[] = [];
   await page.route('**/api/**', async route => {

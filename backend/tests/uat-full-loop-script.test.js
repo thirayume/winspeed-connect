@@ -15,7 +15,7 @@ const { spawnSync } = require('node:child_process');
 const script = path.join(__dirname, '..', 'scripts', 'uat-full-loop.cjs');
 const good = {
   UAT_LOOP_PHASE: 'prepare', UAT_LOOP_RUN: 'CI-CONFIG-CHECK', UAT_LOOP_DB: 'some_db_uat',
-  UAT_LOOP_CUST_ID: '1', UAT_LOOP_GOOD_ID: '2', UAT_LOOP_NET_PRICE: '3', UAT_LOOP_EMP_ID: '4',
+  UAT_LOOP_CUST_ID: '1', UAT_LOOP_GOOD_ID: '2', UAT_LOOP_NET_PRICE: '3', UAT_LOOP_EMP_ID: '4', UAT_LOOP_APPROVER_EMP_ID:'5',
 };
 
 function run(overrides) {
@@ -31,6 +31,8 @@ test('refuses a bad configuration before it can reach a database', () => {
     [{ UAT_LOOP_DB: 'dbwins_worldfert2' }, 'UAT_LOOP_DB_NOT_UAT'],
     [{ UAT_LOOP_CUST_ID: '' }, 'UAT_LOOP_FIXTURES_REQUIRED'],
     [{ UAT_LOOP_EMP_ID: 'abc' }, 'UAT_LOOP_FIXTURES_REQUIRED'],
+    [{ UAT_LOOP_APPROVER_EMP_ID:'4' }, 'UAT_LOOP_DISTINCT_APPROVER_EMPLOYEE_REQUIRED'],
+    [{ UAT_LOOP_APPROVER_EMP_ID:'' }, 'UAT_LOOP_DISTINCT_APPROVER_EMPLOYEE_REQUIRED'],
   ];
   for (const [overrides, code] of cases) {
     const r = run(overrides);

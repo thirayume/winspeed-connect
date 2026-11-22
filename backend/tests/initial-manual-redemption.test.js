@@ -65,6 +65,30 @@ function fixture(overrides={}){
 }
 async function request(f,user=wh){const p=await f.call('preview',{user});const command={user,requestId:key,fingerprint:p.fingerprint,reason:'UAT simulation without a physical scale',receiver:'UAT2 TEST',plate:'UAT2-TEST',slipNo:'9900777'};await f.call('request',command);return command;}
 async function approved(f,user=wh,approver=wh){const c=await request(f,user);await f.call('approve',{...c,user:approver});return c;}
+
+test('SALES requests its own bill without a recorder mapping; management approves and Warehouse records the cut',async()=>{
+ const f=fixture(),sales={sub:55,role:'SALES'};
+ f.state.accounts.push({Id:55,Role:'SALES',IsActive:1,MustChangePassword:0,EmpId:null});
+ f.state.parent.SalesUserId=55;
+ const preview=await f.call('preview',{user:sales});assert.equal(preview.canCreate,true);assert.equal(preview.canApply,false);
+ const c=await request(f,sales);
+ await assert.rejects(f.call('approve',c),{code:'MR_ROLE_FORBIDDEN'});
+ await assert.rejects(f.call('apply',c),{code:'MR_ROLE_FORBIDDEN'});
+ await f.call('approve',{...c,user:manager});await f.call('apply',{...c,user:wh});
+ assert.equal(f.state.request.RequestedById,55);assert.equal(f.state.receipt.AppliedById,11);assert.equal(f.state.applied,true);
+ const proof=f.calls.find(c=>/SELECT d.RedemtionID/.test(c.text));
+ assert.match(proof.text,/ru.Id=@recorder/);assert.match(proof.text,/na.RecorderActorId=@recorderActor/);
+ assert.equal(proof.p.recorder.value,11);assert.equal(proof.p.recorderActor.value,11);
+ assert.doesNotMatch(proof.text,/ru.Id=rr.RequestedById|na.RecorderUserId=rr.RequestedById/);
+});
+
+test('SALES cannot request a native cut for another salesperson\'s bill',async()=>{
+ const f=fixture(),sales={sub:55,role:'SALES'};
+ f.state.accounts.push({Id:55,Role:'SALES',IsActive:1,MustChangePassword:0,EmpId:null});
+ f.state.parent.SalesUserId=77;f.state.parent.EmpID='1077';
+ await assert.rejects(f.call('preview',{user:sales}),{code:'MR_SOURCE_NOT_FOUND'});
+ assert.equal(f.state.request,null);assert.equal(f.state.applied,false);
+});
 test('manual116 is closed by default and refuses invalid IDs and simulation details',async()=>{
  await assert.rejects(service({soid:501},{enabled:false}),{code:'MR_NOT_ENABLED'});
  const f=fixture();await assert.rejects(f.call('preview',{soid:'1;DROP'}),{code:'MR_SOURCE_INVALID'});
@@ -106,12 +130,12 @@ test('revoked users, roles, mappings and a non-UAT target cannot reach native ap
  const f=fixture();const c=await approved(f);f.state.accounts[0].IsActive=0;await assert.rejects(f.call('apply',c),{code:'MR_ACTOR_UNAVAILABLE'});
  const x=fixture({missingEmp:'1044'});const r=await request(x);await assert.rejects(x.call('approve',{...r,user:manager}),{code:'MR_APPROVER_MAPPING_REQUIRED'});
  const p=fixture({dbName:'dbwins_worldfert9'});await assert.rejects(p.call('preview'),{code:'MR_TARGET_NOT_SUPPORTED'});
- const m=fixture();await assert.rejects(m.call('request',{user:manager,requestId:key,fingerprint:'a'.repeat(64),reason:'UAT simulation only',receiver:'UAT2 TEST',plate:'UAT2-1'}),{code:'MR_ROLE_FORBIDDEN'});
+ const m=fixture();await assert.rejects(m.call('request',{user:manager,requestId:key,fingerprint:'a'.repeat(64),reason:'UAT simulation only',receiver:'UAT2 TEST',plate:'UAT2-1'}),{code:'MR_PREVIEW_STALE'});
 });
-test('the requester must map to an employee, who becomes the native recorder',async()=>{
+test('a request may have no employee, but the person recording the native cut must have one',async()=>{
  const f=fixture({missingEmp:'1011'});const p=await f.call('preview');
- await assert.rejects(f.call('request',{requestId:key,fingerprint:p.fingerprint,reason:'UAT simulation without a physical scale',receiver:'UAT2 TEST',plate:'UAT2-TEST'}),{code:'MR_RECORDER_MAPPING_REQUIRED'});
- assert.equal(f.state.request,null);
+ await f.call('request',{requestId:key,fingerprint:p.fingerprint,reason:'UAT simulation without a physical scale',receiver:'UAT2 TEST',plate:'UAT2-TEST'});
+ assert.equal(f.state.request.Status,'PENDING');
  const g=fixture();const c=await approved(g,wh,manager);g.state.missingEmp='1011';
  await assert.rejects(g.call('apply',c),{code:'MR_RECORDER_MAPPING_REQUIRED'});assert.equal(g.state.applied,false);
 });

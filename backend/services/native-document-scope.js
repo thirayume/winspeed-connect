@@ -1,7 +1,19 @@
 'use strict';
 
 const { sql, wfQuery } = require('../db');
-const { inScope } = require('./visible-scope');
+const { inScope, getVisibleScope } = require('./visible-scope');
+const { actorPerspective } = require('./business-identity');
+
+// A privileged effective identity does not widen the real operator's org scope.
+async function nativeOwnerInScope(user, row, queryFn = wfQuery) {
+  if (!row) return false;
+  for (const perspective of [user, actorPerspective(user)]) {
+    if (!inScope(await getVisibleScope(perspective, queryFn), {
+      userId: row.SalesUserId, empId: row.EmpID,
+    })) return false;
+  }
+  return true;
+}
 
 // Authorize every source, including the lines of a combined invoice/redemption.
 // A visible root alone does not authorize another salesperson's linked document.
@@ -68,4 +80,4 @@ async function nativeChainInScope(scope, result, queryFn = wfQuery) {
   return seen.size === expected.size;
 }
 
-module.exports = { nativeChainInScope };
+module.exports = { nativeChainInScope, nativeOwnerInScope };

@@ -6,9 +6,13 @@ const REVIEWERS=Object.freeze(['MANAGER','C_LEVEL','ADMIN']);
 const any=(role,allowed)=>(Array.isArray(role)?role:[role]).some(r=>allowed.includes(r));
 // Owner, 21 Nov 2026: ADMIN, the highest role, may request, approve its own request (an exception included) and apply.
 function mayCreate(role){return any(role,CREATORS)||any(role,['ADMIN']);}
+// Requesting a cut never grants the ability to record a native 116.
+const REQUESTERS=Object.freeze(['SALES','COUNTER_SALES','WAREHOUSE','ACCOUNTING','MANAGER','C_LEVEL','ADMIN']);
+function mayRequest(role){return any(role,[...REQUESTERS,'APPROVER']);}
+function mayApply(role){return any(role,['COUNTER_SALES','APPROVER','WAREHOUSE','ACCOUNTING','MANAGER','C_LEVEL','ADMIN']);}
 function decision({role,actorId,requesterActorId}){
  const self=Number.isSafeInteger(actorId)&&actorId>0&&actorId===requesterActorId;
  return {allowed:any(role,REVIEWERS)||(self&&any(role,CREATORS)),selfApproval:self};
 }
 const mayApproveOwnException=role=>any(role,['ADMIN']);
-module.exports={CREATORS,REVIEWERS,mayCreate,decision,mayApproveOwnException};
+module.exports={CREATORS,REVIEWERS,REQUESTERS,mayCreate,mayRequest,mayApply,decision,mayApproveOwnException};
