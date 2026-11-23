@@ -25,6 +25,15 @@ the corrected official principal script recovered app/migrator access and proves
 zero UAT-login access to either PROD database. This is UAT prerequisite recovery,
 not a report deployment or native-writer activation. The report release and this
 correction must pass CI and the staged UAT→PROD gates together.
+The subsequent copied native approval refresh exposed a second prerequisite bug:
+the release template's `$script:tx` addresses the wrapper scope when invoked in a
+child ScriptBlock. SqlClient commands therefore lacked the pending transaction.
+Use the template's local `$tx`; no native SQL/guard or migration is changed.
+Real SqlClient negative/positive controls reproduce the old failure and corrected
+binding. The complete 49-fingerprint plan also passes inside the corrected nested
+transaction with apply forced false and rollback. A large-stdin/WSL transport attempt
+timed out; the bounded file-based proof passed and its owned temporary files were
+removed. This proof does not claim native activation succeeded on the running UAT.
 
 | Candidate scope | Implemented behavior | Acceptance boundary |
 | --- | --- | --- |

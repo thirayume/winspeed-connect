@@ -145,6 +145,11 @@ The correction accepts the reviewed body with CREATE/ALTER or the isolated UAT
 execution identity only; changed statements and appended text remain rejected.
 Rehearse this SQL check on the actual restored catalog before relying on nightly
 refresh. Do not edit immutable migration 277 or weaken the body allowlist.
+The release template must also bind commands to its local transaction (`$tx`).
+Nightly refresh invokes it in a child ScriptBlock; `$script:tx` resolves to the
+wrapper file and leaves commands unbound. A real SqlClient negative control
+reproduced the old failure; the corrected full 49-fingerprint plan passes inside
+the nested transaction and rolls back without writes.
 
 Use the official wrapper from the developer PC after the authorized deployment
 has installed the same reviewed commit and migration 277. Keep affected writers

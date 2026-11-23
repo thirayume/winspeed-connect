@@ -17,7 +17,9 @@ function Hash([string]$s){
  try{return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($s.Replace("`r`n","`n"))))).Replace('-','').ToLower()}finally{$sha.Dispose()}
 }
 function Command([string]$text,$values=@{}){
- $q=$connection.CreateCommand();$q.CommandTimeout=30;if($script:tx){$q.Transaction=$script:tx};$q.CommandText=$text
+ # The restore wrapper invokes this template in a child ScriptBlock. Use its
+ # transaction scope; $script:tx refers to the wrapper file and can be empty.
+ $q=$connection.CreateCommand();$q.CommandTimeout=30;if($tx){$q.Transaction=$tx};$q.CommandText=$text
  foreach($key in $values.Keys){[void]$q.Parameters.AddWithValue('@'+$key,$values[$key])};return $q
 }
 function Rows([string]$text,$values=@{}){
