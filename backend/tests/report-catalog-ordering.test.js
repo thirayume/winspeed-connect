@@ -5,6 +5,34 @@ const assert = require('node:assert/strict');
 const reports = require('../routes/reports');
 const { isUserAdmin, canRunReport, REPORTS, REPORT_ROLES } = reports.__testing;
 
+for (const empty of [false, true]) {
+  test(`Report payload keeps typed columns when node-mssql returns ${empty ? 'an empty' : 'a populated'} recordset with driver metadata`, async () => {
+    const key = '__qa_driver_columns';
+    const columns = [{ key: 'Amount', label: 'ยอด', type: 'money', aggregation: 'sum' }];
+    const rows = empty ? [] : [{ Amount: 125.5 }];
+    Object.defineProperty(rows, 'columns', { value: { Amount: { index: 0, name: 'Amount', type: 'Decimal' } } });
+    REPORTS[key] = { title: 'QA driver contract', columns, run: async () => rows };
+    try {
+      const payload = JSON.parse(JSON.stringify(await reports.__testing.runReport(key)));
+      assert.deepEqual(payload.columns, columns);
+      assert.deepEqual(payload.rows, empty ? [] : [{ Amount: 125.5 }]);
+      assert.equal(payload.columns[0].aggregation, 'sum');
+    } finally { delete REPORTS[key]; }
+  });
+}
+
+test('Structured annual report retains dynamic region columns and metadata', async () => {
+  const key = '__qa_dynamic_columns';
+  const dynamic = [{ key: 'Region0', label: 'QA region', type: 'money' }];
+  REPORTS[key] = { title: 'QA matrix', columns: [], run: async () => ({ columns: dynamic, rows: [{ Region0: 100 }], meta: { basis: 'APPROVED_PLANS_ONLY' } }) };
+  try {
+    const payload = await reports.__testing.runReport(key);
+    assert.deepEqual(payload.columns, dynamic);
+    assert.equal(payload.meta.basis, 'APPROVED_PLANS_ONLY');
+    assert.equal(payload.rows[0].Region0, 100);
+  } finally { delete REPORTS[key]; }
+});
+
 test('Report Catalog - isUserAdmin recognizes single and multi-role ADMIN users', () => {
   assert.equal(isUserAdmin({ role: 'ADMIN' }), true);
   assert.equal(isUserAdmin({ role: 'SALES', roles: ['SALES', 'ADMIN'] }), true);

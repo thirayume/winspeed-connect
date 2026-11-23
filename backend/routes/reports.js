@@ -1078,13 +1078,17 @@ async function runReport(type, params = {}) {
     if (def.sql.includes('@globalStartUtc')) sqlInputs.globalStartUtc = { type: sql.DateTime2, value: utcInstant };
   }
   const result = def.run ? await def.run(params) : ((await wfQuery(def.sql, sqlInputs)).recordset || []);
-  const rows = Array.isArray(result) ? result : (result?.rows || []);
-  const meta = result?.meta || null;
+  // node-mssql recordset arrays carry a .columns metadata map. It is not the
+  // ReportColumn[] contract consumed by the screen, PDF and XLSX formatters.
+  // Only a structured report result may override the configured columns.
+  const structured = Array.isArray(result) ? null : result;
+  const rows = structured ? (structured.rows || []) : (result || []);
+  const meta = structured?.meta || null;
   return {
     type,
     title: def.title,
     category: def.category || 'general',
-    columns: result?.columns || def.columns,
+    columns: Array.isArray(structured?.columns) ? structured.columns : def.columns,
     rows,
     ...(meta ? { meta } : {}),
   };

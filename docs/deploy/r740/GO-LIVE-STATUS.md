@@ -1,11 +1,94 @@
 # R740 deployment and business acceptance
 
-Operational snapshot: **23 November 2026 (ICT)**. This page records observed results;
+Operational snapshot: **24 November 2026 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**23 November — report handover extension is a source candidate, not a deployed acceptance.**
+**24 November post-deploy admin review — report rendering hotfix prepared, not yet deployed.**
+After the owner renewed both ADMIN sessions, Budget Plan opened on both websites.
+The report catalog then exposed a real rendering failure: plain node-mssql
+recordset arrays have a `.columns` metadata map. `runReport` incorrectly treated
+that map as the report's typed column array, causing `TypeError: e is not iterable`
+and a blank report page. The earlier 34-report inventory verified HTTP status and
+row arrays only; it did not validate column-array contracts or establish that
+these reports rendered successfully. Those earlier counts must not be read as
+screen acceptance. The failure has been recorded and is not a passed check.
+
+The source fix allows column overrides only from structured report results;
+native recordset arrays use the configured typed columns. It preserves dynamic
+annual-budget region columns. Tests now model driver metadata on populated and
+empty recordsets, and feed a real backend-generated payload into the browser.
+Backend **1,370/1,370** and the report browser suite **9/9** pass. A read-only probe
+using the actual UAT app SQL driver reproduces the old failure, passes the fixed
+path and validates typed columns plus rows for all **34 supported reports**.
+The candidate was evaluated in a separate process from private temporary files;
+the running route was not overwritten and no business data was written.
+Existing publication authorization names `01a5da4` and necessary CI fixes. This
+new functional hotfix needs its own public-release approval before CI and the
+official UAT→PROD rollout. Administrator report-screen acceptance remains open.
+
+**24 November — report release `01a5da4` deployed to UAT and PROD.**
+The owner explicitly approved public release publication and UAT→PROD deployment.
+Promotion CI passed on the exact release: UAT run `45232996814`, PROD run
+`45236362069`. Both server checkouts, running report/budget backend file hashes and
+public frontend assets match that release. Both public health endpoints return
+HTTP 200 with SQL up. The official wrapper produced these apply receipts:
+
+- UAT: `D:\SaleApp\uat\deploy-logs\20261124-010530-uat-apply-01a5da4.txt`.
+- PROD: `D:\SaleApp\prod\deploy-logs\20261124-012409-prod-apply-01a5da4.txt`.
+
+Verified COPY_ONLY/CHECKSUM/RESTORE VERIFYONLY backups preceded migration 278.
+Only 278 was pending: it is now applied on primary UAT, primary PROD and company 2;
+the three new report tables and EditVersion column exist on all three. Final
+official PROD/company-2 plans have pending 0 / drift 0; UAT's apply receipt also
+verified pending 0 / drift 0. Company 2 was migrated first, schema only; its native
+writer target and bridge remain off. No company-2 business data was written.
+
+Deployed UAT acceptance passed **43 checks** using five synthetic roles with real
+HTTP login/JWT/role profiles. Five competing request pairs each produced one
+successful action and one 409, with exactly five corresponding workflow audits.
+The tests cover submit/review/approve, role and same-person restrictions,
+reject/resubmit/cancel, assigned reviewers, approved-only annual reports,
+allocation versus estimate and numeric XLSX output. The report inventory loaded
+**34/34 supported reports**; the three intentionally unavailable reports below
+were skipped and are not counted as passes. PriceList and CostList each loaded
+159 rows. This is deployed automated acceptance with synthetic identities,
+not personal acceptance by existing employees or an authenticated administrator
+screen review. The latter is pending renewed login on both public websites.
+
+Both primary native-writer approvals have been renewed against `01a5da4`: all
+49 metadata fingerprints matched, unfinished native work was zero and active app
+writes were zero before the brief backend-only pause. Each backend restarted in
+`finally`. The resulting ChangeEvent records bind writer and bridge enabled to
+the exact release. No native business document was created for this report rollout.
+Rebate/worker flags match the pre-deploy baseline; all three participant fences
+remain generation 1 / READY, with the existing ResetId. **No Reset was run.**
+The fixed nightly-principal reader and nested-transaction helper are deployed;
+the next scheduled physical restore has not yet run and is not claimed as passed.
+
+Full-October and YTD (1 January–23 November) read-only reconciliation on all three
+databases found zero net/VAT/daily arithmetic differences and no missing details.
+YTD document counts were 9,912 / 9,912 / 10,397 (UAT / PROD / company 2).
+This verifies period-report arithmetic, not opening AR balances, independent
+accountant signoff or positive-VAT GL posting. VAT/GL remains accounting work in
+WinSpeed after Sale-App completes the 107s covering its 116s.
+
+Remaining handover boundaries: `sales-target-comparison`, `ar-receipt-history`
+and `cq-cheque-register` still have no complete native implementation and must not
+be represented as working reports. No live catalog publication, ordering or ISO
+value was changed by this release; ADMIN can configure supported reports. Staff
+signoff and physical-printer checks remain separate from the passed automated
+checks. The disposable report-QA database/login have been removed. The five
+deployed UAT fixture users were disabled and their authentication versions revoked;
+their future-year test plans and audit history remain until normal UAT restore.
+Private evidence is under `scratch/report-release-20261124/` on the owner machine.
+
+The following dated investigations are historical pre-deployment evidence. Their
+pending/not-deployed statements describe those earlier checkpoints, not the current
+live release recorded above.
+
+**23 November — report handover extension was a source candidate at this checkpoint.**
 The owner identified missing annual promotion-budget forms, Daily Invoice transport
 references, adjusted net sales, ISO control and broken PriceList/CostList projections.
 The earlier document-writer rollout below does **not** establish that this report scope
@@ -34,6 +117,21 @@ binding. The complete 49-fingerprint plan also passes inside the corrected neste
 transaction with apply forced false and rollback. A large-stdin/WSL transport attempt
 timed out; the bounded file-based proof passed and its owned temporary files were
 removed. This proof does not claim native activation succeeded on the running UAT.
+Interim recovery subsequently used the ordinary official Enable action, from the
+exact already-deployed `830553e` checkout and reviewed plan hash, rather than the
+broken copied-refresh path. After verifying no app write transaction, only UAT's
+backend was paused and restarted in finally. UAT native target is now 1 with its
+release audit; official post-restore Rebate adopt completed, generation 1 READY,
+without reset or switch changes. Both public health checks report SQL up. This
+recovers the existing release only; the new report release is **not deployed**.
+Final candidate `01a5da4` includes both restore corrections. Local gates pass:
+backend 1367, extra groups 132/61/424, offline 99, browser 60+3+9+6, build,
+deploy-config 31, shell parsing and batch ASCII. October and year-to-23-Nov
+arithmetic reconciles across three databases (YTD documents 9912/9912/10397), with
+zero net/VAT/Daily differences and no missing lines. Publication to the configured
+public GitHub remote still awaits the owner's response for this new release;
+previous public approvals were commit-specific. No hosted CI/promotion or report
+migration 278 has run on live databases in this phase.
 
 | Candidate scope | Implemented behavior | Acceptance boundary |
 | --- | --- | --- |

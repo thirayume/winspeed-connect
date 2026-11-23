@@ -5,6 +5,28 @@ const template={templateId:1,templateCode:'QA',templateName:'QA',orientation:'la
 const stamp={code:'FM-QA-001',revision:'00',effectiveDate:'2026-11-01'};
 const baseLine={CustCode:'0001',CustName:'ลูกค้าทดสอบ',GoodCode:'0002',GoodName:'ปุ๋ยทดสอบ',QtyTon:1,DocuDate:'2026-11-01',PricePerTon:100,BillDiscount:10,VATAmount:0,BookingRefs:'QA-103 (2026-11-01)',SaleRefs:'QA-104 (2026-11-01)',DebtRefs:'QA-202 (2026-11-01)',TicketRefs:'C-QA, D-QA',SlipRefs:'QA-116-1 (2026-11-01), QA-116-2 (2026-11-01)',TruckPlates:'QA-TRUCK-1, QA-TRUCK-2',TraceState:'MATCHED',DetailState:'OK'};
 const data={type:'daily-invoice',title:'Daily Invoice',columns,rows:[{...baseLine,DocBook:'J',DocuNo:'J-QA',Amount:90,InvoiceAmount:90,CostAmount:60,GrossProfit:30,CostState:'COSTED'},{...baseLine,DocBook:'N',DocuNo:'N-QA',Amount:70,InvoiceAmount:70,CostAmount:60,GrossProfit:10,CostState:'COSTED'}],isoStamp:stamp,meta:{groupBy:['DocBook','DocuNo'],dateBasis:'DOCUMENT_DATE',filters:{from:'2026-11-01',to:'2026-11-30'}}};
+test('a driver-shaped SQL report reaches the screen with typed columns and totals',async({page})=>{
+ const reports=createRequire(__filename)('../../backend/routes/reports.js').__testing;
+ const key='qa-driver-columns',rows=[{Amount:125.5}];
+ Object.defineProperty(rows,'columns',{value:{Amount:{index:0,name:'Amount',type:'Decimal'}}});
+ reports.REPORTS[key]={title:'QA SQL report',columns:[{key:'Amount',label:'QA amount',type:'money',aggregation:'sum'}],run:async()=>rows};
+ let payload:any;
+ try{payload=JSON.parse(JSON.stringify(await reports.runReport(key)));}finally{delete reports.REPORTS[key];}
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/api/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(route.request().method()==='OPTIONS')return route.fulfill({status:204});
+  if(path.endsWith('/reports/types'))return route.fulfill({json:[{key,title:'QA SQL report',category:'finance',available:true}]});
+  if(path.endsWith('/template'))return route.fulfill({json:{reportKey:key,template}});
+  if(path.endsWith('/reports/'+key))return route.fulfill({json:payload});
+  return route.fulfill({json:{}});
+ });
+ await page.goto('/tests/report-readiness.html?page=reports');
+ await expect(page.getByRole('columnheader',{name:'QA amount'})).toBeVisible();
+ await expect(page.getByRole('table')).toContainText('125.50');
+ await expect(page.getByRole('button',{name:'พิมพ์ / Export PDF',exact:true})).toBeEnabled();
+ expect(errors).toEqual([]);
+});
 test('Budget Plan writes region caps and estimates separately, then submits the saved version',async({page})=>{
  let saved:any,version=2;const pending:any={PlanId:1,PreparedBy:1,PreparedActorId:1,AssignedReviewerId:2,AssignedApproverId:3,PeriodYear:2641,Status:'DRAFT',EditVersion:2,lines:[],allocations:[]};
  await page.route('**/api/**',async route=>{const url=new URL(route.request().url()),method=route.request().method();
