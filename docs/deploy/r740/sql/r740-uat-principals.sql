@@ -237,6 +237,34 @@ END';
             EXEC(@uat_reader);
     END;
 
+    -- Migration 277: fixed operational metadata reader, no arbitrary object input.
+    -- Restore copied the production SELF principal. Accept only the reviewed body.
+    IF OBJECT_ID(N'wf.usp_ReadNativeDocumentMetadata',N'P') IS NOT NULL
+    BEGIN
+        DECLARE @native_expected nvarchar(max),@native_uat nvarchar(max),@native_actual nvarchar(max);
+        SET @native_expected=N'ALTER PROCEDURE wf.usp_ReadNativeDocumentMetadata
+WITH EXECUTE AS SELF
+AS
+BEGIN
+ SET NOCOUNT ON;
+ SELECT OBJECT_NAME(t.parent_id) AS TableName,t.name,t.is_disabled,m.definition
+ FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id
+ WHERE t.parent_id IN(OBJECT_ID(''dbo.SOHD''),OBJECT_ID(''dbo.SODT''),OBJECT_ID(''dbo.SOHDRemark''),OBJECT_ID(''dbo.SODTRemark''),OBJECT_ID(''dbo.SOInvHD''),OBJECT_ID(''dbo.SOInvDT''),OBJECT_ID(''dbo.SMSat''),OBJECT_ID(''dbo.SMReserveSat''),OBJECT_ID(''dbo.ICStockDetail''),OBJECT_ID(''dbo.ICCostDetail''),OBJECT_ID(''dbo.WFRedemtionHD''),OBJECT_ID(''dbo.WFRedemtionDT''),OBJECT_ID(''dbo.WFCoupon''),OBJECT_ID(''dbo.VTVAT''),OBJECT_ID(''dbo.SMAudit''),OBJECT_ID(''dbo.SMEvent''),OBJECT_ID(''dbo.SMID''),OBJECT_ID(''dbo.EMRunBrch''),OBJECT_ID(''dbo.EMRunChar''),OBJECT_ID(''dbo.Define_104''));
+END;';
+        SET @native_uat=REPLACE(@native_expected,N'WITH EXECUTE AS SELF',N'WITH EXECUTE AS ''wf_r740_uat_migrator_v2''');
+        SET @native_actual=LTRIM(RTRIM(REPLACE(OBJECT_DEFINITION(OBJECT_ID(N'wf.usp_ReadNativeDocumentMetadata')),CHAR(13),N'')));
+        WHILE RIGHT(@native_actual,1)=CHAR(10) SET @native_actual=RTRIM(LEFT(@native_actual,LEN(@native_actual)-1));
+        IF LEFT(@native_actual,17) COLLATE Latin1_General_BIN2=N'CREATE PROCEDURE ' COLLATE Latin1_General_BIN2
+            SET @native_actual=N'ALTER'+SUBSTRING(@native_actual,7,LEN(@native_actual));
+        IF @native_actual IS NULL OR
+          ((@native_actual COLLATE Latin1_General_BIN2<>@native_expected COLLATE Latin1_General_BIN2 OR DATALENGTH(@native_actual)<>DATALENGTH(@native_expected))
+           AND (@native_actual COLLATE Latin1_General_BIN2<>@native_uat COLLATE Latin1_General_BIN2 OR DATALENGTH(@native_actual)<>DATALENGTH(@native_uat)))
+            RAISERROR(N'STOP: native metadata reader differs from the reviewed SELECT-only body.',16,1);
+        IF @native_actual COLLATE Latin1_General_BIN2<>@native_uat COLLATE Latin1_General_BIN2
+           OR (SELECT execute_as_principal_id FROM sys.sql_modules WHERE object_id=OBJECT_ID(N'wf.usp_ReadNativeDocumentMetadata'))<>USER_ID(N'wf_r740_uat_migrator_v2')
+            EXEC(@native_uat);
+    END;
+
     COMMIT TRANSACTION;
 END TRY
 BEGIN CATCH

@@ -568,6 +568,7 @@ async function reserveCoupon({
 
   return await wfTransaction(async (tx) => {
     // 1. Lock and fetch coupon row to serialize claims on last balance
+    await require('./native-writer-availability').assertNativeReservationReady(text=>tx.request().query(text));
     const couponRow = (await tx.request()
       .input('cid', sql.Int, cId)
       .query(`

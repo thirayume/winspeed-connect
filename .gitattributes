@@ -1,4 +1,7 @@
 * text=auto eol=lf
+# Migration 277 was rehearsed/applied with this exact final blank line. Never
+# trim installed SQL bytes merely to satisfy a new-file whitespace diagnostic.
+backend/migrations/277_native_writer_metadata_release.sql whitespace=-blank-at-eof
 *.bat text eol=crlf
 *.cmd text eol=crlf
 # These immutable migration originals are pinned to CRLF bytes by migration-policy.json.

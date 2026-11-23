@@ -5,7 +5,7 @@ const {QA}=require('../services/native-document-target');
 if(process.env.QA_NATIVE_V3_PREPARE!=='true'||process.env.ONPREM_DB_NAME!==QA||process.env.ONPREM_SWITCHABLE_DATABASES!==QA
  ||process.env.DISABLE_BACKGROUND_WORKERS!=='true'||process.env.ONPREM_CONNECTION_PROFILES_DISABLE!=='true'
  ||Object.entries(process.env).some(([k,v])=>k.startsWith('REBATE_')&&v==='true'))throw Error('QA_BOOTSTRAP_ISOLATION_REQUIRED');
-const db=require('../db'),{verifyOperationalMetadata,EXPECTED}=require('../services/initial-invoice-metadata');
+const db=require('../db'),{verifyOperationalMetadata}=require('../services/initial-invoice-metadata');
 const {queryFor}=require('../services/native-document-service');
 const stateFile=path.join('/review-state','bootstrap.json');
 async function secondProduct(saved){
@@ -53,23 +53,20 @@ async function run(){
  if(!approver)throw Error('QA_DISTINCT_APPROVER_UNAVAILABLE');
  const password=crypto.randomBytes(30).toString('base64url'),passwordHash=await bcrypt.hash(password,12),username='qa-v3-'+crypto.randomUUID();
  const result=await db.wfTransaction(async tx=>{
-  const q=queryFor(tx);await verifyOperationalMetadata(q);
+  const q=queryFor(tx),bridge=(await q("SELECT Enabled FROM wf.CouponBridgeContract WHERE Version='116-BRIDGE-v1'")).recordset?.[0];
+  await verifyOperationalMetadata(q,null,{env:{NATIVE_COUPON_BRIDGE_ENABLED:bridge?.Enabled?'true':'false'}});
   const id=(await q(`INSERT wf.AppUser(Username,PasswordHash,DisplayName,Role,EmpId,IsActive,MustChangePassword)
    OUTPUT inserted.Id VALUES(@username,@hash,'QA native acceptance reviewer','ADMIN',@emp,1,0)`,{
    username:{type:db.sql.NVarChar(50),value:username},hash:{type:db.sql.NVarChar(255),value:passwordHash},emp:{type:db.sql.NVarChar(20),value:String(approver.EmpID)}})).recordset[0].Id;
-  const existing=(await q("SELECT COUNT(*) AS N FROM wf.NativeWriterContract")).recordset[0].N;
-  if(existing!==0)throw Error('QA_CONTRACT_ALREADY_EXISTS_WITHOUT_STATE');
-  await q(`INSERT wf.NativeWriterContract(ServerName,DatabaseName,PolicyVersion,MetadataHash,IsEnabled,ApprovedById,ApprovedActorId,ApprovedAtUtc,Evidence)
-   VALUES(CONVERT(nvarchar(128),SERVERPROPERTY('ServerName')),DB_NAME(),'NATIVE-DOCUMENTS-v3',@hash,1,@u,@u,GETUTCDATE(),
-    'Automated isolated QA acceptance bootstrap after actual SQL rollback rehearsal; not a Production release approval')`,{
-   hash:{type:db.sql.VarChar(64),value:EXPECTED},u:{type:db.sql.Int,value:id}});
+  // Migration 277 forbids app-owned contract writes. A DBA uses the reviewed
+  // release kit after this isolated reviewer has been persisted privately.
   await q(`INSERT wf.ChangeEvent(EntityType,EntityId,Action,AfterJson,ReasonCode,ReasonText,UserId,ActorUserId)
-   VALUES('NATIVE_WRITER_CONTRACT',DB_NAME(),'QA_PREPARE','{"version":"v3","qaOnly":true}','QA_ACCEPTANCE',
-    'Owner-authorized isolated Full Loop setup; no live environment changed',CONVERT(varchar(50),@u),CONVERT(varchar(50),@u))`,{u:{type:db.sql.Int,value:id}});
+   VALUES('NATIVE_WRITER_REVIEWER',CONVERT(varchar(50),@u),'QA_PREPARE','{"version":"v3","qaOnly":true,"contractPending":true}','QA_ACCEPTANCE',
+    'Isolated reviewer only; contract activation requires reviewed DBA release',CONVERT(varchar(50),@u),CONVERT(varchar(50),@u))`,{u:{type:db.sql.Int,value:id}});
   return id;
  },{isolationLevel:db.sql.ISOLATION_LEVEL.SERIALIZABLE});
  fs.writeFileSync(stateFile,JSON.stringify(await secondProduct({database:QA,username,password,userId:result,today,custId:candidate.CustID,goodId:candidate.GoodID,
-  netPrice:Number(candidate.GoodPriceNet),salesEmpId:candidate.EmpID,approverEmpId:approver.EmpID})),{flag:'wx',mode:0o600});
- console.log('NATIVE_QA_BOOTSTRAP_READY_PRIVATE_CREDENTIALS_NOT_PRINTED');
+  netPrice:Number(candidate.GoodPriceNet),salesEmpId:candidate.EmpID,approverEmpId:approver.EmpID,contractActivationRequired:true})),{flag:'wx',mode:0o600});
+ console.log('NATIVE_QA_REVIEWER_READY_CONTRACT_ACTIVATION_REQUIRED');
 }
 run().catch(e=>{console.error('NATIVE_QA_BOOTSTRAP_FAILED '+e.message);process.exitCode=1;}).finally(()=>db.closeAll());

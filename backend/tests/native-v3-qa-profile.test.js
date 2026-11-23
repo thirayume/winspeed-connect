@@ -8,6 +8,7 @@ const on=()=>({...base(),QA_NATIVE_REBATE_PROFILE:'on',REBATE_RESET_DATABASES:QA
  REBATE_TICKET_REDEMPTION_TREATMENT:QA+':ZERO',...Object.fromEntries(FLAGS.map(k=>[k,'true']))});
 test('QA default stays Rebate-off; reviewed profile pins all Rebate operations to one isolated database',()=>{
  assert.equal(assertQaProfile(base()).rebate,false);assert.equal(assertQaProfile(on()).rebate,true);
+ assert.equal(assertQaProfile({...on(),REBATE_TICKET_REDEMPTION_TREATMENT:QA+':DISCOUNT'}).treatment,'DISCOUNT');
  assert.throws(()=>assertQaProfile({...base(),REBATE_POOL_103_ENABLED:'true'}),/PROFILE_REQUIRED/);
 });
 test('QA profile rejects live databases, profiles, workers, partial or unknown activation',()=>{
@@ -15,7 +16,7 @@ test('QA profile rejects live databases, profiles, workers, partial or unknown a
   {ONPREM_EXPECTED_SERVERNAME:'elsewhere'},{ONPREM_TARGET_KIND:'production'},{DB_MODE:'remote_b'},
   {ONPREM_CONNECTION_PROFILES_DISABLE:'false'},{DISABLE_BACKGROUND_WORKERS:'false'},
   {REBATE_RESET_DATABASES:QA+',dbwins_worldfert9'},{REBATE_RESET_DATABASES:'*'},
-  {REBATE_TICKET_REDEMPTION_TREATMENT:QA+':DISCOUNT'},{REBATE_POOL_103_ENABLED:'false'},
+  {REBATE_TICKET_REDEMPTION_TREATMENT:'dbwins_worldfert9:DISCOUNT'},{REBATE_POOL_103_ENABLED:'false'},
   {REBATE_UNREVIEWED_ENABLED:'true'},{QA_NATIVE_REBATE_PROFILE:'ON'}])
   assert.throws(()=>assertQaProfile({...on(),...change}),undefined,JSON.stringify(change));
 });

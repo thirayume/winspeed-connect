@@ -28,7 +28,7 @@ const {FZ8_DATABASE,fz8RuntimeEnabled,isInitialNativeUatTarget} = require('../se
 const nativeTarget=require('../services/native-document-target');
 const nativeV3=nativeTarget.enabled();
 
-const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-race116', 'I-107', 'K-107', 'audit', 'giveaway-loans', 'rebate-accrue', 'rebate-use', 'close'];
+const PHASES = ['prepare', 'I-booking', 'K-booking', 'I-104', 'K-104', 'I-116', 'K-116', 'I-race116', 'I-107', 'K-107', 'audit', 'giveaway-loans', 'rebate-accrue', 'rebate-use', 'rebate-treatment', 'close'];
 const phase = process.env.UAT_LOOP_PHASE;
 const RUN = process.env.UAT_LOOP_RUN || '';
 const EXPECT_DB = process.env.UAT_LOOP_DB || '';
@@ -635,6 +635,10 @@ async function main() {
   if(phase==='rebate-use'){
     if(!rebateQa)throw Error('QA_REBATE_PROFILE_REQUIRED');
     return require('./uat-native-v3-rebate-use.cjs')({call,query,check,save,state,fixtures,sql:db.sql,CUST_ID,RUN,deliveryDate});
+  }
+  if(phase==='rebate-treatment'){
+    if(!rebateQa)throw Error('QA_REBATE_PROFILE_REQUIRED');
+    return require('./uat-native-v3-treatment.cjs')({call,query,check,save,state,fixtures,sql:db.sql,CUST_ID,RUN,deliveryDate});
   }
   if (phase === 'giveaway-loans') return giveawayLoans();
   if (phase === 'audit') return nativeV3?v3().audit():audit();

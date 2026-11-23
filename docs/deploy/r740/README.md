@@ -122,6 +122,80 @@ D:\SaleApp\
    fills the generated SQL passwords and UAT JWT secret; these are not web-admin passwords.
    Keep both files and their recovery copies on the server.
 
+## Writer v3 activation and restore
+
+The candidate target files select the same v3/bridge and AI/104/116/107 flags in UAT
+and PROD. This is source preparation, not evidence that a running stack was changed.
+Migration 277 and a separate reviewed activation are required. Until the contracts
+are approved, native writes and new native-coupon reservations fail closed; SQL
+health alone is not business readiness.
+
+Migration 277 exposes `wf.usp_ReadNativeDocumentMetadata`, a fixed SELECT-only
+procedure bound to the verified migrator with EXECUTE AS SELF. The app receives no
+additional dbo or VIEW DEFINITION permissions. The UAT principal script accepts
+only the exact reviewed body and remaps its execution identity after restore.
+It also creates protected activation history and prevents direct application
+updates to the native-writer contract.
+
+Use the official wrapper from the developer PC after the authorized deployment
+has installed the same reviewed commit and migration 277. Keep affected writers
+in a maintenance window until activation and business smoke tests finish.
+Read-only activation planning requires active ADMIN approver/actor IDs in that
+database, a meaningful reason and a clean local source matching the deployed SHA:
+
+```powershell
+# Set these IDs from the reviewed accounts in the selected environment.
+docs/deploy/r740/deploy-r740.ps1 -Environment uat -NativeWriterAction PlanEnable -NativeWriterApproverId $reviewerId -NativeWriterActorId $actorId -NativeWriterEvidence $reviewReason
+# Review the returned plan; a later apply must use its exact hash.
+docs/deploy/r740/deploy-r740.ps1 -Environment uat -NativeWriterAction Enable -NativeWriterApproverId $reviewerId -NativeWriterActorId $actorId -NativeWriterEvidence $reviewReason -NativeWriterPlanHash $reviewedHash
+```
+
+Repeat explicitly with `-Environment prod` only after UAT acceptance and the
+owner's deployment decision. Company 2 remains excluded from operational writer
+targets. Do not run the QA installer against live databases.
+
+The activation plan checks migration checksums, all 49 trigger definitions/states,
+the fixed reader body, current ADMIN identities, pending permits/requests/holds
+and trigger ordering. Apply rechecks the plan under SERIALIZABLE and a bounded
+application lock. It changes only four existing Sale-App hooks, keeps all native
+WinSpeed hooks intact, binds both contracts and writes release/business audit in
+one transaction. A used or changed plan is rejected. Approver, actor, SQL login
+and the restored original custom-hook definitions are retained in the audit.
+
+For controlled deactivation, use `PlanDisable` then `Disable` with a fresh hash.
+It refuses unfinished native work and outstanding reservations. With business
+history, it pauses the native-writer contract while retaining the bridge/hooks:
+WinSpeed must not bypass historical settlement/return controls during a pause.
+Only a pristine target with no business history may restore the original four
+custom hooks and disable both contracts. Before/after state is audited as JSON.
+The v3 app rejects new coupon reservations while the writer contract is off.
+This is not a schema down or a reversal of completed business documents.
+
+After nightly UAT restore, principal remapping precedes deployment as before.
+`Refresh-UAT.ps1` then invokes the wrapper's UAT-only `-NativeWriterRefresh`.
+The read-only proof accepts only an enabled Production approval copied inside
+that same restored database, matching the exact deployed source SHA in its
+business audit as well as current native modules and ledger. A different UAT
+candidate needs a new explicit approval instead of borrowing the old one. The
+administrator transaction rechecks active reviewers, the copied parent release,
+metadata and unfinished work, adds a UAT contract binding and links its audit to
+the copied approval. It does not query/write Production or reinstall native
+hooks. Missing/disabled approval, changed metadata, inactive reviewers or
+unfinished copied work stops the refresh with native writers fenced for review.
+It never resets Rebate, removes a hold or discards native/settlement history.
+The first UAT pilot may need manual activation until Production has an approved
+v3 release to copy.
+
+ZERO ticket lines in a normal Sale-App bill reserve tickets at 103, with state
+RESERVED then FINAL after 116. The separate configured `tickets/redeem` endpoint
+requires an already posted, single-line 104/202 with net/VAT/receivable zero.
+DISCOUNT uses the normal line price and an equal plain footer discount.
+Do not weaken that posted-sale proof to make a pre-104 rehearsal pass. The QA
+profile supports ZERO or DISCOUNT on its one isolated database, with workers off.
+Its supplementary DISCOUNT fixture explicitly simulates WinSpeed booking input;
+it is not evidence of a frontend footer-discount editor. VAT-positive/GL posting
+remains accounting's WinSpeed work.
+
 ## Deploy
 
 ```bat

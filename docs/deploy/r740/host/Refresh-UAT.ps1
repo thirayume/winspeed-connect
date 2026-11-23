@@ -114,6 +114,17 @@ try {
   $ErrorActionPreference = $prev
   if ($deployExit -ne 0) { throw "unattended deploy failed (exit $deployExit); see $log" }
 
+  # Rebind only an already approved, copied Production v3 release. The helper
+  # verifies exact current modules/roles/holds; it never opens Production or
+  # invents a new approval. Any mismatch keeps the native target fenced.
+  $targetFile=Join-Path $AppDir 'docs\deploy\r740\targets\uat.env'
+  if([IO.File]::ReadAllText($targetFile) -match '(?m)^NATIVE_DOCUMENT_WRITER_VERSION=v3\r?$') {
+    Log 'Revalidating copied native writer approval for UAT ...'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $driver -Environment uat -OnServer -Auto -NativeWriterRefresh -Distro $Distro *>&1 |
+      ForEach-Object { Add-Content -Path $log -Value ("  native: " + $_); Write-Host $_ }
+    if($LASTEXITCODE -ne 0){throw 'Native UAT refresh proof failed; native writers remain fenced pending review.'}
+  }
+
   # 3. Relabel the copied PROD Rebate state as UAT's own (sql/r740-uat-rebate-adopt.sql). The digest of
   #    UAT's reset manifest comes from the running UAT backend (names only, no secret).
   $adopted = $false

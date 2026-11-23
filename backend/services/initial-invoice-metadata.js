@@ -68,13 +68,11 @@ async function verifyInvoiceMetadata(q, target){
  validateMetadata(isFz8 ? removeReviewedFz8Triggers(nativeRows) : nativeRows);
 }
 async function verifyOperationalMetadata(q,_target,{env=process.env}={}){
- // The operational principal reads only the reviewed trigger definitions. It
- // does not impersonate the old environment's migration login.
+ // Migration 277 exposes one fixed SELECT-only reader. The app never receives
+ // VIEW DEFINITION or impersonation rights; the clone principal runbook remaps
+ // its reviewed SELF binding after restore.
  const reviewed=require('./native-document-metadata.json');
- const tables=reviewed.tables.map(name=>`OBJECT_ID('dbo.${name}')`).join(',');
- const rows=(await q(`SELECT OBJECT_NAME(t.parent_id) AS TableName,t.name,t.is_disabled,m.definition
-  FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id
-  WHERE t.parent_id IN(${tables})`)).recordset||[];
+ const rows=(await q('EXEC wf.usp_ReadNativeDocumentMetadata')).recordset||[];
  let expected=reviewed.triggers;
  if(env.NATIVE_COUPON_BRIDGE_ENABLED==='true'){
   const bridge=require('./coupon-bridge-hooks');

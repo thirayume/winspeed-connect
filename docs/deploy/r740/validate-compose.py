@@ -85,7 +85,7 @@ def main():
         if str(app.get(key, "")).strip().upper() in PLACEHOLDERS:
             stop(key + " is blank or a placeholder in config/.env.")
     for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED", "NATIVE_MANUAL_116_ENABLED",
-                "NATIVE_INVOICE_107_ENABLED", "DISABLE_BACKGROUND_WORKERS"):
+                "NATIVE_INVOICE_107_ENABLED", "NATIVE_COUPON_BRIDGE_ENABLED", "DISABLE_BACKGROUND_WORKERS"):
         if target.get(key, "").lower() not in ("true", "false"):
             stop("target file must set " + key + " to true or false.")
         if str(app.get(key, "")).lower() != target[key].lower():
@@ -93,6 +93,8 @@ def main():
     writer_version = target.get("NATIVE_DOCUMENT_WRITER_VERSION", "legacy")
     if writer_version not in ("legacy", "v3"):
         stop("target native document writer must be legacy or v3.")
+    if writer_version == "v3" and target.get("NATIVE_COUPON_BRIDGE_ENABLED") != "true":
+        stop("The operational v3 target requires the reviewed coupon bridge.")
     if str(app.get("NATIVE_DOCUMENT_WRITER_VERSION", "legacy")) != writer_version:
         stop("native document writer version does not match the reviewed target.")
     for key, value in {"COUPON_NATIVE_POSTING_ENABLED": "false", "ENFORCE_PASSWORD_CHANGE": "true",

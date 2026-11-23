@@ -14,10 +14,11 @@ function assertQaProfile(env=process.env){
   throw Error('QA_REBATE_PROFILE_INVALID');
  const active=Object.entries(env).filter(([k,v])=>k.startsWith('REBATE_')&&v==='true').map(([k])=>k);
  if(!rebate&&active.length)throw Error('QA_REBATE_PROFILE_REQUIRED');
- if(rebate&&(env.REBATE_RESET_DATABASES!==QA||env.REBATE_TICKET_REDEMPTION_TREATMENT!==QA+':ZERO'
+ const treatment=env.REBATE_TICKET_REDEMPTION_TREATMENT;
+ if(rebate&&(env.REBATE_RESET_DATABASES!==QA||![QA+':ZERO',QA+':DISCOUNT'].includes(treatment)
   ||FLAGS.some(k=>env[k]!=='true')||active.some(k=>!FLAGS.includes(k))))
   throw Error('QA_REBATE_TARGETS_OR_FLAGS_INVALID');
- return Object.freeze({database:QA,rebate,backgroundWorkers:false});
+ return Object.freeze({database:QA,rebate,treatment:rebate?treatment.split(':')[1]:null,backgroundWorkers:false});
 }
 async function assertQaAccess(query){
  const row=(await query(`SELECT DB_NAME() AS DbName,HAS_DBACCESS('dbwins_worldfert9') AS MainAccess,

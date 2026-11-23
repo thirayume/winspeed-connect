@@ -3,7 +3,7 @@
 module.exports=async function(ctx){
  const {call,query,check,save,state,sql,CUST_ID,RUN,deliveryDate}=ctx;
  if(!require('./native-v3-qa-profile.cjs').assertQaProfile().rebate||!state.rebate?.approval)throw Error('QA_REBATE_ISSUANCE_REQUIRED');
- const r=state.rebate,c=state.cases.R||(state.cases.R={book:'K'});save();
+ const r=ctx.rebateState||state.rebate,caseKey=ctx.caseKey||'R',c=state.cases[caseKey]||(state.cases[caseKey]={book:'K'});save();
  const goods=await call('GET','/master/goods?limit=2000',undefined,'sales');
  const customers=await call('GET','/master/customers?q='+CUST_ID+'&limit=50',undefined,'sales');
  const good=goods.data.find(g=>Number(g.GoodID)===r.goodId),customer=customers.data.find(c=>Number(c.CustID)===CUST_ID);
@@ -21,14 +21,14 @@ module.exports=async function(ctx){
  }
  if(!c.verified){check((await call('PATCH','/so/'+c.draftId+'/verify',{},'manager')).status===200,'REBATE_BILL_VERIFIED');c.verified=true;save();}
  if(!c.tripId){
-  const result=await call('POST','/trips',{tripCode:RUN+'-R',transRegistration:'QA-REBATE-USE',driverName:'QA SIMULATION',
+  const result=await call('POST','/trips',{tripCode:RUN+'-'+caseKey,transRegistration:'QA-REBATE-USE',driverName:'QA SIMULATION',
    truckCapacityTon:10,orderIds:[c.draftId],scheduledDate:deliveryDate,remark:RUN+' Rebate redemption'},'sales');
   check(result.status===200,'REBATE_TRIP_CREATED');c.tripId=result.data.tripId;save();
  }
  if(!c.tripCommand){
   const result=await call('GET','/trips/'+c.tripId,undefined,'sales'),trip=result.data.trip||result.data;
   c.tripCommand={confirmedOrderIds:['DRAFT:'+c.draftId],transRegistration:'QA-REBATE-USE',driverName:'QA SIMULATION',
-   pickupDueDate:deliveryDate,expectedRevision:trip.DocumentRevision??trip.documentRevision,idempotencyKey:RUN+'-REBATE-CONFIRM'};save();
+   pickupDueDate:deliveryDate,expectedRevision:trip.DocumentRevision??trip.documentRevision,idempotencyKey:RUN+'-REBATE-CONFIRM-'+caseKey};save();
  }
  const confirm=await Promise.all([call('POST','/trips/'+c.tripId+'/confirm',c.tripCommand,'sales'),call('POST','/trips/'+c.tripId+'/confirm',c.tripCommand,'sales')]);
  check(confirm.every(x=>x.status===200),'REBATE_CONCURRENT_CONFIRM_AND_REPLAY');
@@ -42,7 +42,7 @@ module.exports=async function(ctx){
  await operational.ai('K',c);await operational.delivery('K',c);
  c.cuts||=[];
  for(const [i,qty]of ['0.02','0.03'].entries())if(c.cuts.length<=i){
-  c.cuts.push(await operational.approvedCut(c.delivery.lines.map(l=>({couponId:l.CouponId,quantity:qty})),31+i,c));save();
+  c.cuts.push(await operational.approvedCut(c.delivery.lines.map(l=>({couponId:l.CouponId,quantity:qty})),(caseKey==='R'?31:51)+i,c));save();
  }
  await operational.invoice('K',c);
  const db=require('../db'),{transactionQuery,rebateQuery}=require('../services/rebate-sql');
@@ -55,6 +55,6 @@ module.exports=async function(ctx){
  const final=(await query(`SELECT s.Status,(SELECT COUNT(*) FROM wf.RebateTicketRedemptionAllocation a WHERE a.ReceiptId=r.Id) AS Allocations,
   (SELECT COUNT(*) FROM wf.RebateTicketRedemptionAllocation a WHERE a.ReceiptId=r.Id AND a.TicketId=@t) AS NewTicketAllocations
   FROM wf.RebateTicketRedemptionReceipt r JOIN wf.RebateTicketReceiptState s ON s.ReceiptId=r.Id WHERE r.Id=@r`,
-  {r:{type:sql.BigInt,value:receipts[0].Id},t:{type:sql.BigInt,value:state.rebate.approval.ticketId}})).recordset[0];
+  {r:{type:sql.BigInt,value:receipts[0].Id},t:{type:sql.BigInt,value:r.approval.ticketId}})).recordset[0];
  check(final.Status==='FINAL'&&final.Allocations===1&&final.NewTicketAllocations===1,'REBATE_FINAL_REPLAY_NO_SECOND_ALLOCATION');
 };

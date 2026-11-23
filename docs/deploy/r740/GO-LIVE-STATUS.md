@@ -5,6 +5,57 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**23 November — readiness gaps implemented, isolated QA accepted; not deployed.**
+The new source pins v3, the bridge and all four native document functions equally
+for UAT/PROD, and Compose/its validator carry the bridge flag. Migration 277 adds
+the fixed SELECT-only metadata reader and protected activation history. It was
+backed up with COPY_ONLY/CHECKSUM/VERIFY, rehearsed up twice plus down refusal and
+successful down in outer rollback, then applied only to the isolated QA copy.
+The app there now has zero direct native trigger definitions visible and reads
+all 49 through the fixed reader. No dbo/VIEW DEFINITION grant was added to live
+application logins. Original applied migrations and their ledger hashes remain unchanged.
+
+The official deploy wrapper now has separate read-only activation plans and
+hash-approved enable/disable actions. It validates the deployed source, migration
+bytes, live ADMIN identities, metadata, pending work and ordered locks. Contracts,
+four existing custom hooks and business/release audit commit together; plan replay
+is refused. New coupon reservations fail closed during activation gaps. A
+history-bearing disable **pauses while retaining guards**, rather than reopening
+a native bypass; actual QA API and WinSpeed-style SQL debit attempts were blocked
+and the balance was unchanged. Resume passed. Only a pristine target can restore
+the exact original four custom hooks. All 39 WinSpeed-native hooks remain intact.
+
+UAT restore remaps only the exact reader body. The new restore rebind accepts an
+already copied Production approval only when its audit names the exact deployed
+source SHA, metadata/ledger and active reviewers still match, and unfinished work
+is absent. It links the new binding to that copied approval without querying or
+writing Production. A different release, missing approval or retained hold stops
+the refresh for review. Unit cases and a copied-approval SQL simulation passed
+inside QA rollback; the simulation substitutes only the target constant in an
+ignored test copy. **No real UAT nightly restore/rebind was run.**
+Fresh QA bootstrap also passed without an app-owned contract write; its extra
+reviewer was immediately retired and its private password removed.
+
+| New isolated acceptance | Result | Boundary |
+| --- | --- | --- |
+| ZERO, `R740V3-20261123-13` | 402/402, 15 phases, zero failed, closed | Normal mixed bill reserves at 103 and finalizes through 116/107; the incompatible legacy endpoint cannot debit it again |
+| DISCOUNT, `R740V3-20261123-15` | 441/441, 15 phases, zero failed, closed | Normal ZERO bill still works with the live-style DISCOUNT setting; a separately labelled WinSpeed-shaped single-line fixture proves the configured posted-sale endpoint |
+| DISCOUNT financial chain | 104/202 before redemption; 500 gross / 500 footer discount; AR, net and VAT zero in 202/107; 107 book N; GL not posted | Fixture setup is SQL on QA, not a frontend footer editor or a positive-VAT/GL acceptance |
+| Competing valid cut requests | Exactly one competing request succeeds, the other revalidates/refuses; remaining quantity closes once and concurrent 107 gives one invoice | Real authenticated API/SQL concurrency; prior actual WinSpeed GUI acceptance remains separate |
+| Cleanup | All seven users retired and private passwords removed from each finished run, including failed trials | Trial runs 11, 12 and 14 retain their failures and are not clean acceptance |
+
+Fresh read-only live plans now show UAT 18 pending (260–277), PROD main and
+company 2 each 23 pending (255–277), zero drift and no orphan ledger entries.
+Their migrator rights remain wf-only; no dbo ALTER grant was added.
+
+Backend 1346/1346, runner 14/14, focused 19/19 and deployment configuration 31/31
+passed. Frontend source is unchanged; its prior build/browser results remain
+separate. Final live migration plans and the immutable candidate SHA are recorded
+with the private evidence and final handover. Hosted CI, fresh live predeploy
+backups, authorized rollout/activation and post-deploy business smoke remain
+deployment gates. No push, live deployment, live migration/grant/flag/reset or
+secondary business write occurred.
+
 **23 November — read-only release review of `805fb71`: not yet a go-live approval.**
 The exact candidate contains both running releases and the observed remote main head.
 Previously recorded isolated QA acceptance remains valid, but deploying this commit unchanged

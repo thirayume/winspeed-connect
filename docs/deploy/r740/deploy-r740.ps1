@@ -25,7 +25,13 @@ param(
   [string]$ServerHost = '172.16.30.169',
   [string]$SshUser = 'Administrator',
   [string]$KeyFile = (Join-Path $env:USERPROFILE '.ssh\wf-onprem-claude'),
-  [string]$Distro = 'Ubuntu'
+  [string]$Distro = 'Ubuntu',
+  [ValidateSet('PlanEnable','Enable','PlanDisable','Disable')][string]$NativeWriterAction,
+  [int]$NativeWriterApproverId,
+  [int]$NativeWriterActorId,
+  [string]$NativeWriterEvidence,
+  [string]$NativeWriterPlanHash,
+  [switch]$NativeWriterRefresh
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -198,8 +204,69 @@ function Invoke-Deploy([string]$envName) {
   Write-Host "Deployed $envName at $url  (api/health: HTTP $code)" -ForegroundColor Green
 }
 
+function Invoke-NativeWriterRefresh {
+  if (-not $OnServer -or -not $Auto -or $Environment -ne 'uat' -or $NativeWriterAction) {
+    Fail 'Native refresh is only the unattended post-restore UAT rebind.'
+  }
+  $revisionResult=Invoke-Git 'uat' @('rev-parse','HEAD')
+  if($revisionResult.Code -ne 0){Fail 'Cannot read restored UAT source revision.'}
+  $revision=$revisionResult.Out[0].Trim()
+  if($revision -cnotmatch '^[a-f0-9]{40}$'){Fail 'Invalid UAT source revision.'}
+  $proof=@(& $wsl -d $Distro -u root -- docker exec saleapp-uat-backend-1 node scripts/native-writer-refresh-payload.cjs $revision)
+  if($LASTEXITCODE -ne 0){Fail 'Copied native approval proof failed; UAT native writers remain fenced.'}
+  $encoded=@($proof|Where-Object {$_ -match '^NATIVE_REFRESH_PAYLOAD_BASE64=[A-Za-z0-9+/=]+$'})
+  if($encoded.Count -ne 1){Fail 'Native refresh payload unavailable.'}
+  $payload64=$encoded[0].Substring('NATIVE_REFRESH_PAYLOAD_BASE64='.Length)
+  $script=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-writer-release.ps1.template'))
+  $script=$script.Replace('__PAYLOAD__',$payload64).Replace('__APPLY__','$true').Replace('__PLAN_HASH__','').Replace('__ROLLBACK_TEST__','false')
+  $lines=@(& ([ScriptBlock]::Create($script)))
+  foreach($line in $lines){Write-Host $line}
+  if($lines -notcontains 'NATIVE_RELEASE_APPLIED=ENABLE'){Fail 'Native refresh did not produce an audited completion.'}
+}
+
+function Invoke-NativeWriterRelease {
+  if ($OnServer -or $Auto -or $Environment -eq 'hotfix') { Fail 'Native writer release runs from the dev PC, one environment at a time, without -Auto.' }
+  $apply = $NativeWriterAction -in @('Enable','Disable')
+  if ($PlanOnly -and $apply) { Fail 'PlanOnly cannot apply native writer activation.' }
+  if ($apply -and $NativeWriterPlanHash -cnotmatch '^[a-f0-9]{64}$') { Fail 'The exact native release plan hash is required.' }
+  $revision = (& $git -C $repo rev-parse HEAD).Trim()
+  if ($LASTEXITCODE -ne 0) { Fail 'Cannot read the local source revision.' }
+  $dirty = @(& $git -C $repo status --porcelain --untracked-files=no)
+  if ($LASTEXITCODE -ne 0 -or $dirty.Count) { Fail 'Commit the reviewed activation source before planning a live target.' }
+  $deployed = Invoke-Git $Environment @('rev-parse','HEAD')
+  if ($deployed.Code -ne 0 -or $deployed.Out[0].Trim() -ne $revision) { Fail 'Activation source must match the already deployed checkout SHA.' }
+  $database = if ($Environment -eq 'uat') { 'dbwins_worldfert9_uat' } else { 'dbwins_worldfert9' }
+  $action = if ($NativeWriterAction -in @('Disable','PlanDisable')) { 'DISABLE' } else { 'ENABLE' }
+  $inputJson = @{database=$database;action=$action;approverId=$NativeWriterApproverId;actorId=$NativeWriterActorId;
+    reason=$NativeWriterEvidence;sourceRevision=$revision} | ConvertTo-Json -Compress
+  $input64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($inputJson))
+  $node = (Get-Command node -ErrorAction Stop).Source
+  $json = & $node (Join-Path $repo 'backend/scripts/native-writer-release-payload.cjs') $input64
+  if ($LASTEXITCODE -ne 0) { Fail 'Native release payload validation failed.' }
+  $payload64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($json -join "`n")))
+  $script = [IO.File]::ReadAllText((Join-Path $repo 'docs/deploy/r740/native-writer-release.ps1.template'))
+  $script = $script.Replace('__PAYLOAD__',$payload64).Replace('__APPLY__',$(if($apply){'$true'}else{'$false'}))
+  $script = $script.Replace('__PLAN_HASH__',$(if($apply){$NativeWriterPlanHash}else{''})).Replace('__ROLLBACK_TEST__','false')
+  if ($apply) { Confirm-Word "Apply reviewed native writer $action on $database?" $action }
+  $psi = New-Object Diagnostics.ProcessStartInfo
+  $psi.FileName=$ssh
+  $psi.Arguments=('-i "{0}" -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o LogLevel=ERROR {1}@{2} "powershell.exe -NoLogo -NoProfile -NonInteractive -Command -"') -f $KeyFile,$SshUser,$ServerHost
+  $psi.UseShellExecute=$false;$psi.RedirectStandardInput=$true;$psi.RedirectStandardOutput=$true
+  $process=[Diagnostics.Process]::Start($psi)
+  $bytes=[Text.Encoding]::ASCII.GetBytes($script+"`n`n")
+  $process.StandardInput.BaseStream.Write($bytes,0,$bytes.Length);$process.StandardInput.Close()
+  $proof=$false
+  while($null -ne ($line=$process.StandardOutput.ReadLine())) {
+    Write-Host $line
+    if(($apply -and $line -eq ('NATIVE_RELEASE_APPLIED='+$action)) -or (-not $apply -and $line.StartsWith('NATIVE_RELEASE_PLAN='))){$proof=$true}
+  }
+  $process.WaitForExit();if($process.ExitCode -ne 0 -or -not $proof){Fail 'Native writer release failed; inspect the fixed error category.'}
+}
+
 $environments = if ($Environment -eq 'hotfix') { @('uat', 'prod') } else { @($Environment) }
 try {
+  if ($NativeWriterRefresh) { Invoke-NativeWriterRefresh; exit 0 }
+  if ($NativeWriterAction) { Invoke-NativeWriterRelease; exit 0 }
   foreach ($envName in $environments) { Invoke-Deploy $envName }
   exit 0
 } catch {
