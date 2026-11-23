@@ -5,6 +5,208 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**23 November — report handover extension is a source candidate, not a deployed acceptance.**
+The owner identified missing annual promotion-budget forms, Daily Invoice transport
+references, adjusted net sales, ISO control and broken PriceList/CostList projections.
+The earlier document-writer rollout below does **not** establish that this report scope
+is ready for full handover. This extension has not been committed, pushed or deployed;
+migration 278 has not been applied to either live environment. It was committed only
+in the owner-authorized disposable QA database, which was subsequently dropped. No
+live settings, Rebate reset or secondary business writes were performed for this work.
+
+| Candidate scope | Implemented behavior | Acceptance boundary |
+| --- | --- | --- |
+| PriceList / CostList | Read `Note` as Remark; derive special-price status from actual approval columns | Actual read-only UAT loads: 159 rows each, no invalid-column error |
+| Annual Budget Plan | Draft, submit, assigned Manager review, assigned C_Level approval, reject/resubmit/cancel; own-plan access, both identities, edit-version checks and atomic audit | Real SQL-password login, actual app pools, independent SQL races and real HTTP/browser workflow with synthetic roles pass; real staff acceptance pending |
+| Annual estimate | Any supported year, Jan 1–Dec 31, approved plans, region/item matrix; annual allocation separate from estimated item spend | Real-source SQL on temporary fixtures validates allocation, estimate and three signatures; warns if old plans lack detail rather than treating them as zero |
+| Daily Invoice | 107 rows grouped by J/N book and invoice; 103/104/202/ticket/116 references with dates and plates, without multiplying sales | Actual UAT sample: 17 invoices / 24 lines, 24 matched / 0 ambiguous / header totals reconcile |
+| Cost and profit | Native PowerBuilder basis: ICStockDetail → ICCostDetail.PayAmnt. Profit uses net sales excluding VAT after allocated bill discount, less that posted stock cost | Same 24 UAT lines fully costed; incomplete costs stay unknown, with no cost/profit total until complete |
+| Adjusted net sales | 107/108 sales, 109 monetary credit or physical return, 110 debit; adjustment-document date | Actual UAT samples cover 3 debit, 5 monetary-credit and 3 physical-return lines; 202 debt and 106 RB are excluded |
+| Catalog and output | ADMIN order/publication/ISO per report, transactional audit, template assignment for new keys, configured paper size, Excel and print filter context | Real XLSX and eight browser regressions, including multipage PDF; no live catalog setting changed |
+
+Financial allocation is performed across the complete invoice before product/plate
+filtering, with cent rounding reconciled on the last line. Physical returns reduce
+quantity; monetary credits/debits do not invent transported tons. Business cutoff
+applies to document selection and hides older source document numbers/dates in the
+trace. These are period transaction reports, not opening AR balances. Invoice-to-116
+`MATCHED` describes that linkage; it is not an accounting signoff of every upstream
+document. Trace queries are batched separately because coupon indexes are absent.
+Preview caps at 1,000 complete documents, Excel at 50,000; truncation is explicitly
+flagged. A capped period must not be signed off as a complete year.
+
+Regression evidence is local, not hosted CI or an authenticated deployed Full Loop.
+Latest backend suite passed **1,367/1,367**, frontend TypeScript/build passed and the
+browser regression suite passed **8/8** (synthetic HTTP fixtures for that suite). Read-only source-query inventory covered all
+37 catalog keys: **32 loaded**, three intentionally unavailable and two new budget
+reports awaiting migration 278. The first inventory had one timeout and two test
+transport date-conversion failures; targeted retries with correctly typed SQL
+parameters loaded AR aging (153 rows), GL sales journal (30) and customer dispatch
+(18). Keep both attempts; these counts are not full-period financial signoff.
+The new tests cover cent allocation, partial/full discounts, credit/return signs,
+multi-slip nonduplication, incomplete costing, preview/export caps, ISO preservation
+and clearing, audit rollback, budget separation of duties, stale versions and
+resubmission. The browser fixture exercises real components with synthetic API data,
+including every Daily Invoice column on A3 landscape. This is distinct from using
+three real accounts and reconciling a full accounting period.
+
+Migration 278 rehearsed twice idempotently, with down refusing business history and
+then succeeding after fixture removal, inside an outer rollback on the UAT v3 copy.
+Postflight found no fixture users/plans/new schema or remaining QA SQL session;
+native trigger metadata and migration ledger stayed unchanged. Identity counters
+may advance even when SQL data is rolled back. The first real-service transport
+attempt hung and was stopped by its exact owned process; it is a failed attempt,
+not a pass. Automatic approval review initially rejected the replacement rehearsal;
+the owner then explicitly authorized temporary schema/test identities/plans on
+`dbwins_worldfert9_uat_v3`, with whole-transaction rollback and session cleanup.
+That bounded real-source SQL rehearsal has now **passed**: save → submit → review
+→ approve; SQL-raised audit failure rolls the edited plan and details back; stale
+versions, out-of-order approval and SALES approval are rejected. Exactly four
+temporary ChangeEvents correspond to the four successful actions. The annual
+report distinguishes a synthetic 1,000 allocation from a 110 item estimate, and
+the selected approval report resolves all three synthetic signatories correctly.
+
+The first adapter pass exercises actual service SQL and SQL Server through savepoints inside
+one SERIALIZABLE outer transaction. It uses the QA Windows-integrated principal,
+not the deployed application login. It is **not** an authenticated browser test,
+an app-login permission test, or a race between independent SQL transactions.
+Intermediate transport/session-option attempts remain failures, with successful
+cleanup checks. The final adapter retains sequenced responses so a failed SSH
+read can retrieve the previous result without re-executing a SQL operation; its
+ARITHABORT/ANSI_WARNINGS settings match the application connection settings.
+SQL lock waits remain bounded at five seconds, commands at fifteen seconds.
+
+**Follow-up acceptance, 23 November:** the full source service workflow and reports
+also pass under `EXECUTE AS USER` for the existing QA application database
+principal. It has no db_owner, database CONTROL or dbo.SOHD ALTER permission.
+A separate read-only `EXECUTE AS LOGIN` inspection confirms that the QA login is
+enabled, is not sysadmin/db_owner and cannot open either PROD database or the
+primary UAT database. This checks the security context, not a SQL-password/TCP
+authentication handshake.
+
+A real loopback HTTP/browser rehearsal then passed with three separate synthetic
+SALES/MANAGER/C_LEVEL accounts: real password login, JWT validation, database role
+profiles, prepare → submit → review → approve → print, four ChangeEvents, and
+whole-transaction rollback. No API response was mocked. The connection adapter
+uses the QA application database principal; it serializes entire HTTP requests
+inside one outer SQL transaction so savepoints cannot cross request boundaries.
+It is not an independent-transaction race, a deployed-environment test or signoff
+by existing staff. The ADO bridge's unzoned DateTime DTOs also do not establish
+production-driver timestamp parity; the final print fixture separately verifies
+UTC-to-Bangkok formatting.
+
+The browser found and fixed a real loading race: selecting a plan left the reason
+input editable, then cleared text typed before the load completed, so review was
+never submitted. Plan/year selection and the reason input now wait while busy.
+Saved/opened plan years stay aligned and legacy CE years display as BE. Budget
+menus follow assigned/revoked permissions, including a custom reviewer. Budget
+approval printing no longer repeats generic warehouse signature boxes below its
+three workflow signatories. Current regression is **backend 1,366/1,366**, frontend
+build passed, **six mocked browser cases passed**. The successful real HTTP case
+preceded the print-only signature correction; that correction has separate visual
+and browser acceptance. Earlier failed transport/encoding/timeout/UI attempts
+remain evidence, not passes. Final postflight again confirms zero fixture
+accounts/plans/new schema/sessions and an unchanged rollback baseline.
+
+After final rollback the baseline matches: application-user/plan/audit/permission
+row counts, migration-ledger count/checksum, BudgetPlan column metadata, absence
+of all three new tables and SHA-256 of dbo trigger definitions/disabled state.
+Temporary worker files were removed. An independent read-only postflight confirms
+zero fixture users, fixture plans, new schema and remaining owned QA SQL sessions.
+Evidence is private under `scratch/report-readiness-20261123/`, including
+`budget-source-sql.json`, `qa-postflight.json` and failed-attempt logs. Migration
+278 remains unapplied persistently everywhere; no deployment or live flag change
+was made. Identity counters may still advance after a rollback.
+
+Read-only inventory of the supplied Reports folder found 231 PBD and 19 PBL
+PowerBuilder libraries; original files were not modified. Static extraction located
+the native Daily Invoice cost expression. Inventory and selected expressions do not
+mean every legacy form, filter and print layout has been ported or accepted.
+The print preview no longer presents an unsigned title/timestamp QR as report
+verification; there is no signed report-verification endpoint. Company footer
+comes from the selected header rather than a fixed company name.
+
+**Remaining handover gates:** obtain real staff acceptance, reconcile complete
+selected periods and legacy budget details with the report owners, and confirm
+official ISO codes/templates and physical print output against native forms.
+Actual app pools and independent transactions now pass in the isolated rehearsal
+below; synthetic long/multipage Thai PDFs pass but do not replace owner signoff;
+review the final combined commit and migration permissions, then use the official
+release/deploy gates. The three existing unavailable reports — AR receipt history,
+cheque register and sales-vs-target — should remain unpublished until their native
+sources and acceptance exist. Their APIs remain unavailable; this task did not
+change live publication. Do not describe all reports, all APIs or all roles as fully
+accepted from the previous sales-document Full Loop.
+
+**Isolated committed rehearsal completed, 23 November (owner approved separate DB/login):**
+The earlier rollback-only schema probe returned SQL 1222 and could not establish
+independent transactions. The owner then explicitly authorized a disposable database
+and limited SQL login. A fresh COPY_ONLY/CHECKSUM backup of v3 was verified and
+restored to `dbwins_worldfert9_uat_reportqa`, without replacing an existing database.
+Migration 278 and synthetic fixtures were committed only there. The runtime used
+unmodified `backend/db.js` and the production `mssql`/tedious path with real SQL
+password authentication over TCP, not the file-RPC/savepoint adapter.
+
+- Restricted login: no sysadmin/db_owner/database CONTROL, no native ALTER/UPDATE,
+  and no access to either PROD database or primary UAT. Both actual app pools pass
+  their startup identity checks; no staff password was used.
+- Independent SQL transactions overlapped on two distinct SPIDs. Duplicate create
+  (CE/BE same year), same-version save, submit, review and approve each yield exactly
+  one success and one 409, with one corresponding ChangeEvent per successful action.
+- A real SQL audit-failure trigger rolls the plan header/version, lines, allocations
+  and audit back together. Wrong-role and out-of-order approval are blocked.
+- Three synthetic accounts in separate browser contexts pass real LoginPage/JWT/
+  RoleProfile/API and prepare → submit → Manager review → C_Level approval → print.
+  An additional five competing HTTP action pairs each have one success and one 409;
+  five successful actions produce five audits. Requests are not serialized by a QA
+  middleware. Actual driver timestamps are UTC Date objects/JSON with `Z`, and the
+  Thai print shows the same Bangkok time as the browser clock.
+- Annual report and real XLSX distinguish allocation 1,000 from estimate 110 and
+  remaining 890. Fixed XLSX allocation summaries from concatenated text into labelled
+  numeric cells so users can calculate with them; regression covers the actual file.
+- Same driver/login validates Daily Invoice 17 documents/24 lines, reconciled header
+  amounts/cost arithmetic, J/N and combined document/customer/plate filters, including
+  an absent plate; net sales 17/24, 110 (3 lines), 109 monetary credit (5), physical
+  return (3), PriceList/CostList 159 each, and exclusion before the configured cutoff.
+  This is sample acceptance, not a full-period accounting reconciliation or opening AR.
+- A new long-print test exposed an extra nearly empty PDF page caused by context
+  pushing ISO/footer past a fixed row count. Pagination now measures content, including
+  wrapped rows, summary and footer, before assigning page rows. Final annual fixture
+  has 80 distinct rows/9 regions across 8 physical/logical pages; Daily Invoice has
+  14 distinct invoices across 6 pages. Every physical page contains details and ISO;
+  totals and global row numbers survive repagination. Poppler renders were inspected.
+  These are synthetic A3 regressions, not a physical printer/native-form signoff.
+
+Cleanup is complete: disposable DB/login/SQL sessions all zero; protected generated
+credentials, owned backup/data files and remote QA working directory removed. Source
+v3 users/plans/ledger count+checksum and BudgetPlan schema baseline match; native
+trigger definitions/state and SystemSetting checksums match the untouched copy.
+No deploy, public push, existing-database restore, native guard disable, user-session
+kill, Rebate setting/reset or secondary business write occurred. Intermediate failed
+harness assertions remain recorded: trigger error-chain handling, reused fixture year,
+and the numeric-Excel finding. The initial sandboxed unit run could not fetch loopback;
+its unsandboxed localhost rerun passed all 1,367 tests. Final source hashes and private
+results are in `scratch/report-readiness-20261123/report-readiness-final-acceptance.json`.
+The final frontend-only pagination change is separately covered by build, 8 browser
+regressions and PDF verification; SQL/API acceptance precedes that print-only change.
+
+**Prepared real-user report UAT (not yet executed on a deployed candidate):**
+
+| Case | Participants / action | Required acceptance |
+| --- | --- | --- |
+| BP-01 | Actual preparer → assigned Manager → assigned C_Level | Separate identities; save/submit/review/approve and audit match; draft/rejected plans excluded from annual approved totals |
+| BP-02 | Two browsers repeat save/review/approve; unauthorized staff try another plan | One successful change, stale/duplicate 409, denied access leaves no mutation/audit |
+| BP-03 | Reject → change → resubmit; cancel unapproved draft; print selected plan | Re-review required; preserved history; correct three signatories and Bangkok times |
+| RP-01 | Accounting chooses a complete agreed period; compare J/N and native invoices | Native header totals, discounts, costs/profit, linked 103/104/202/tickets/116 and plates reconcile without fanout |
+| RP-02 | Credit/debit/physical return in a later month; choose cutoff boundaries | Adjustment counted on its own date; quantity only changes for physical return; period flow not mistaken for opening AR |
+| RP-03 | Marketing owns annual plan/legacy details; ADMIN configures official ISO/template/publication | Jan–Dec year and allocation/estimate distinct; missing historical detail explicit; official codes and paper selected; numeric Excel/physical print approved |
+
+The owner authorized acceptance and UAT/PROD deployment on 24 November 2026.
+Proceed UAT first, then PROD only after its gates pass. This authorization is distinct
+from the earlier isolated-test permission; no report release receipt exists yet.
+Review the combined commit and migration 278 permissions/down behavior before the
+normal release gates. Keep the three unavailable reports unpublished until their
+own sources and acceptance are complete.
+
 **23 November — UAT and PROD are now on `830553e`, v3/bridge active.**
 The owner authorized the exact public release and UAT-first rollout, followed by
 PROD after acceptance. [UAT promotion CI](https://github.com/thirayume/winspeed-connect/actions/runs/45142999229)

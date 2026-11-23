@@ -1,0 +1,12 @@
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import '../src/index.css';
+import {BudgetPlanPage} from '../src/components/reports/BudgetPlanPage';
+import {ReportsPage} from '../src/components/reports/ReportsPage';
+import {AdminReportCatalogModal} from '../src/components/admin/AdminReportCatalogModal';
+import {LegacyReportPdfModal} from '../src/components/reports/LegacyReportPdfModal';
+import {useAuthStore} from '../src/store/auth-store';
+const page=new URLSearchParams(location.search).get('page');
+useAuthStore.setState({user:{id:1,username:'fixture',displayName:'QA fixture',role:'ADMIN',isActive:true,capabilities:{menus:['reports','budget-plan'],actions:['settings.manage','reports.manage','budget.plan.create','budget.plan.review','budget.plan.approve']}},isAuthenticated:true});
+const approval=<LegacyReportPdfModal onClose={()=>{}} data={{type:'budget-plan-approval',title:'QA คำขออนุมัติ',columns:[{key:'ItemName',label:'รายการ',type:'text'},{key:'Amount',label:'ประมาณการ',type:'money',aggregation:'sum'}],rows:[{ItemName:'QA browser bags',Amount:110}],meta:{periodFrom:'2098-01-01',periodTo:'2098-12-31',basis:'SELECTED_PLAN',budgetSummary:[{region:'QA North',allocatedAmount:1000,estimatedAmount:110}],signatures:{prepared:'SALES',preparedAt:'2026-11-23T16:12:00Z',reviewed:'MANAGER',reviewedAt:'2026-11-23T16:13:00Z',approved:'C_LEVEL',approvedAt:'2026-11-23T16:14:00Z'}}}} template={{templateId:1,templateCode:'QA',templateName:'QA',orientation:'portrait',paperSize:'A4',showPageNumber:true,showSignatures:true,signatureSalesLabel:'พนักงานขาย',signatureApprovedLabel:'ผู้อนุมัติ',signatureWarehouseLabel:'พนักงานคลังสินค้า',version:1,header:{headerId:1,headerCode:'QA',headerName:'QA',companyNameTh:'บริษัททดสอบ',companyNameEn:'QA',addressTh:'QA',taxId:'QA',version:1}}}/>;
+createRoot(document.getElementById('root')!).render(page==='approval'?approval:page==='reports'?<ReportsPage/>:page==='catalog'?<AdminReportCatalogModal isOpen onClose={()=>{}} onCatalogUpdated={()=>{}}/>:<BudgetPlanPage/>);

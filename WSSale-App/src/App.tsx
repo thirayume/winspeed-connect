@@ -19,7 +19,7 @@ import { appAlert } from './components/ui/AppAlert';
 import { useSocketEvent } from './hooks/useSocket';
 import packageJson from '../package.json';
 
-export type PortalKey = 'app-settings' | 'roles' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'ops' | 'admin' | 'org' | 'approvers' | 'master' | 'profile' | 'beneficiaries';
+export type PortalKey = 'budget-plan' | 'app-settings' | 'roles' | 'incidents' | 'dashboard' | 'sales' | 'trip-board' | 'voucher' | 'edit-requests' | 'quotation' | 'store' | 'stock' | 'papertrail' | 'rebate' | 'rebate-plan' | 'control-ticket' | 'accounting' | 'recon' | 'giveaway' | 'aging' | 'reports' | 'policy' | 'ops' | 'admin' | 'org' | 'approvers' | 'master' | 'profile' | 'beneficiaries';
 
 const SalesPortal = lazy(() => import('./components/sales/SalesPortal').then(m => ({ default: m.SalesPortal })));
 const SaleTripBoardPage = lazy(() => import('./components/sales/SaleTripBoardPage').then(m => ({ default: m.SaleTripBoardPage })));
@@ -36,7 +36,7 @@ const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPa
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const WeighingReportsPage = lazy(() => import('./components/reports/WeighingReportsPage').then(m => ({ default: m.WeighingReportsPage })));
 // const IncentiveReport = lazy(() => import('./components/reports/IncentiveReport').then(m => ({ default: m.IncentiveReport })));
-// const BudgetExpenditureReport = lazy(() => import('./components/reports/BudgetExpenditureReport').then(m => ({ default: m.BudgetExpenditureReport })));
+const BudgetPlanPage = lazy(() => import('./components/reports/BudgetPlanPage').then(m => ({ default: m.BudgetPlanPage })));
 const AccountingPage = lazy(() => import('./components/accounting/AccountingPage').then(m => ({ default: m.AccountingPage })));
 const GiveawayPage = lazy(() => import('./components/giveaway/GiveawayPage').then(m => ({ default: m.GiveawayPage })));
 const QuotationPage = lazy(() => import('./components/quotation/QuotationPage').then(m => ({ default: m.QuotationPage })));
@@ -102,7 +102,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผนจัดสรรงบรีเบท',        icon: ClipboardList, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
       // ── รายงานที่ซ่อนไว้ — เจ้าของให้คงรายงานไว้ก่อน (17/11/2569) ──
       // { key: 'incentive-report', label: 'Incentive & Retained', sub: 'สัดส่วน · สะสมบริษัท', icon: Award, roles: [...] },
-      // { key: 'budget-report', label: 'Budget Expenditure', sub: 'งบจัดสรร · เบิกจ่าย', icon: BarChart3, roles: [...] },
+      { key: 'budget-plan',label:'Budget Plan',sub:'งบส่งเสริมการขายรายปี · ยื่นและอนุมัติ',icon:ClipboardList,roles:['SALES','COUNTER_SALES','ACCOUNTING','MANAGER','C_LEVEL','ADMIN'] },
       { key: 'giveaway',   label: 'ของแถม',      sub: 'งบของแถมรายภาค · เบิก', icon: Gift, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING', 'SALES'] },
       { key: 'accounting', label: 'บัญชี',       sub: 'Sync WINSpeed · อนุมัติ CN', icon: FileCheck, roles: ['C_LEVEL', 'ACCOUNTING', 'ADMIN', 'MANAGER'] },
       { key: 'incidents',  label: 'เหตุการณ์ผิดกฎ', sub: 'งานที่ไม่เป็นไปตามขั้นตอน · ผู้เกี่ยวข้อง', icon: AlertTriangle, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE'] },
@@ -603,7 +603,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'reports'    && <ReportsPage />}
                 {activePortal === 'scale-reports' && <WeighingReportsPage />}
                 {/* ปิดไว้ 03/09/2569 — IncentiveReport */}
-                {/* ปิดไว้ 03/09/2569 — BudgetExpenditureReport */}
+                {activePortal === 'budget-plan' && <BudgetPlanPage />}
                 {activePortal === 'accounting' && <AccountingPage />}
                 {activePortal === 'recon'      && <ReconciliationPage />}
                 {activePortal === 'incidents'  && <IncidentsPage />}

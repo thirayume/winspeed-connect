@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { Fragment } from 'react';
 import { createPortal } from 'react-dom';
-import QRCode from 'qrcode';
 import { Printer, X, FileText, AlertCircle } from 'lucide-react';
 import type { ReportData, ResolvedReportTemplateDto } from '../../services/api';
 import { formatThaiDate } from '../../utils/date';
 import { DEFAULT_WF_LOGO_DATA_URL } from '../../utils/docHeaderSettings';
+import {ReportContext} from './ReportContext';
+import {ReportGroupHeading} from './ReportGroupHeading';
+import {useReportPagination} from './useReportPagination';
 import {
   formatReportCell,
   isColumnNumeric,
@@ -21,14 +23,24 @@ export function LegacyReportPdfModal({
   template: ResolvedReportTemplateDto | null;
   onClose: () => void;
 }) {
-  const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
-
   const isLandscape = template?.orientation === 'landscape';
+  const paperSize = ['A3','A4','A5','Letter','Legal'].includes(template?.paperSize || '') ? template!.paperSize : 'A4';
+  const [shortEdge,longEdge]=({A3:[297,420],A4:[210,297],A5:[148,210],Letter:[215.9,279.4],Legal:[215.9,355.6]} as Record<string,number[]>)[paperSize];
+  const pageWidth=isLandscape?longEdge:shortEdge,pageHeight=isLandscape?shortEdge:longEdge;
+  const defaultLimit=data.meta?.groupBy?.length?(isLandscape?6:10):isLandscape?13:22;
+  const {pages,areaRef}=useReportPagination(data,template,pageHeight,defaultLimit);
+  // Transport references can be long. Keep every reference in a second row
+  // instead of shrinking a 21-column invoice register until it is unreadable.
+  const referenceKeys=['BookingRefs','SaleRefs','DebtRefs','TicketRefs','SlipRefs','TruckPlates','TraceState','DetailState','CostState'];
+  const referenceColumns=data.type==='daily-invoice'?data.columns.filter(c=>referenceKeys.includes(c.key)):[];
+  const printColumns=data.type==='daily-invoice'?data.columns.filter(c=>c.key!=='DocBook'&&!referenceKeys.includes(c.key)):data.columns;
 
   const PRINT_CSS = `
+.report-invoice-table { table-layout: fixed; width: 100%; }
+.report-invoice-table th, .report-invoice-table td { padding: 6px; font-size: 10px; overflow-wrap: anywhere; letter-spacing: normal; }
 @media print {
   @page { 
-    size: A4 ${isLandscape ? 'landscape' : 'portrait'}; 
+    size: ${paperSize} ${isLandscape ? 'landscape' : 'portrait'};
     margin: 8mm; 
   }
   body { 
@@ -67,8 +79,8 @@ export function LegacyReportPdfModal({
     break-after: avoid !important;
   }
   .report-page { 
-    width: ${isLandscape ? '281mm' : '194mm'};
-    min-height: ${isLandscape ? '194mm' : '281mm'};
+    width: ${pageWidth-16}mm;
+    min-height: ${pageHeight-16}mm;
     box-sizing: border-box;
     margin: 0 auto !important;
     padding: 4mm !important;
@@ -80,20 +92,6 @@ export function LegacyReportPdfModal({
   tr { page-break-inside: avoid !important; break-inside: avoid !important; }
 }
 `;
-
-  // QR Code generation for report authentication
-  useEffect(() => {
-    if (!data) return;
-    (async () => {
-      try {
-        const verifyUrl = `${window.location.origin}/verify?type=REPORT&title=${encodeURIComponent(data.title)}&t=${Date.now()}`;
-        const qr = await QRCode.toDataURL(verifyUrl, { width: 120, margin: 1 });
-        setQrCodeUrl(qr);
-      } catch (e) {
-        console.error('Failed to generate QR code for report:', e);
-      }
-    })();
-  }, [data]);
 
   if (!data) return null;
 
@@ -160,13 +158,7 @@ export function LegacyReportPdfModal({
     document.title = prevTitle;
   };
 
-  // Multipage Pagination calculation
-  // Portrait: ~22 rows per page; Landscape: ~13 rows per page
-  const ROWS_PER_PAGE = isLandscape ? 13 : 22;
-  const totalPages = Math.max(1, Math.ceil(data.rows.length / ROWS_PER_PAGE));
-  const pages = Array.from({ length: totalPages }, (_, i) =>
-    data.rows.slice(i * ROWS_PER_PAGE, (i + 1) * ROWS_PER_PAGE)
-  );
+  const totalPages = pages.length;
 
   // Logo rendering decision
   const hasLogo = typeof resolvedHeader.logoUrl === 'string' && resolvedHeader.logoUrl.trim().length > 0;
@@ -176,7 +168,8 @@ export function LegacyReportPdfModal({
   const showApproverBox = Boolean(resolvedHeader.signatureApprovedLabel && resolvedHeader.signatureApprovedLabel.trim() !== '');
   const showWarehouseBox = Boolean(resolvedHeader.signatureWarehouseLabel && resolvedHeader.signatureWarehouseLabel.trim() !== '');
   const activeSigBoxesCount = (showSalesBox ? 1 : 0) + (showApproverBox ? 1 : 0) + (showWarehouseBox ? 1 : 0);
-  const showSignaturesSection = Boolean(resolvedHeader.showSignatures && activeSigBoxesCount > 0);
+  const showSignaturesSection = Boolean(resolvedHeader.showSignatures && activeSigBoxesCount > 0
+    && !data.meta?.signatures && data.type!=='budget-plan-approval');
 
   const getGridColsClass = (count: number) => {
     if (count === 3) return 'grid-cols-3';
@@ -197,7 +190,7 @@ export function LegacyReportPdfModal({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-bold text-gray-800 text-base">แม่แบบรายงาน A4 — {data.title}</h2>
+                <h2 className="font-bold text-gray-800 text-base">แม่แบบรายงาน {paperSize} — {data.title}</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
                   {resolvedHeader.templateName} ({isLandscape ? 'แนวนอน' : 'แนวตั้ง'})
                 </span>
@@ -205,7 +198,7 @@ export function LegacyReportPdfModal({
                   รวม {totalPages} หน้า ({data.rows.length.toLocaleString()} แถว)
                 </span>
               </div>
-              <p className="text-xs text-gray-500">รูปแบบเอกสาร A4 จากข้อมูล WinSpeed</p>
+              <p className="text-xs text-gray-500">รูปแบบเอกสาร {paperSize} จากข้อมูล WinSpeed</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -214,7 +207,7 @@ export function LegacyReportPdfModal({
               className="px-5 py-2 rounded-xl text-white text-sm font-semibold flex items-center gap-2 shadow-md hover:bg-red-700 transition-colors cursor-pointer"
               style={{ background: '#E53935' }}
             >
-              <Printer size={16} /> พิมพ์ / บันทึกเป็น PDF (A4)
+              <Printer size={16} /> พิมพ์ / บันทึกเป็น PDF ({paperSize})
             </button>
             <button
               onClick={onClose}
@@ -226,16 +219,17 @@ export function LegacyReportPdfModal({
         </div>
 
         {/* Printable Multi-Page Area */}
-        <div className="report-print-area flex-1 overflow-y-auto p-6 bg-gray-100 print:overflow-visible print:p-0 print:bg-transparent print:block space-y-8 print:space-y-0">
+        <div ref={areaRef} className="report-print-area flex-1 overflow-y-auto p-6 bg-gray-100 print:overflow-visible print:p-0 print:bg-transparent print:block space-y-8 print:space-y-0">
           {pages.map((pageRows, pageIdx) => {
             const isLastPage = pageIdx === totalPages - 1;
             const pageNumberStr = `หน้า ${pageIdx + 1} / ${totalPages}`;
-            const startRowIndex = pageIdx * ROWS_PER_PAGE;
+            const startRowIndex = pages.slice(0,pageIdx).reduce((count,rows)=>count+rows.length,0);
 
             return (
               <div
                 key={pageIdx}
-                className={`report-page-container ${isLandscape ? 'max-w-[297mm]' : 'max-w-[210mm]'} mx-auto print:max-w-none`}
+                className="report-page-container mx-auto print:max-w-none"
+                style={{maxWidth:`${pageWidth}mm`}}
               >
                 <div className={`report-page bg-white border border-gray-200 rounded-xl p-8 shadow-sm print:border-none print:shadow-none print:p-0 min-h-[700px] flex flex-col justify-between`}>
                   
@@ -265,16 +259,10 @@ export function LegacyReportPdfModal({
                           </div>
                         </div>
 
-                        {/* Right Side: Page Count & QR Code */}
+                        {/* A report has no signed verification endpoint. Only show page count. */}
                         <div className="text-right shrink-0 flex flex-col items-end gap-1">
                           {resolvedHeader.showPageNumber && (
                             <div className="text-[11px] font-mono text-gray-800 font-bold mb-0.5">{pageNumberStr}</div>
-                          )}
-                          {qrCodeUrl && (
-                            <div className="p-1 bg-white border border-black rounded text-center shadow-2xl">
-                              <img src={qrCodeUrl} alt="QR Code" width={60} height={60} className="block" />
-                              <span className="text-[8px] font-mono font-bold text-gray-800 block mt-0.5">สแกนตรวจสอบ</span>
-                            </div>
                           )}
                         </div>
                       </div>
@@ -290,18 +278,19 @@ export function LegacyReportPdfModal({
                     {pageIdx === 0 && (
                       <div className="flex items-center justify-between text-xs bg-gray-50 border border-gray-200 rounded-lg p-2.5 mb-4">
                         <div><span className="text-gray-500">จำนวนรายการทั้งหมด:</span> <b className="font-semibold text-gray-800">{data.rows.length.toLocaleString()} รายการ</b></div>
-                        <div><span className="text-gray-500">สถานะข้อมูล:</span> <b className="font-semibold text-emerald-700">ตรวจสอบความถูกต้องแล้ว</b></div>
-                        <div><span className="text-gray-500">ระบบอ้างอิง:</span> <b className="font-mono text-gray-800">WINSpeed-Connect v1.4.0 (v{resolvedHeader.version})</b></div>
+                        <div><span className="text-gray-500">สถานะข้อมูล:</span> <b className="font-semibold text-gray-700">อ่านจากต้นทางตามเงื่อนไขรายงาน</b></div>
+                        <div><span className="text-gray-500">ระบบอ้างอิง:</span> <b className="font-mono text-gray-800">WINSpeed-Connect · แม่แบบ v{resolvedHeader.version}</b></div>
                       </div>
                     )}
 
                     {/* Data Table */}
+                    {pageIdx===0&&<ReportContext data={data}/>}
                     <div className="overflow-x-auto mb-4">
-                      <table className="w-full text-xs text-left border-collapse border border-gray-300">
+                      <table data-report-rows className={`w-full text-xs text-left border-collapse border border-gray-300 ${data.type==='daily-invoice'?'report-invoice-table':''}`}>
                         <thead>
                           <tr className="bg-[#1F3864] text-white text-[11px] font-semibold uppercase tracking-wider">
                             <th className="border border-gray-400 px-2.5 py-2 text-center w-10">#</th>
-                            {data.columns.map(c => {
+                            {printColumns.map(c => {
                               const isNum = isColumnNumeric(c);
                               return (
                                 <th
@@ -318,9 +307,9 @@ export function LegacyReportPdfModal({
                           {pageRows.map((row, i) => {
                             const globalRowIdx = startRowIndex + i;
                             return (
-                              <tr key={globalRowIdx} className={globalRowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
+                              <Fragment key={globalRowIdx}><ReportGroupHeading data={data} row={row} previous={pageRows[i-1]} colSpan={printColumns.length+1}/><tr className={globalRowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/60'}>
                                 <td className="border border-gray-300 px-2.5 py-1.5 text-center text-gray-400 text-[11px]">{globalRowIdx + 1}</td>
-                                {data.columns.map(c => {
+                                {printColumns.map(c => {
                                   const isNum = isColumnNumeric(c);
                                   const isIdent = c.type === 'identifier';
                                   return (
@@ -334,12 +323,12 @@ export function LegacyReportPdfModal({
                                     </td>
                                   );
                                 })}
-                              </tr>
+                              </tr>{referenceColumns.length>0&&<tr><td colSpan={printColumns.length+1} className="border border-gray-300 px-3 py-2 text-[10px] leading-relaxed break-words"><div className="grid grid-cols-2 gap-x-4 gap-y-1">{referenceColumns.map(c=><div key={c.key}><strong>{c.label}: </strong>{formatReportCell(row[c.key],c)||'—'}</div>)}</div></td></tr>}</Fragment>
                             );
                           })}
                           {data.rows.length === 0 && (
                             <tr>
-                              <td colSpan={data.columns.length + 1} className="py-10 text-center text-gray-400">
+                              <td colSpan={printColumns.length + 1} className="py-10 text-center text-gray-400">
                                 ไม่มีข้อมูลสำหรับรายงานนี้
                               </td>
                             </tr>
@@ -350,7 +339,7 @@ export function LegacyReportPdfModal({
                           <tfoot>
                             <tr className="bg-gray-100 font-bold border-t-2 border-gray-400 text-gray-900 text-[11px]">
                               <td className="border border-gray-300 px-2.5 py-2 text-center" colSpan={2}>รวมทั้งสิ้น</td>
-                              {data.columns.slice(1).map(c => {
+                              {printColumns.slice(1).map(c => {
                                 const isNum = isColumnNumeric(c);
                                 const hasTotal = totals[c.key] !== undefined;
                                 return (
@@ -433,7 +422,7 @@ export function LegacyReportPdfModal({
                       {/* Footer Notice & Page Count Bar */}
                       <div className="flex items-center justify-between text-xs text-gray-700 bg-gray-50 border border-gray-300 rounded-lg px-4 py-2 font-medium">
                         <div>
-                          {resolvedHeader.footerNote || 'เอกสารนี้ออกโดยระบบอัตโนมัติ WINSpeed-Connect · บริษัท เวิลด์ เฟอท จำกัด'}
+                          {resolvedHeader.footerNote || `เอกสารนี้ออกโดยระบบอัตโนมัติ WINSpeed-Connect · ${resolvedHeader.companyNameTh}`}
                         </div>
                         <div>
                           {resolvedHeader.showPageNumber ? pageNumberStr : ''}
@@ -443,6 +432,9 @@ export function LegacyReportPdfModal({
                   )}
 
                   {/* Non-last page bottom bar */}
+                  {data.isoStamp && <div className="mt-auto pt-3 flex justify-end text-[10px] text-black" data-testid="report-iso-stamp">
+                    {data.isoStamp.code} Rev.{data.isoStamp.revision}{data.isoStamp.effectiveDate ? ` (${formatThaiDate(data.isoStamp.effectiveDate)})` : ''}
+                  </div>}
                   {!isLastPage && resolvedHeader.showPageNumber && (
                     <div className="mt-4 pt-2 border-t border-gray-200 flex justify-end text-xs text-gray-500 font-mono">
                       {pageNumberStr} (ต่อหน้าถัดไป)

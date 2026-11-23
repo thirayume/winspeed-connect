@@ -11,7 +11,7 @@ function fixture() {
     sql: { Int: 'int', MAX: 'max', NVarChar: x => x, Request: class {
       constructor(tx) { this.tx = tx; this.values = {}; }
       input(k,t,v) { this.values[k] = v; return this; }
-      async query(text) { if (fail && this.values.k === 'REPORT_CFG_stock') throw new Error('WRITE_FAILED'); this.tx.push({text, values:this.values}); }
+      async query(text) { if (/SELECT SettingValue/.test(text)) return {recordset:[]}; if (fail && this.values.k === 'REPORT_CFG_stock') throw new Error('WRITE_FAILED'); this.tx.push({text, values:this.values}); return {recordset:[]}; }
     } },
   };
   return { catalog: createReportCatalog(db,['sales','stock']), switchDb: v => database=v, fail: () => fail=true, get reads() {return reads;}, get committed(){return committed;} };

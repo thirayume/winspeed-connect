@@ -1,6 +1,7 @@
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { appConfirm } from '../ui/AppAlert';
+import {ThaiDatePicker} from '../ui/ThaiDatePicker';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
@@ -50,7 +51,7 @@ export const AdminReportCatalogModal: React.FC<AdminReportCatalogModalProps> = (
 }) => {
   const [items, setItems] = useState<ReportCatalogConfigItem[]>([]);
   const [baseline, setBaseline] = useState('');
-  const signature = (rows: ReportCatalogConfigItem[]) => JSON.stringify(rows.map(r => [r.key, r.enabled]));
+  const signature = (rows: ReportCatalogConfigItem[]) => JSON.stringify(rows.map(r => [r.key, r.enabled, r.isoStamp]));
   const dirty = Boolean(baseline && baseline !== signature(items));
   useUnsavedChanges(isOpen && dirty);
   const requestClose = async () => { if (!saving && (!dirty || await appConfirm(unsavedMessage))) onClose(); };
@@ -137,7 +138,8 @@ export const AdminReportCatalogModal: React.FC<AdminReportCatalogModalProps> = (
         visibility[i.key] = i.enabled;
       });
 
-      await saveReportCatalogConfig({ order, visibility });
+      const isoStamps = Object.fromEntries(items.map(i=>[i.key,i.isoStamp?.code.trim() ? i.isoStamp : null]));
+      await saveReportCatalogConfig({ order, visibility, isoStamps });
       setSuccessMsg('บันทึกการจัดเรียงลำดับและเปิด/ปิดรายงานเรียบร้อยแล้ว');
       setBaseline(signature(items));
       onCatalogUpdated();
@@ -342,6 +344,15 @@ export const AdminReportCatalogModal: React.FC<AdminReportCatalogModalProps> = (
                       </button>
                     </div>
 
+                    {/* ISO control is per report, independent of the shared print template. */}
+                    <div className="flex flex-col gap-1 w-44">
+                      <input aria-label={`ISO code ${item.key}`} placeholder="ISO เช่น FM-SA-006" maxLength={60} value={item.isoStamp?.code || ''}
+                        onChange={e=>setItems(rows=>rows.map(r=>r.key===item.key?{...r,isoStamp:{...(r.isoStamp || {code:'',revision:'',effectiveDate:''}),code:e.target.value}}:r))} className="border rounded px-2 py-1 text-xs" />
+                      <input aria-label={`ISO revision ${item.key}`} placeholder="Revision เช่น 00" maxLength={30} value={item.isoStamp?.revision || ''}
+                        onChange={e=>setItems(rows=>rows.map(r=>r.key===item.key?{...r,isoStamp:{...(r.isoStamp || {code:'',revision:'',effectiveDate:''}),revision:e.target.value}}:r))} className="border rounded px-2 py-1 text-xs" />
+                      <ThaiDatePicker ariaLabel={`ISO effective date ${item.key}`} value={item.isoStamp?.effectiveDate || ''}
+                        onChange={value=>setItems(rows=>rows.map(r=>r.key===item.key?{...r,isoStamp:{...(r.isoStamp || {code:'',revision:'',effectiveDate:''}),effectiveDate:value}}:r))} className="border rounded px-2 py-1 text-xs w-full" />
+                    </div>
                     {/* Enable / Disable toggle switch */}
                     <button
                       type="button"

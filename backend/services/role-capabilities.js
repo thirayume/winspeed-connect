@@ -54,6 +54,7 @@ const MENUS = Object.freeze({
   // O-4: reports show company-wide rows → only users who see all records. A MANAGER sees all
   // until placed on the Organization Chart; capabilitiesFor drops it once they have a position.
   reports: ['APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'budget-plan': ['SALES','COUNTER_SALES','ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
   master: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   policy: ['MANAGER', 'C_LEVEL', 'ADMIN'],
   ops: ['MANAGER', 'C_LEVEL', 'ADMIN'],
@@ -91,6 +92,9 @@ const ACTIONS = Object.freeze({
   'giveaway.borrow': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'giveaway.budget': ['MANAGER', 'ADMIN'],
   'reports.manage': ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'budget.plan.create': ['SALES','COUNTER_SALES','ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
+  'budget.plan.review': ['MANAGER','ADMIN'],
+  'budget.plan.approve': ['C_LEVEL','ADMIN'],
   'users.manage': ['ACCOUNTING', 'MANAGER', 'ADMIN'],
   'roles.manage': ['ADMIN'],
   'settings.manage': ['ADMIN'],

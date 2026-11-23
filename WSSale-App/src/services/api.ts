@@ -1819,12 +1819,16 @@ export type ReportCatalogConfigItem = {
   available: boolean;
   enabled: boolean;
   orderIndex: number;
+  isoStamp?: ReportIsoStamp | null;
 };
+
+export type ReportIsoStamp = { code: string; revision: string; effectiveDate: string };
 
 export type ReportCatalogConfigResponse = {
   config: {
     order: string[];
     visibility: Record<string, boolean>;
+    isoStamps?: Record<string, ReportIsoStamp | null>;
   };
   reports: ReportCatalogConfigItem[];
 };
@@ -1913,6 +1917,18 @@ export interface SheetLayout {
 }
 
 export type ReportMeta = {
+  groupBy?: string[];
+  dateBasis?: string;
+  amountBasis?: string;
+  filters?: Record<string,string>;
+  periodFrom?: string;
+  periodTo?: string;
+  basis?: string;
+  budgetSummary?: {region:string;allocatedAmount:number;estimatedAmount:number}[];
+  missingPlanDetailsCount?: number;
+  costPendingCount?: number;
+  costBasis?: string;
+  signatures?: {prepared:string|null;preparedAt:string|null;reviewed:string|null;reviewedAt:string|null;approved:string|null;approvedAt:string|null}|null;
   page?: number;
   offset?: number;
   voucherLimit?: number;
@@ -1950,6 +1966,7 @@ export type ReportData = {
   columns: ReportColumn[];
   rows: Record<string, unknown>[];
   meta?: ReportMeta;
+  isoStamp?: ReportIsoStamp | null;
 };
 
 // ใบจ่ายสินค้าของ TruckScale — แทน RptSaYPan.rpt ของโปรแกรมชั่ง
@@ -1977,7 +1994,7 @@ export const fetchReportTypes = () => req<ReportTypeItem[]>('/reports/types');
 export const fetchReportPeriods = (kind: 'pricelist' | 'costlist', granularity: 'week' | 'month' = 'week') =>
   req<SelectablePeriodsResponse>(`/reports/${kind}-periods?granularity=${encodeURIComponent(granularity)}`);
 export const fetchReportCatalogConfig = () => req<ReportCatalogConfigResponse>('/reports/catalog-config');
-export const saveReportCatalogConfig = (payload: { order: string[]; visibility: Record<string, boolean> }) =>
+export const saveReportCatalogConfig = (payload: { order: string[]; visibility: Record<string, boolean>; isoStamps?: Record<string, ReportIsoStamp | null> }) =>
   req<{ ok: boolean; message: string; config: { order: string[]; visibility: Record<string, boolean> } }>('/reports/catalog-config', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

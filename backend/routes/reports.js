@@ -393,33 +393,6 @@ const REPORTS = {
                  ELSE N'ยอดค้างส่งซ่อนตามเกณฑ์เดิม' END
           ORDER BY DocuDate DESC, CustName, GoodName`,
   },
-  'cn-returns': {
-    title: 'รายงานใบลดหนี้และการรับคืนสินค้า (Credit Note & Return Register)',
-    category: 'finance',
-    available: false,
-    unavailableReason: 'ยังไม่ได้ผูกกับเอกสารใบลดหนี้จริงของ WinSpeed — ฉบับเดิมแสดงรายการตัดคูปองเป็นใบลดหนี้ (ไม่อนุญาตให้แสดงข้อมูลผิดประเภท)',
-    columns: [
-      { key: 'DocuNo', label: 'เลขที่ใบลดหนี้', type: 'identifier' },
-      { key: 'DocuDate', label: 'วันที่', type: 'date' },
-      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
-      { key: 'RefSOID', label: 'อ้างอิง SO', type: 'identifier' },
-      { key: 'ReturnTon', label: 'ปริมาณรับคืน (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
-      { key: 'TotalAmt', label: 'มูลค่าลดหนี้ (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-      { key: 'Reason', label: 'สาเหตุการลดหนี้', type: 'text' },
-    ],
-    sql: `SELECT TOP 200 
-            CAST(c.CouponID AS VARCHAR(50)) AS DocuNo,
-            CONVERT(VARCHAR(10), hd.DocuDate, 120) AS DocuDate,
-            hd.CustName,
-            CAST(hd.SOID AS VARCHAR(50)) AS RefSOID,
-            CAST(c.GoodQty AS DECIMAL(10,2)) AS ReturnTon,
-            CAST(c.GoodQty * ISNULL(dt.GoodPrice2, 0) AS DECIMAL(12,2)) AS TotalAmt,
-            N'ส่วนลดคูปอง/ใบลดหนี้คืนสินค้า' AS Reason
-          FROM dbo.WFCoupon c WITH (NOLOCK)
-          JOIN dbo.SOHD hd WITH (NOLOCK) ON hd.SOID = c.DocuID
-          LEFT JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID AND dt.ListNo = 1
-          ORDER BY hd.DocuDate DESC`,
-  },
   'wh-stock-balance': {
     title: 'รายงานสรุปสต็อกสินค้าปุ๋ยคงเหลือรายโกดัง (Daily Warehouse Stock Balance)',
     category: 'logistics',
@@ -909,7 +882,22 @@ const REPORTS = {
  * array = เฉพาะบทบาทที่ระบุ
  * function = ตรวจสอบเชิงลึก
  */
+const invoiceReports = require('../services/invoice-register-report');
+REPORTS['daily-invoice'] = {title:'Daily Invoice — ใบส่งของแยกชุด J/N พร้อมเอกสารขนส่ง',category:'finance',columns:invoiceReports.dailyColumns,run:p=>invoiceReports.run('daily-invoice',p)};
+REPORTS['net-sales-detail'] = {title:'ยอดขายสุทธิรายลูกค้าและสินค้า หลังลดหนี้ เพิ่มหนี้ และรับคืน',category:'finance',columns:invoiceReports.netColumns,run:p=>invoiceReports.run('net-sales-detail',p)};
+REPORTS['cn-returns']={title:'ทะเบียนใบลดหนี้และรับคืนสินค้าจาก WinSpeed',category:'finance',columns:invoiceReports.netColumns,run:p=>invoiceReports.run('credit-returns',p)};
+const budgetReports=require('../services/promotion-budget-report');
+REPORTS['budget-annual-estimate']={title:'ประมาณการค่าใช้จ่ายส่งเสริมการขายรายปี (1 ม.ค. – 31 ธ.ค.)',category:'finance',columns:budgetReports.columns,run:p=>budgetReports.run(p)};
+REPORTS['budget-plan-approval']={title:'คำขออนุมัติงบส่งเสริมการขาย',category:'finance',columns:budgetReports.columns,run:p=>{
+  if(!p.planId)throw Object.assign(Error('กรุณาเลือกเลขแผนที่ต้องการพิมพ์คำขออนุมัติ'),{status:400});
+  return budgetReports.run(p);
+}};
+
 const REPORT_ROLES = {
+  'daily-invoice': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
+  'net-sales-detail': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
+  'budget-annual-estimate': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
+  'budget-plan-approval': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
   'rule-incidents': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so-status': null,
   'rebate-pools': (user) => canViewAllRebateAmounts(user),
@@ -1011,6 +999,7 @@ router.get('/catalog-config', async (req, res) => {
         available: r.available !== false,
         enabled: config.visibility[key] !== false,
         orderIndex: orderIdx >= 0 ? orderIdx : 9999,
+        isoStamp: config.isoStamps?.[key] || null,
       };
     });
     reports.sort((a, b) => a.orderIndex - b.orderIndex);
@@ -1023,11 +1012,11 @@ router.get('/catalog-config', async (req, res) => {
 
 router.put('/catalog-config', async (req, res) => {
   try {
-    if (!canManageReports(req.user) || req.user.isImpersonating) {
+    if (!isUserAdmin(req.user) || req.user.isImpersonating) {
       return res.status(403).json({ message: 'เฉพาะผู้มีสิทธิ์จัดการรายงาน (reports.manage) เท่านั้นที่สามารถแก้ไขลำดับและเปิด/ปิดรายงาน' });
     }
-    const { order, visibility } = req.body || {};
-    const updated = await catalog.save({ order, visibility }, Number(req.user.actorSub || req.user.id || req.user.sub));
+    const { order, visibility, isoStamps } = req.body || {};
+    const updated = await catalog.save({ order, visibility, isoStamps }, Number(req.user.actorSub || req.user.id || req.user.sub));
     res.json({ ok: true, message: 'บันทึกการจัดเรียงและเปิด/ปิดรายงานเรียบร้อยแล้ว', config: updated });
   } catch (err) {
     console.error('Error updating catalog config:', err);
@@ -1095,7 +1084,7 @@ async function runReport(type, params = {}) {
     type,
     title: def.title,
     category: def.category || 'general',
-    columns: def.columns,
+    columns: result?.columns || def.columns,
     rows,
     ...(meta ? { meta } : {}),
   };
@@ -1138,6 +1127,7 @@ router.get('/:type', async (req, res) => {
     }
     const data = await runReport(req.params.type, req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
+    data.isoStamp = config.isoStamps?.[req.params.type] || null;
     res.json(data);
   } catch (e) {
     const status = e.status || 500;
@@ -1270,8 +1260,9 @@ router.get('/:type/export', async (req, res) => {
     if (config.visibility[req.params.type] === false && !isUserAdmin(req.user)) {
       return res.status(403).json({ message: 'รายงานนี้ถูกปิดการแสดงผลโดยผู้ดูแลระบบ' });
     }
-    const data = await runReport(req.params.type, req.query);
+    const data = await runReport(req.params.type, ['daily-invoice','net-sales-detail','cn-returns'].includes(req.params.type)?{...req.query,exportAll:'true'}:req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
+    data.isoStamp = config.isoStamps?.[req.params.type] || null;
 
     const template = await resolveReportTemplate(req.params.type);
     const header = template.header || {};
@@ -1298,7 +1289,9 @@ router.get('/:type/export', async (req, res) => {
       [`รายงาน: ${data.title}${titleSuffix}  |  พิมพ์เมื่อ: ${formatThaiBeDate(new Date(), true)}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode} (v${template.version})`],
     ];
 
-    if (isPartial) {
+    if (data.meta?.missingPlanDetailsCount) {
+      headerRows.push([`⚠️ ข้อมูลไม่ครบ: แผนเดิม ${data.meta.missingPlanDetailsCount} แผนยังไม่มีรายละเอียดประมาณการ ไม่ได้ถือเป็นศูนย์ กรุณาตรวจรายละเอียดก่อนใช้ยอดรวม`]);
+    } else if (isPartial) {
       const vCount = data.meta?.voucherCount ?? data.rows.length;
       const vTotal = data.meta?.totalMatchingVouchers ?? 'หลาย';
       const pageInfo = (data.meta?.totalPages && data.meta.totalPages > 1)
@@ -1311,10 +1304,20 @@ router.get('/:type/export', async (req, res) => {
 
     if (data.meta?.missingDetailCount > 0) {
       headerRows.push([
-        `⚠️ ข้อสังเกต (Notice): ตรวจพบใบสำคัญ ${data.meta.missingDetailCount} ใบที่ไม่มีบรรทัดรายการบัญชีในระบบ (GLDT) ซึ่งถูกแยกบันทึกในรายงานสรุป`
+        `⚠️ ข้อสังเกต (Notice): ตรวจพบเอกสาร ${data.meta.missingDetailCount} ใบที่ไม่มีบรรทัด${['daily-invoice','net-sales-detail','cn-returns'].includes(req.params.type)?'สินค้า (SOInvDT)':'บัญชี (GLDT)'} กรุณาตรวจต้นทางก่อนใช้รายงาน`
       ]);
     }
+    if(data.meta?.costBasis)headerRows.push(['กำไร = ยอดสุทธิไม่รวม VAT หลังส่วนลด − ต้นทุนตัดสต็อก ICCostDetail.PayAmnt']);
+    if(data.meta?.costPendingCount)headerRows.push([`⚠️ ต้นทุนยังไม่ครบ ${data.meta.costPendingCount} บรรทัด เว้นต้นทุนและกำไรเป็นค่าว่างและไม่รวมยอดสองช่องนี้`]);
     headerRows.push([]); // บรรทัดว่างคั่นหัวกระดาษกับตาราง
+    if(data.meta?.filters)headerRows.splice(headerRows.length-1,0,[Object.entries(data.meta.filters).filter(([,v])=>v).map(([k,v])=>`${k}: ${v}`).join(' | ')]);
+    if(data.meta?.periodFrom)headerRows.splice(headerRows.length-1,0,[`${data.meta.periodFrom} - ${data.meta.periodTo} | ประมาณการตามแผน ไม่ใช่ค่าใช้จ่ายจริง`]);
+    if(data.meta?.budgetSummary?.length){
+      headerRows.splice(headerRows.length-1,0,['ภาค / หน่วยงาน','วงเงินจัดสรร (บาท)','ประมาณการ (บาท)','วงเงินเหลือ (บาท)']);
+      for(const b of data.meta.budgetSummary)headerRows.splice(headerRows.length-1,0,[b.region,Number(b.allocatedAmount),Number(b.estimatedAmount),Math.round((b.allocatedAmount-b.estimatedAmount)*100)/100]);
+    }
+    if(data.meta?.signatures){const s=data.meta.signatures;headerRows.splice(headerRows.length-1,0,[`ผู้จัดทำ: ${s.prepared||'-'}`,`ผู้ตรวจสอบ: ${s.reviewed||'-'}`,`ผู้อนุมัติ: ${s.approved||'-'}`]);}
+    if (data.isoStamp) headerRows.splice(headerRows.length-1,0,[`${data.isoStamp.code} Rev.${data.isoStamp.revision} ${data.isoStamp.effectiveDate || ''}`]);
 
     // 2. หัวตารางภาษาไทย
     const aoa = [...headerRows, data.columns.map(c => c.label)];
@@ -1386,6 +1389,9 @@ router.get('/:type/export', async (req, res) => {
           XLSX.utils.book_append_sheet(book, ws, 'Report');
           return book;
         })();
+    if (data.isoStamp && (data.type === 'pricelist_sheet' || data.type === 'costlist_sheet')) {
+      for (const name of wb.SheetNames) XLSX.utils.sheet_add_aoa(wb.Sheets[name],[[`${data.isoStamp.code} Rev.${data.isoStamp.revision} ${data.isoStamp.effectiveDate || ''}`]],{origin:-1});
+    }
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     const fname = `${data.type}_${dateStr}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -2005,6 +2011,7 @@ async function runNativeDocumentsReport(params = {}, options = {}) {
 }
 
 module.exports = router;
+module.exports.resolveReportTemplate = resolveReportTemplate;
 module.exports.__testing = { REPORTS, REPORT_ROLES, runReport, runCustomerDispatchReport, runSalesJournalReport, runNativeDocumentsReport, fetchInvoicesByPostIds, resolveReportTemplate,
   runPolicyHistoryReport, runSequenceCountersReport, runTruckHoldLogReport, runTicketAlertHistoryReport, runNativePrintLogReport,
   getReportCatalogConfig, saveReportCatalogConfig, isUserAdmin, canRunReport };

@@ -192,6 +192,8 @@ const db = h.installDbStub((call) => {
   }
   if (/FROM wf\.CostBookLine/i.test(text)) {
     if (/CostBookId IN/i.test(text)) {
+      assert.match(text, /l\.Note\s+AS\s+Remark/i, 'CostBookLine schema stores Note, not Remark');
+      assert.doesNotMatch(text, /l\.Remark\b/i);
       const bidSet = new Set(Object.entries(inputs).filter(([k]) => k.startsWith('bid')).map(([, v]) => Number(v)));
       return activeCostLines
         .filter(l => bidSet.size === 0 || bidSet.has(Number(l.CostBookId)))
@@ -202,6 +204,10 @@ const db = h.installDbStub((call) => {
 
   // PriceBook queries
   if (/FROM wf\.PriceBookSpecialPrice/i.test(text)) {
+    if (/spb\d/.test(text)) {
+      assert.doesNotMatch(text,/sp\.(?:Status|ReasonText|RequestedAt)\b/i,'Special price table uses ApprovedPrice/ApprovedAt, Note and CreatedAt');
+      assert.match(text,/sp\.Note AS ReasonText/i);
+    }
     if (/INSERT INTO wf\.PriceBookSpecialPrice/i.test(text)) return [{ Id: 501 }];
     if (/UPDATE wf\.PriceBookSpecialPrice/i.test(text)) return { recordset: [], rowsAffected: [1] };
     if (/WHERE sp\.Id=@id/i.test(text) || /WHERE sp\.Id = @id/i.test(text)) {
@@ -263,6 +269,8 @@ const db = h.installDbStub((call) => {
       return mutableBookLines.filter(l => l.PriceBookId === Number(inputs.id));
     }
     if (/PriceBookId IN/i.test(text)) {
+      assert.match(text, /l\.Note\s+AS\s+Remark/i, 'PriceBookLine schema stores Note, not Remark');
+      assert.doesNotMatch(text, /l\.Remark\b/i);
       const bidSet = new Set(Object.entries(inputs).filter(([k]) => k.startsWith('bid')).map(([, v]) => Number(v)));
       return mutableBookLines
         .filter(l => bidSet.size === 0 || bidSet.has(Number(l.PriceBookId)))

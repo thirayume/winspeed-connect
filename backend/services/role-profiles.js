@@ -130,6 +130,9 @@ function filteredCapabilities(user) {
     if (hasPermission(user, permission)) inherited.add(menu);
     else inherited.delete(menu);
   }
+  if (["budget.plan.create", "budget.plan.review", "budget.plan.approve"].some(k => hasPermission(user,k)) || userRoles(user).includes("ACCOUNTING"))
+    inherited.add("budget-plan");
+  else inherited.delete("budget-plan");
   if (
     ["so.create", "so.edit", "so.confirm"].some((k) => hasPermission(user, k))
   )

@@ -230,7 +230,12 @@
     "tests/native-document-metadata.test.js",
     "tests/native-v3-qa-profile.test.js",
     "tests/coupon-bridge.test.js",
-    "tests/native-writer-release.test.js"
+    "tests/native-writer-release.test.js",
+    "tests/invoice-register-report.test.js",
+    "tests/report-iso-stamp.test.js",
+    "tests/promotion-budget-workflow.test.js",
+    "tests/invoice-report-export.test.js",
+    "tests/promotion-budget-report.test.js"
   ],
   "test:unit": [
     "tests/policy-contract.test.js",
@@ -362,6 +367,11 @@
     "tests/giveaway-quota-loans.test.js",
     "tests/giveaway-quota-loan-routes.test.js",
     "tests/native-v3-qa-profile.test.js",
-    "tests/native-writer-release.test.js"
+    "tests/native-writer-release.test.js",
+    "tests/invoice-register-report.test.js",
+    "tests/report-iso-stamp.test.js",
+    "tests/promotion-budget-workflow.test.js",
+    "tests/invoice-report-export.test.js",
+    "tests/promotion-budget-report.test.js"
   ]
 }

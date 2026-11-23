@@ -1,0 +1,17 @@
+import type {ReportData} from '../../services/api';
+import {formatThaiDate} from '../../utils/date';
+export function ReportContext({data}:{data:ReportData}){
+ const meta=data.meta;
+ return <div className="space-y-2 text-xs mb-3">
+  {meta?.costBasis==='POSTED_STOCK_PAY_AMOUNT'&&<p>กำไร = ยอดสุทธิไม่รวม VAT หลังส่วนลด − ต้นทุนตัดสต็อกจาก WinSpeed (ICCostDetail.PayAmnt)</p>}
+  {!!meta?.costPendingCount&&<p role="alert" className="text-amber-800">มี {meta.costPendingCount} บรรทัดที่ต้นทุนยังไม่ครบ เว้นต้นทุนและกำไรเป็นค่าว่าง และไม่แสดงยอดรวมสองช่องนี้จนกว่าจะครบ</p>}
+  {meta?.isTruncated&&<p role="alert" className="text-amber-800 border border-amber-200 p-2">ข้อมูลบางส่วน: แสดงไม่เกิน {meta.voucherLimit?.toLocaleString('th-TH')} เอกสารในช่วงที่เลือก กรุณาลดช่วงเวลา หรือส่งออก Excel ซึ่งรองรับขอบเขตมากกว่าหน้าจอ</p>}
+  {!!meta?.missingDetailCount&&<p role="alert" className="text-amber-800">พบ {meta.missingDetailCount} เอกสารที่ไม่มีบรรทัดรายละเอียด กรุณาตรวจต้นทางก่อนใช้รายงาน</p>}
+  {!!meta?.missingPlanDetailsCount&&<p role="alert" className="text-amber-800 bg-amber-50 border border-amber-200 p-2">ข้อมูลไม่ครบ: แผนเดิม {meta.missingPlanDetailsCount} แผนยังไม่มีรายละเอียดประมาณการ กรุณาตรวจและจัดทำรายละเอียดก่อนใช้ยอดรวม รายการที่ขาดไม่ได้ถือเป็นศูนย์</p>}
+  {meta?.dateBasis==='DOCUMENT_DATE'&&<p>นับตามวันที่เอกสารแต่ละฉบับ · ยอดเงินสุทธิไม่รวม VAT แยกจาก VAT</p>}
+  {meta?.filters&&<p className="text-slate-600">เงื่อนไข: {Object.entries(meta.filters).filter(([,v])=>v).map(([k,v])=>`${({from:'เริ่ม',to:'ถึง',book:'ชุด',docFrom:'เลขเริ่ม',docTo:'เลขถึง',custCode:'ลูกค้า',empCode:'ฝ่ายขาย',goodCode:'สินค้า',plate:'ทะเบียน'} as Record<string,string>)[k]||k}: ${v}`).join(' · ')}</p>}
+  {meta?.periodFrom&&<p>รอบปี {formatThaiDate(meta.periodFrom)} – {formatThaiDate(meta.periodTo||'')} · ประมาณการจากแผน{meta.basis==='APPROVED_PLANS_ONLY'?'ที่อนุมัติแล้ว':'ที่เลือก'} ไม่ใช่ค่าใช้จ่ายจริง</p>}
+  {!!meta?.budgetSummary?.length&&<table className="w-full border-collapse border text-xs"><thead><tr className="bg-slate-100"><th className="border p-1 text-left">ภาค / หน่วยงาน</th><th className="border p-1">วงเงินรายปี</th><th className="border p-1">ประมาณการ</th><th className="border p-1">วงเงินเหลือหลังประมาณการ</th></tr></thead><tbody>{meta.budgetSummary.map(s=><tr key={s.region}><td className="border p-1">{s.region}</td>{[s.allocatedAmount,s.estimatedAmount,s.allocatedAmount-s.estimatedAmount].map((v,i)=><td key={i} className={`border p-1 text-right ${v<0?'text-red-700':''}`}>{v.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>)}</tr>)}</tbody></table>}
+  {meta?.signatures&&<div className="grid grid-cols-3 gap-3 pt-3">{[['prepared','ผู้จัดทำ'],['reviewed','ผู้ตรวจสอบ'],['approved','ผู้อนุมัติ']].map(([k,label])=><div key={k} className="border-t pt-2 text-center"><div>{label}</div><strong>{meta.signatures?.[k as 'prepared'|'reviewed'|'approved']||'รอดำเนินการ'}</strong><div>{meta.signatures?.[(k+'At') as 'preparedAt'|'reviewedAt'|'approvedAt']?formatThaiDate(meta.signatures[(k+'At') as 'preparedAt'],true):''}</div></div>)}</div>}
+ </div>;
+}

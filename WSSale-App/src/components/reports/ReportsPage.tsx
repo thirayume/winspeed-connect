@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { Fragment, useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { BarChart3, RefreshCw, Download, FileSpreadsheet, FileText, Search, AlertCircle, ShieldAlert } from 'lucide-react';
 import { fetchReportTypes, fetchReport, exportReport, fetchReportTemplate, fetchReportPeriods } from '../../services/api';
 import type {
@@ -11,6 +11,8 @@ import type {
   SheetLayoutLineEntry,
 } from '../../services/api';
 import { LegacyReportPdfModal } from './LegacyReportPdfModal';
+import {ReportContext} from './ReportContext';
+import {ReportGroupHeading} from './ReportGroupHeading';
 import { useAuthStore } from '../../store/auth-store';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 import { SearchableSelect } from '../ui/SearchableSelect';
@@ -385,6 +387,11 @@ export function ReportsPage() {
   const BOOK_FILTER_REPORTS = ['native-documents'];
   const needsBookFilter = BOOK_FILTER_REPORTS.includes(active);
   const [book, setBook] = useState('');
+  const isInvoiceReport = ['daily-invoice','net-sales-detail','cn-returns'].includes(active);
+  const [invoiceFilters,setInvoiceFilters] = useState<Record<string,string>>({});
+  const isBudgetReport = ['budget-annual-estimate','budget-plan-approval'].includes(active);
+  const [budgetYear,setBudgetYear] = useState(new Date().getFullYear()+543);
+  const [budgetPlanId,setBudgetPlanId] = useState('');
 
   useEffect(() => {
     fetchReportTypes()
@@ -446,8 +453,10 @@ export function ReportsPage() {
     if (BOOK_FILTER_REPORTS.includes(active) && book) {
       p.book = book;
     }
+    if (isInvoiceReport) Object.entries(invoiceFilters).forEach(([k,v])=>{if(v.trim() && !(active!=='daily-invoice' && ['book','plate'].includes(k)))p[k]=v.trim();});
+    if (isBudgetReport){p.year=String(budgetYear);if(active==='budget-plan-approval'&&budgetPlanId)p.planId=budgetPlanId;}
     return Object.keys(p).length ? p : undefined;
-  }, [active, isSheetReport, sheetMode, sheetGranularity, selectedPeriodState, from, to, custCode, book]);
+  }, [active, isSheetReport, sheetMode, sheetGranularity, selectedPeriodState, from, to, custCode, book, isInvoiceReport, invoiceFilters,isBudgetReport,budgetYear,budgetPlanId]);
 
   const load = useCallback(async (type: string, range?: Record<string, string>) => {
     if (!type) return;
@@ -491,7 +500,8 @@ export function ReportsPage() {
   }, []);
 
   useEffect(() => {
-    load(active, reportParams());
+    const timer=setTimeout(()=>load(active,reportParams()),350);
+    return ()=>clearTimeout(timer);
   }, [active, load, reportParams]);
 
   async function doExport() {
@@ -583,7 +593,7 @@ export function ReportsPage() {
             <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> รายงาน (Reports)
           </h1>
           <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
-            ศูนย์รายงาน 23 ฉบับ · Typed Contract · พิมพ์ PDF A4 / ส่งออก Excel (SO-10)
+            ศูนย์รายงาน {types.length} ฉบับ · พิมพ์ตามแม่แบบ / ส่งออก Excel
           </p>
         </div>
 
@@ -593,9 +603,9 @@ export function ReportsPage() {
             disabled={!data || loading || exporting || !activeTemplate}
             className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50 hover:bg-red-700 transition-colors shadow-sm cursor-pointer disabled:cursor-not-allowed"
             style={{ background: '#E53935' }}
-            title={!activeTemplate ? 'ไม่สามารถพิมพ์ได้เนื่องจากไม่พบแม่แบบรายงานทางการ (Authoritative Master Required)' : 'พิมพ์ / Export PDF (A4)'}
+            title={!activeTemplate ? 'ไม่สามารถพิมพ์ได้เนื่องจากไม่พบแม่แบบรายงานทางการ (Authoritative Master Required)' : 'พิมพ์ / Export PDF'}
           >
-            <FileText size={16} /> พิมพ์ / Export PDF (A4)
+            <FileText size={16} /> พิมพ์ / Export PDF
           </button>
 
           <button
@@ -629,7 +639,7 @@ export function ReportsPage() {
             </select>
           )}
 
-          {needsDateRange && (
+          {needsDateRange && !isBudgetReport && (
             <div className="flex items-center gap-1.5">
               <div className="w-[8.5rem]">
                 <ThaiDatePicker
@@ -653,6 +663,12 @@ export function ReportsPage() {
             </div>
           )}
 
+          {isBudgetReport&&<div className="flex gap-2 items-center"><label>ปี พ.ศ. <input aria-label="ปีรายงานงบประมาณ" type="number" className="border rounded px-2 py-2 w-28" value={budgetYear} onChange={e=>setBudgetYear(Number(e.target.value))}/></label>{active==='budget-plan-approval'&&<input aria-label="เลขแผนงบประมาณ" type="number" min="1" className="border rounded px-2 py-2 w-32" placeholder="เลขแผน" value={budgetPlanId} onChange={e=>setBudgetPlanId(e.target.value)}/>}</div>}
+          {isInvoiceReport && <div className="flex gap-2 flex-wrap">
+            {[['docFrom','เอกสารตั้งแต่'],['docTo','เอกสารถึง'],['custCode','รหัสลูกค้า'],['goodCode','รหัสสินค้า'],['empCode','รหัสฝ่ายขาย'],...(active==='daily-invoice'?[['plate','ทะเบียนรถ']]:[])].map(([key,label])=>
+              <input key={key} aria-label={label} placeholder={label} maxLength={100} value={invoiceFilters[key]||''} onChange={e=>setInvoiceFilters(p=>({...p,[key]:e.target.value}))} className="w-36 border rounded-lg px-2 py-2 text-xs" />)}
+            {active==='daily-invoice' && <select aria-label="ชุดเอกสาร Invoice" value={invoiceFilters.book||''} onChange={e=>setInvoiceFilters(p=>({...p,book:e.target.value}))} className="border rounded-lg px-2 text-xs"><option value="">ทุกชุด J/N</option><option value="J">J</option><option value="N">N</option></select>}
+          </div>}
           <button
             onClick={() => load(active, reportParams())}
             disabled={loading}
@@ -790,6 +806,7 @@ export function ReportsPage() {
           ) : (
             <div className="bg-white rounded-none sm:rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
               {/* Report Header Card */}
+              <div className="px-5 pt-4"><ReportContext data={data}/></div>
               <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2 bg-gradient-to-r from-gray-50 to-white">
                 <div>
                   <h2 className="text-base font-bold text-gray-800">{data.title}</h2>
@@ -827,7 +844,7 @@ export function ReportsPage() {
                   <div className="flex items-center gap-2 font-medium">
                     <AlertCircle size={16} className="text-red-600 shrink-0" />
                     <span>
-                      <b>⚠️ ข้อมูลรายละเอียดไม่สมบูรณ์:</b> พบ {data.meta?.missingDetailCount} ใบสำคัญที่ไม่มีรายการบัญชีแยกประเภท (GLDT) ในฐานข้อมูล
+                      <b>⚠️ ข้อมูลรายละเอียดไม่สมบูรณ์:</b> พบ {data.meta?.missingDetailCount} เอกสารที่ไม่มีบรรทัด{isInvoiceReport?'สินค้า (SOInvDT)':'บัญชีแยกประเภท (GLDT)'} ในฐานข้อมูล
                     </span>
                   </div>
                   <span className="px-2.5 py-1 bg-red-100 text-red-800 font-bold rounded-lg text-[11px] shrink-0 font-mono">
@@ -992,7 +1009,7 @@ export function ReportsPage() {
 
                     <tbody className="divide-y divide-gray-100">
                       {data.rows.map((row, i) => (
-                        <tr key={i} className="hover:bg-blue-50/30 transition-colors">
+                        <Fragment key={i}><ReportGroupHeading data={data} row={row} previous={data.rows[i-1]} colSpan={data.columns.length}/><tr className="hover:bg-blue-50/30 transition-colors">
                           {data.columns.map(c => {
                             const isNum = isColumnNumeric(c);
                             const isIdent = c.type === 'identifier';
@@ -1007,7 +1024,7 @@ export function ReportsPage() {
                               </td>
                             );
                           })}
-                        </tr>
+                        </tr></Fragment>
                       ))}
                       {data.rows.length === 0 && (
                         <tr>

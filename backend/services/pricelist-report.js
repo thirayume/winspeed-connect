@@ -313,7 +313,7 @@ async function fetchLinesForBooks(kind, bookIds, queryFn = wfQuery) {
   if (isCost) {
     const res = await queryFn(`
       SELECT l.Id, l.CostBookId AS BookId, l.GoodId, l.GoodCode, l.GoodName,
-             l.GoodGroupId, l.GoodGroupName, l.CostPrice, l.Remark,
+             l.GoodGroupId, l.GoodGroupName, l.CostPrice, l.Note AS Remark,
              g.GoodGroupID AS EmGoodGroupID, gg.GoodGroupName AS EmGoodGroupName
       FROM wf.CostBookLine l WITH (NOLOCK)
       LEFT JOIN dbo.EMGood g WITH (NOLOCK)
@@ -333,7 +333,7 @@ async function fetchLinesForBooks(kind, bookIds, queryFn = wfQuery) {
 
   const res = await queryFn(`
     SELECT l.Id, l.PriceBookId AS BookId, l.GoodId, l.GoodCode, l.GoodName,
-           l.GoodGroupId, l.GoodGroupName, l.Price, l.LineStatus, l.Remark,
+           l.GoodGroupId, l.GoodGroupName, l.Price, l.LineStatus, l.Note AS Remark,
            g.GoodGroupID AS EmGoodGroupID, gg.GoodGroupName AS EmGoodGroupName
     FROM wf.PriceBookLine l WITH (NOLOCK)
     LEFT JOIN dbo.EMGood g WITH (NOLOCK)
@@ -365,12 +365,12 @@ async function fetchSpecialPricesForBooks(bookIds, queryFn = wfQuery) {
     SELECT sp.Id, sp.PriceBookId, sp.CustId,
            COALESCE(sp.CustName, cu.CustName, sp.CustId) AS CustName,
            sp.GoodId, sp.GoodName, sp.RequestedPrice, sp.ApprovedPrice,
-           sp.Status, sp.ReasonText,
-           CONVERT(VARCHAR(10), sp.RequestedAt, 23) AS RequestedDate
+           CASE WHEN sp.ApprovedPrice IS NOT NULL AND sp.ApprovedAt IS NOT NULL THEN 'APPROVED' ELSE 'PENDING' END AS Status,
+           sp.Note AS ReasonText,
+           CONVERT(VARCHAR(10), sp.CreatedAt, 23) AS RequestedDate
     FROM wf.PriceBookSpecialPrice sp WITH (NOLOCK)
     LEFT JOIN dbo.EMCust cu WITH (NOLOCK) ON cu.CustCode = sp.CustId
     WHERE sp.PriceBookId IN (${idPlaceholders})
-      AND sp.Status IN ('APPROVED', 'PENDING')
     ORDER BY sp.PriceBookId DESC, sp.Id DESC
   `, inputs);
   return res?.recordset || [];

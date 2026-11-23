@@ -10,6 +10,7 @@ import {
   fetchAdminReportAssignments,
   updateAdminReportAssignment,
   fetchAdminReportAudit,
+  fetchReportCatalogConfig,
   type ReportHeaderMasterItem,
   type ReportTemplateItem,
   type ReportAssignmentItem,
@@ -50,15 +51,16 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
     setLoading(true);
     setError(null);
     try {
-      const [h, t, a, au] = await Promise.all([
+      const [h, t, a, au, catalog] = await Promise.all([
         fetchAdminReportHeaders(),
         fetchAdminReportTemplates(),
         fetchAdminReportAssignments(),
-        fetchAdminReportAudit(50)
+        fetchAdminReportAudit(50),
+        fetchReportCatalogConfig().catch(()=>({reports:[]}))
       ]);
       setHeaders(h);
       setTemplates(t);
-      setAssignments(a);
+      setAssignments([...a,...catalog.reports.filter(r=>!a.some(x=>x.ReportKey===r.key)).map(r=>({AssignmentId:0,ReportKey:r.key,TemplateId:0,Version:0,IsActive:false,UpdatedBy:'',UpdatedAt:''}))]);
       setAudits(au);
     } catch (err: any) {
       console.error('Failed to load admin report data:', err);
@@ -796,7 +798,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {assignments.map(a => (
-                      <tr key={a.AssignmentId} className="hover:bg-blue-50/30 transition-colors">
+                      <tr key={a.ReportKey} className="hover:bg-blue-50/30 transition-colors">
                         <td className="py-2.5 px-3 font-mono font-bold text-gray-800">
                           {a.ReportKey}
                           {a.ReportKey === 'default' && (
@@ -816,6 +818,7 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
                             onChange={e => handleUpdateAssignment(a.ReportKey, Number(e.target.value))}
                             className="text-xs px-2 py-1 border border-gray-300 rounded-lg bg-white hover:border-[#0C447C] cursor-pointer"
                           >
+                            {a.TemplateId===0&&<option value={0} disabled>เลือกแม่แบบเฉพาะรายงาน</option>}
                             {templates.map(t => (
                               <option key={t.TemplateId} value={t.TemplateId}>
                                 {t.TemplateName} ({t.Orientation})

@@ -5,22 +5,19 @@ import { apiFetch } from '../../services/api';
 export function BudgetExpenditureReport() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [yearFilter, setYearFilter] = useState<number>(new Date().getFullYear());
 
   const loadData = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res: any = await apiFetch(`/budget/expenditure?year=${yearFilter}`);
       setData(res.data || []);
     } catch (e) {
       console.error('Failed to load budget expenditure:', e);
-      // Fallback mock if view not populated yet
-      setData([
-        { id: 1, region: 'ภาคเหนือ', planSection: 'โปรโมชั่นเปิดฤดู', periodYear: 2026, allocatedAmount: 500000, spentAmount: 320000 },
-        { id: 2, region: 'ภาคอีสาน', planSection: 'ส่วนต่างราคาปุ๋ยสูตรพิเศษ', periodYear: 2026, allocatedAmount: 800000, spentAmount: 750000 },
-        { id: 3, region: 'ภาคกลาง', planSection: 'ส่วนต่างค่าขนส่ง', periodYear: 2026, allocatedAmount: 400000, spentAmount: 120000 },
-        { id: 4, region: 'ภาคใต้', planSection: 'สนับสนุนร้านค้าช่วงต้นปี', periodYear: 2026, allocatedAmount: 300000, spentAmount: 290000 },
-      ]);
+      setData([]);
+      setError(e instanceof Error ? e.message : 'โหลดงบประมาณไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
@@ -54,8 +51,7 @@ export function BudgetExpenditureReport() {
             onChange={e => setYearFilter(Number(e.target.value))}
             className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm font-bold text-[#0C447C]"
           >
-            <option value={2026}>ปี 2026 (2569)</option>
-            <option value={2025}>ปี 2025 (2568)</option>
+            {Array.from({length:12},(_,i)=>new Date().getFullYear()+2-i).map(year=><option key={year} value={year}>ปี {year+543} ({year})</option>)}
           </select>
           <button onClick={loadData} className="px-3 py-2 rounded-xl border border-gray-200 bg-white hover:bg-gray-50 text-gray-700 text-sm font-semibold flex items-center gap-2">
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> โหลดข้อมูล
@@ -63,6 +59,7 @@ export function BudgetExpenditureReport() {
         </div>
       </div>
 
+      {error && <div role="alert" className="m-6 p-4 bg-red-50 text-red-800 border border-red-200 rounded-lg">{error} — ไม่สามารถยืนยันยอดได้ กรุณาลองใหม่</div>}
       {/* KPI Section */}
       <div className="p-6 pb-2 grid grid-cols-1 md:grid-cols-4 gap-4 shrink-0">
         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm">
