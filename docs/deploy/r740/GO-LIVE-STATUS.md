@@ -5,6 +5,102 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**23 November — read-only release review of `805fb71`: not yet a go-live approval.**
+The exact candidate contains both running releases and the observed remote main head.
+Previously recorded isolated QA acceptance remains valid, but deploying this commit unchanged
+will not activate the tested unified writer. No live checkout, image, service, permission,
+migration ledger, feature flag, reset or secondary business data was changed in this review.
+The deployment wrapper's `-PlanOnly` was deliberately not run: it synchronizes the
+server checkout and builds images. Instead, the exact hash-checked candidate runner
+ran with `plan:true` in disposable read-only containers using the appropriate migrators.
+
+| Read-only plan, 23 November | Running checkout | Unchanged | Pending | Drift |
+| --- | --- | ---: | ---: | ---: |
+| UAT | `9b42bdd` | 255 | 17: 260–276 | 0 |
+| PROD main | `fbbc139` | 250 | 22: 255–276 | 0 |
+| PROD company 2 | PROD stack | 250 | 22: 255–276 | 0 |
+
+All three databases were ONLINE at compatibility 80, both live backends healthy and
+their checkouts clean. No orphan ledger filenames were reported. All 22 candidate
+migrations have an up transaction marker and a corresponding down script. Planning
+does not execute their SQL against live data and is not live migration acceptance.
+Migrators have wf schema control and the required CREATE permissions without db_owner;
+they have no dbo ALTER permission. That separation is retained.
+
+**Release blockers and acceptance gaps:**
+
+- Both target files still pin `NATIVE_DOCUMENT_WRITER_VERSION=legacy`; the four
+  native writer flags remain true in UAT and false in PROD. The root Compose backend
+  does not forward `NATIVE_COUPON_BRIDGE_ENABLED`. A private-env change alone cannot
+  activate the tested bridge.
+- Migrations 263 and 270 leave the operational writer/bridge contracts disabled.
+  The four-hook installer and contract bootstrap are QA-only. A reviewed,
+  environment-pinned activation/deactivation path with current metadata hashes,
+  real audit identities, partial-save holds and nightly UAT refresh handling is
+  still needed. Do not point the QA installer at live databases or widen dbo rights
+  on the application login.
+- Actual application logins on all three databases can see the 49 trigger rows but
+  **zero trigger definitions**. Candidate `verifyOperationalMetadata` requires all
+  reviewed definitions; enabling v3 with current rights would fail closed. Supply
+  a narrowly scoped reviewed metadata reader or exact object permissions and prove
+  the actual app login passes before writer activation.
+- The Rebate-on QA profile enforces ZERO treatment; live runtime is configured
+  DISCOUNT. Since migration 258, ticket lines in a normal bill deliberately use
+  ZERO independently of the separate redemption endpoint. Generic discount SQL
+  tests do not certify the full live DISCOUNT endpoint plus the new bridge.
+  Confirm the intended endpoint/UI policy and rehearse that exact configuration
+  on a fresh copy, including legacy document financial-shape/adoption limits.
+- No hosted CI run exists for exact `805fb71`; the candidate is not the remote
+  release branch head. Local equivalent checks are recorded separately. Publishing,
+  promotion and deployment have not been performed.
+- Observed full backups were from 22 November around 21:00 ICT, approximately
+  935–941 minutes old when inspected. They are not fresh predeploy acceptance.
+  Take new COPY_ONLY/CHECKSUM backups and verify them in the authorized deployment
+  window; retain distinct files/receipts for UAT and both PROD companies.
+
+Migrator read-only checks matched all 49 expected trigger definitions/states in
+each database. No active old native authorization or unreleased edit hold was found.
+No PENDING/APPROVED legacy 104/116 request rows were found at inspection. Recheck
+that state, outstanding permits/reviews and actual runtime flags at cutover;
+these observations expire as users continue working.
+
+**Proposed order after the blockers are resolved and deployment is authorized:**
+
+1. Freeze one reviewed release SHA, verify immutable migration bytes, rerun CI and
+   rehearse the activation/rollback kit plus the exact intended Rebate treatment
+   on a fresh UAT copy. Preserve the prior 391-check QA result as separate evidence.
+2. Arrange a bounded writer maintenance window, fresh verified backups and a new
+   immutable plan. Use only `deploy-r740.ps1` and its reviewed company-migration
+   procedure; do not execute pending SQL ad hoc or repair ledger checksums.
+3. UAT applies 260–276 in order, then must report pending/drift zero. Apply approved
+   metadata access/contracts/hooks separately with audit; verify native trigger
+   hashes/states and run authenticated App + WinSpeed acceptance before PROD.
+4. PROD main and company 2 each need 255–276 with their own backup, plan and ledger
+   verification. The company migration uses the UAT backend image: verify that it
+   contains the same reviewed release SHA, not the old running UAT image. They are
+   separate transactions/databases: a successful main plan does not certify company 2.
+   Hold affected cross-database mutations until both schemas and checks are complete.
+   Company-2 schema migration does not authorize its
+   business writers; v3 currently allows only primary PROD/UAT/QA.
+5. Verify role ceilings, Access As, multi-line/partial cuts, both concurrency orders,
+   recovery/release, invoice completion, balances/opening cutoff and business audit.
+   Preserve issued tickets and the existing Rebate epoch; do not reset.
+6. Keep forward recovery available. Down scripts intentionally refuse after native,
+   loan, ticket or bridge history exists; for example 255, 258, 261, 263 and 270.
+   Application rollback is not a safe schema/history rollback. Do not delete history
+   to force a down script or restore over subsequent business transactions.
+
+Local checks on this candidate passed: the three additional backend CI groups
+132 + 61 + 424, offline rehearsal 99, frontend typecheck/build, browser resilience
+52, date-window 3, admin 9, trip 6, deployment-config 31, three deploy-shell syntax
+checks and tracked-file hygiene. These suites overlap the previously recorded
+1341 backend/14 runner tests; do not add them into a distinct-test total. The first
+browser attempt stalled at sandbox dev-server startup and was terminated; the
+localhost-permitted repeat completed all four suites. No hosted CI result is claimed.
+
+Private evidence: `scratch/codex-readiness-805fb71-20261123/` (ignored; no credentials).
+
+
 **23 November — unified 116 bridge, isolated QA acceptance:** migrations 270–276 are applied only on the isolated QA copy, each after COPY_ONLY/VERIFY and migration rollback rehearsal. The final read-only plan reports 272 unchanged, zero pending and zero drift. Four existing Sale-App hooks are enabled there; the 39 native WinSpeed trigger definitions/states are preserved. The protocol retains explicit permits, current source/scope proofs, reservation holds, additive settlement returns, reviewed recovery and release. Bridge-on now requires the recorded native connection, final-detail, legacy SET-options and ID non-reuse protocols.
 
 Actual WinSpeed initially exposed two different paths: a partial autocommit save, then a fresh edit with a single explicit transaction. Transaction-owned application locks cannot prove the first path. Protocol 273 binds it to the real connection GUID, login SID/time and SPID; another connection is rejected. Incomplete commits remain held. Protocol 274 can write the exact approved balance vector only when the whole physical 116 is complete, with settlement and audit in that last statement's transaction. It does **not** pretend the client's earlier autocommit statements roll back together. Protocol 275 sets required SQL options inside wf execution scope only. The owner then saved a freshly loaded two-line WinSpeed document successfully: seven callbacks shared one transaction, quantities/balances were unchanged, exactly one completion audit, and explicit review/release passed. SQL autocommit tests separately proved reduction/restoration, connection rejection, baseline/NET recovery, legacy caller option preservation, and cancellation with exact reservation returns. Legacy adoption observes current facts and never invents historical consumption or operators.
