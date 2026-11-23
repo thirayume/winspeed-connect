@@ -5,7 +5,89 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**23 November — UAT and PROD are now on `830553e`, v3/bridge active.**
+The owner authorized the exact public release and UAT-first rollout, followed by
+PROD after acceptance. [UAT promotion CI](https://github.com/thirayume/winspeed-connect/actions/runs/45142999229)
+and [PROD promotion CI](https://github.com/thirayume/winspeed-connect/actions/runs/45147843473)
+both passed. The tested backend tree remains `bd3ab1e7159a80067a61a74f4ac3347509630bd6`.
+Both remote branch heads, both deployed checkouts and both healthy backends use
+`830553ed568e9c60bc305c068b15d9f009691a1c`. Public HTTPS health is 200 with normal
+certificate validation. The served frontend index artifacts match exactly.
+
+| Final database | Applied in rollout | Final ledger | Native writer / bridge |
+| --- | ---: | --- | --- |
+| UAT | 18: 260–277 | 273 entries; pending 0 / drift 0 | Active, four reviewed custom hooks, one release audit |
+| PROD main | 23: 255–277 | 273 entries; pending 0 / drift 0 | Active, four reviewed custom hooks, one release audit |
+| PROD company 2 | 23: 255–277 | 273 entries; pending 0 / drift 0 | Inactive; no writer binding or native business-write activation |
+
+COPY_ONLY/CHECKSUM backups for all three databases passed RESTORE VERIFYONLY
+before their migration applies. All live operations used the official deploy
+wrapper and the documented company migration helper. Main PROD receipts are
+`20261123-163812-prod-apply-830553e.txt` and the final configuration reload
+`20261123-165718-prod-apply-830553e.txt`; UAT receipt is recorded below.
+
+Both primary application logins passed the fixed 49-hook metadata check,
+including the 39 unchanged WinSpeed-native hooks. Neither login is sysadmin or
+db_owner, sees native definitions directly, or can write the protected contract
+or release journal. Both native contracts are bound to the actual release SHA.
+SALES cannot issue new 104 tickets; its existing-ticket request and own-customer
+Rebate permissions remain available. Counter ticket sale permission is enabled.
+
+Initial PROD activation attempts hit SQL 1222 and rolled back completely: the
+fresh plan retained the exact baseline hash and no release row. A bounded,
+activation-only exception trace identified the timeout; read-only lock inspection
+identified a Sale-App Rebate SELECT with zero transaction log writes. The new
+backend was paused for activation, then restarted in `finally`; WinSpeed sessions
+were not killed. Activation succeeded, with exactly one committed release audit.
+The observer was stopped and its trace handle removed. Keep the ten-second lock
+timeout; arrange application quiescence for future hook DDL.
+
+Final functional environment flags match, including v3, bridge, all four stages,
+Rebate approval/conversion/preview/reset controls/discovery and active workers.
+PROD's two remaining differences (`REBATE_CONVERSION_ENABLED` and
+`REBATE_RESET_ADMIN_ENABLED`) were aligned to UAT with a protected config backup
+and an official wrapper reload. The old one-step conversion endpoint still
+refuses with `REBATE_CONVERSION_APPROVAL_REQUIRED`; it cannot bypass the approved
+request workflow. Enabling the Admin reset control did **not** execute a reset.
+All current coordinator/participant generations remain 1 / READY.
+
+Authenticated ADMIN browser smoke passed on both environments: sales/trip setup,
+Paper Trail, Rebate requests/evidence, giveaway quota loans and settlement/bridge
+queues. PROD also exposed the reset settings tab without submitting its protected
+confirmation. No console error remained after the final reload. These are
+read-only rollout checks, separate from QA ZERO 402/402, exact-source DISCOUNT
+441/441 and the earlier real WinSpeed GUI concurrency acceptance. No live sales
+documents or reset were created for acceptance; VAT-positive/GL posting remains
+accounting's WinSpeed work.
+
+Nightly task inspection resolved the apparent helper discrepancy: the actual
+backup task invokes the reviewed helper **inside the UAT checkout**, whose
+SHA-256 is `134e066640a56deef0b00ae2d2a4696cc0bedf335b5ed54e6cc4609176fd45ea`.
+The older `tools` copy is not the action used by that task and was left untouched.
+No real nightly restore/rebind was invoked during rollout. Future restore still
+requires a copied enabled PROD approval with the exact source SHA and no
+unfinished work, as described in the runbook.
+
+Post-rollout data readiness found zero stored 2026 Oct-31 reference prices in
+both primary environments. Read-only WinSpeed inspection found 71 unique
+general announced-price products effective on that date, with zero ambiguous
+latest-date groups. Authenticated ADMIN used the existing snapshot screen in
+each environment; both transactions saved 71 references. Actual app-login SQL
+verification found all 71 matched their source price-list ID, product, value
+and effective date, with the authenticated recorder captured. No WinSpeed price
+or secondary-company business record was changed.
+
+**Known nonblocking display issue:** snapshot `CapturedAt` is a legacy SQL
+`GETDATE()` local-time field, while the browser renders its driver timestamp as
+UTC, adding another seven hours. Raw SQL capture times and the immutable
+Oct-31 reference date were verified; price values and Rebate amounts are not
+affected. Correct the response/display timezone in a separately reviewed code
+change, with a regression against the raw SQL local timestamp. Do not rewrite
+stored capture history to disguise the display issue. This is not a claim that
+every historical API presentation issue has been eliminated.
+
 **23 November, UAT rollout stage — `830553e` deployed and activated; PROD pending.**
+Historical intermediate state; superseded by the final rollout above.
 The owner approved public release publication and UAT-first rollout, with PROD
 conditional on all gates. [Promotion CI 45142999229](https://github.com/thirayume/winspeed-connect/actions/runs/45142999229)
 passed in 5m6s and fast-forwarded `uat` to the exact reviewed release. A fresh

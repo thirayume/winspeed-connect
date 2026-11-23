@@ -6,7 +6,8 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Runbook refreshed 2026-11-21 (release 2.0.0, migrations through 253 on UAT,
+> when working on deploy or the databases. Runbook refreshed 2026-11-23 (current v3 rollout, migrations through 277;
+> older release 2.0.0 notes cover migrations through 253 on UAT,
 > PROD and `dbwins_worldfert2`; see [RELEASE-2.0.0.md](RELEASE-2.0.0.md)). Database care: [sql/maintenance](sql/maintenance/README.md).
 
 | | UAT | PROD |
@@ -18,7 +19,7 @@ Docker engine and Docker Desktop on that server are not used.
 | Public URL | `https://wfuat.duckdns.org` | `https://worldfert.duckdns.org` |
 | LAN URL | `https://172.16.30.169:8444` (HTTP 8091 redirects) | `https://172.16.30.169` (HTTP 80 redirects) |
 | Compose project / images | `saleapp-uat` / `worldfert-saleapp-uat-*` | `saleapp-prod` / `worldfert-saleapp-prod-*` |
-| Native WinSpeed writers (AI/104/116/107) | on, for Full Loop simulation on the clone | off; Production prints WinSpeed documents read-only |
+| Native WinSpeed writers (AI/104/116/107) | v3 active on the clone, audited contract and bridge | v3 active on company 9, audited contract and bridge; company 2 remains excluded |
 
 The public hostnames have Let's Encrypt certificates through Caddy (DNS-01 with DuckDNS); see
 [DuckDNS public ingress](DUCKDNS-PUBLIC-INGRESS.md). The LAN IP endpoints still use Caddy's
@@ -162,6 +163,23 @@ WinSpeed hooks intact, binds both contracts and writes release/business audit in
 one transaction. A used or changed plan is rejected. Approver, actor, SQL login
 and the restored original custom-hook definitions are retained in the audit.
 
+Before activation, independently compare the local reviewed HEAD with the actual
+server checkout HEAD over SSH, not merely the remote branch ref. The developer-PC
+activation path's Git helper reads the local checkout; that comparison does not
+itself prove the server checkout SHA. This independent check was performed for
+the current rollout and its release audit matches both running checkouts.
+
+Keep application readers quiescent while altering hooks. PROD's first activation
+attempts returned SQL 1222 because a background Rebate SELECT held a compatible
+read lock that prevented hook DDL. The unchanged plan proved complete rollback.
+Inspect blockers without SQL text or user-session termination; after confirming
+no application transaction writes, pause only the backend for the authorized
+maintenance window, use the official activation action and exact reviewed plan,
+and restart that same container in a `finally` block. Verify health and metadata
+afterward. Do not increase the ten-second timeout or disable WinSpeed triggers.
+Native WinSpeed 116 create/edit/cancel operations need their approved Sale-App
+bridge permit; incomplete saves remain held for review/recovery.
+
 For controlled deactivation, use `PlanDisable` then `Disable` with a fresh hash.
 It refuses unfinished native work and outstanding reservations. With business
 history, it pauses the native-writer contract while retaining the bridge/hooks:
@@ -195,6 +213,16 @@ profile supports ZERO or DISCOUNT on its one isolated database, with workers off
 Its supplementary DISCOUNT fixture explicitly simulates WinSpeed booking input;
 it is not evidence of a frontend footer-discount editor. VAT-positive/GL posting
 remains accounting's WinSpeed work.
+
+Before a year's first approved Rebate conversion, the selected product needs
+its Oct-31 reference in `wf.Oct31StandingPrice`. Authorized users can capture it
+from WinSpeed's general announced prices effective on that date in the Rebate
+page. Inspect missing/ambiguous sources first; never invent a value or substitute
+a later price. The current 2026 references were empty before rollout acceptance;
+both primary environments now contain 71 verified source-matching references.
+This capture does not reset balances or change WinSpeed pricing. The legacy
+capture-time display currently adds seven hours; raw SQL local timestamps are
+the verification source until the presentation correction is reviewed.
 
 ## Deploy
 
@@ -313,10 +341,12 @@ endpoint stays on 8444. The public edge never uses the unrelated service on 8443
 
 PROD uses the same images, Compose file and scripts as UAT. What differs is pinned in
 [`targets/prod.env`](targets/prod.env): `dbwins_worldfert9`, `ONPREM_TARGET_KIND=production`,
-ports 80/443, a backup gate, the UAT Caddy root and the four AI/104/116/107 writer flags set to
-`false`. Production has been live since 30 October 2026. The web stack, reports and read-only
-WinSpeed prints are in use; the native writers, AR reports, GL posting and physical
-weighing/shipment are still business acceptance items, not certified by a deploy.
+ports 80/443, a backup gate and the UAT Caddy root. Both targets now pin v3, the
+bridge and all four AI/104/116/107 writer flags on; both were activated with the
+reviewed release on 23 November 2026. Company 2 receives schema updates only and
+is excluded from operational native writer activation. Sale-App completion ends
+when 107 covers its 116s; subsequent VAT/GL work belongs to accounting in WinSpeed.
+Physical weighing hardware and VAT-positive GL posting are not certified by a deploy.
 
 ### Routine release (owner)
 
@@ -332,9 +362,11 @@ weighing/shipment are still business acceptance items, not certified by a deploy
 4. `docs\deploy\r740\deploy.bat prod`: `YES` for the commit, then the database name
    `dbwins_worldfert9` when migrations are pending, or `YES` to restart when none are.
 5. Verify, read-only: the `prod-apply-<commit>` receipt, `https://worldfert.duckdns.org/api/health`,
-   the frontend bundle, `wf.fn_IsInitialNativeUatTarget()` = 0 on `dbwins_worldfert9`, and all
-   writer flags false in `saleapp-prod-backend-1` (the four pinned flags plus
-   `COUPON_NATIVE_POSTING_ENABLED`; `ALLOW_TEST_NATIVE_WRITEBACK` unset).
+   the frontend bundle, and the separate reviewed activation with
+   `wf.fn_IsNativeDocumentTarget()` = 1 on company 9. Both primary environments
+   use v3, bridge and the four stage flags on. Company 2's native target/bridge
+   remain off. The separate legacy `COUPON_NATIVE_POSTING_ENABLED` remains false;
+   do not use `ALLOW_TEST_NATIVE_WRITEBACK` for operational v3 activation.
 
 ### First go-live (done 30 October 2026, kept for reference)
 
@@ -352,11 +384,12 @@ window right after the backup.
 
 ## Enable Rebate after deployment
 
-The operational native v3 writer is still a candidate; see [acceptance and remaining gates](GO-LIVE-STATUS.md).
-Both reviewed targets explicitly retain `NATIVE_DOCUMENT_WRITER_VERSION=legacy`. The version is pinned alongside
-the four native stage flags and validated in the resolved Compose model, so a secret env file cannot choose v3.
-The existing pilot writers keep their narrow target guard. In v3 mode their verified receipts remain replayable,
-but they cannot create new documents. Resolve pending pilot requests before a reviewed version transition.
+The operational native v3 writer was activated in both primary environments on
+23 November; see [acceptance and release evidence](GO-LIVE-STATUS.md). Both reviewed
+targets pin `NATIVE_DOCUMENT_WRITER_VERSION=v3`, bridge and the four stage flags,
+validated in the resolved Compose model. The existing pilot writers keep their
+narrow target guard. In v3 mode their verified receipts remain replayable, but
+they cannot create new documents. Resolve pending pilot requests before a version transition.
 
 V3 activation additionally requires the exact server/database `wf.NativeWriterContract`, reviewed native metadata,
 and the actual runtime login's read-only definition visibility on the parent tables listed in
@@ -382,10 +415,11 @@ For full discount on exempt bills, set `REBATE_TICKET_REDEMPTION_TREATMENT` to `
 - The UAT app and migrator enforce the UAT target isolation rules. The Production target
   requires the live database and its dedicated logins. Both enforce their reviewed roles,
   TCP and SQL server/version identity.
-- The four native AI/104/116/107 feature flags are pinned in `targets/*.env` and checked in
-  the resolved Compose model (UAT `true`, PROD `false`). `COUPON_NATIVE_POSTING_ENABLED` is not
-  pinned and defaults to `false`; check it after each PROD deploy. The SQL writers also refuse
-  any database other than the UAT clone (`wf.fn_IsInitialNativeUatTarget()` returns 0 on PROD).
+- The four native AI/104/116/107 feature flags, v3 and bridge are pinned in
+  `targets/*.env` and checked in the resolved Compose model (on in both primary
+  environments). `COUPON_NATIVE_POSTING_ENABLED` belongs to the older posting path
+  and stays false. Operational v3 also requires the exact approved database
+  contract and metadata; company 2 is not an operational native writer target.
 - Target values live only in `targets/*.env` (reviewed in Git); `config\.env` holds secrets.
 - Background workers are on in both R740 targets (`DISABLE_BACKGROUND_WORKERS=false`): the
   5-second polling that refreshes open screens (read-only on `dbo.SOHD`) and the outbox
