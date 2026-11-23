@@ -5,7 +5,36 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**23 November, UAT rollout stage — `830553e` deployed and activated; PROD pending.**
+The owner approved public release publication and UAT-first rollout, with PROD
+conditional on all gates. [Promotion CI 45142999229](https://github.com/thirayume/winspeed-connect/actions/runs/45142999229)
+passed in 5m6s and fast-forwarded `uat` to the exact reviewed release. A fresh
+COPY_ONLY/CHECKSUM backup of UAT passed RESTORE VERIFYONLY before deployment.
+The official wrapper applied migrations 260–277 (18), verified pending 0/drift 0,
+and returned healthy HTTP 200. Receipt: `20261123-160618-uat-apply-830553e.txt`.
+
+The separate UAT activation plan verified all 49 metadata fingerprints, the
+reviewed active ADMIN identities, exact ledger and no unfinished operations.
+Its hash-approved ENABLE completed through the official wrapper. An actual
+application-login read-only acceptance then passed: target and bridge ready,
+49 reviewed hooks including all 39 unchanged native hooks, neither sysadmin nor
+db_owner, zero direct native definitions, and no direct contract/release DML.
+SALES ticket-sale denial, SALES draw/Rebate permissions and Counter ticket-sale
+permission passed the deployed policy checks. UAT's reset epoch remains
+generation 1 / READY; no reset was performed.
+
+Authenticated browser acceptance is **pending the owner's UAT login**. Opening
+and reloading the public page showed the login form, not an authenticated test.
+Do not treat SQL/policy checks as a new browser or new WinSpeed GUI Full Loop.
+PROD is still running `fbbc139`; neither PROD promotion/deployment/activation nor
+company-2 migration has started. Both company databases have new verified
+COPY_ONLY/CHECKSUM backups, whose 120-minute freshness must be rechecked before
+apply. The installed `tools/Refresh-UAT.ps1` differs from this release's reviewed
+helper; updating and verifying that copy remains a rollout gate before relying
+on nightly v3 rebind. No secondary business write or Rebate reset occurred.
+
 **23 November — readiness gaps implemented, isolated QA accepted; not deployed.**
+This preparation snapshot predates the UAT rollout recorded above; PROD remains pending.
 The source candidate is `7889f938458e9705a7fce6782eeef894af54c272`
 (backend tree `bd3ab1e7159a80067a61a74f4ac3347509630bd6`). Final acceptance
 `R740V3-20261123-16` repeated DISCOUNT against all 1,220 files from its Git archive,
