@@ -6,6 +6,14 @@ See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public in
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
 **23 November — readiness gaps implemented, isolated QA accepted; not deployed.**
+The source candidate is `7889f938458e9705a7fce6782eeef894af54c272`
+(backend tree `bd3ab1e7159a80067a61a74f4ac3347509630bd6`). Final acceptance
+`R740V3-20261123-16` repeated DISCOUNT against all 1,220 files from its Git archive,
+with the nine original migration byte pins separately verified: **441/441,
+15 phases, zero failed, closed**. Git-declared archive EOL filters were respected;
+applied SQL and ledger bytes were not rewritten. The earlier ZERO run remains
+402/402. This candidate has not been pushed or run through hosted CI.
+
 The new source pins v3, the bridge and all four native document functions equally
 for UAT/PROD, and Compose/its validator carry the bridge flag. Migration 277 adds
 the fixed SELECT-only metadata reader and protected activation history. It was
@@ -40,6 +48,7 @@ reviewer was immediately retired and its private password removed.
 | --- | --- | --- |
 | ZERO, `R740V3-20261123-13` | 402/402, 15 phases, zero failed, closed | Normal mixed bill reserves at 103 and finalizes through 116/107; the incompatible legacy endpoint cannot debit it again |
 | DISCOUNT, `R740V3-20261123-15` | 441/441, 15 phases, zero failed, closed | Normal ZERO bill still works with the live-style DISCOUNT setting; a separately labelled WinSpeed-shaped single-line fixture proves the configured posted-sale endpoint |
+| Exact candidate DISCOUNT, `R740V3-20261123-16` | 441/441, 15 phases, zero failed, closed | Same flow repeated after checking all archived backend files against candidate `7889f93`; users retired and passwords removed |
 | DISCOUNT financial chain | 104/202 before redemption; 500 gross / 500 footer discount; AR, net and VAT zero in 202/107; 107 book N; GL not posted | Fixture setup is SQL on QA, not a frontend footer editor or a positive-VAT/GL acceptance |
 | Competing valid cut requests | Exactly one competing request succeeds, the other revalidates/refuses; remaining quantity closes once and concurrent 107 gives one invoice | Real authenticated API/SQL concurrency; prior actual WinSpeed GUI acceptance remains separate |
 | Cleanup | All seven users retired and private passwords removed from each finished run, including failed trials | Trial runs 11, 12 and 14 retain their failures and are not clean acceptance |
@@ -47,6 +56,10 @@ reviewer was immediately retired and its private password removed.
 Fresh read-only live plans now show UAT 18 pending (260–277), PROD main and
 company 2 each 23 pending (255–277), zero drift and no orphan ledger entries.
 Their migrator rights remain wf-only; no dbo ALTER grant was added.
+Final read-only health checks still show UAT `9b42bdd` and PROD `fbbc139`
+healthy with their previous container start times. QA has zero remaining owned
+loop users, unreleased native saves or copied-approval simulation rows. Its app
+is neither sysadmin nor db_owner and cannot access the three live databases.
 
 Backend 1346/1346, runner 14/14, focused 19/19 and deployment configuration 31/31
 passed. Frontend source is unchanged; its prior build/browser results remain
@@ -57,6 +70,8 @@ deployment gates. No push, live deployment, live migration/grant/flag/reset or
 secondary business write occurred.
 
 **23 November — read-only release review of `805fb71`: not yet a go-live approval.**
+The following is the historical baseline review. Its source gaps are addressed
+by the candidate and isolated acceptance above; live activation remains pending.
 The exact candidate contains both running releases and the observed remote main head.
 Previously recorded isolated QA acceptance remains valid, but deploying this commit unchanged
 will not activate the tested unified writer. No live checkout, image, service, permission,
