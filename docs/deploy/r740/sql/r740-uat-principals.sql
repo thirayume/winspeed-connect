@@ -251,9 +251,11 @@ BEGIN
  FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id
  WHERE t.parent_id IN(OBJECT_ID(''dbo.SOHD''),OBJECT_ID(''dbo.SODT''),OBJECT_ID(''dbo.SOHDRemark''),OBJECT_ID(''dbo.SODTRemark''),OBJECT_ID(''dbo.SOInvHD''),OBJECT_ID(''dbo.SOInvDT''),OBJECT_ID(''dbo.SMSat''),OBJECT_ID(''dbo.SMReserveSat''),OBJECT_ID(''dbo.ICStockDetail''),OBJECT_ID(''dbo.ICCostDetail''),OBJECT_ID(''dbo.WFRedemtionHD''),OBJECT_ID(''dbo.WFRedemtionDT''),OBJECT_ID(''dbo.WFCoupon''),OBJECT_ID(''dbo.VTVAT''),OBJECT_ID(''dbo.SMAudit''),OBJECT_ID(''dbo.SMEvent''),OBJECT_ID(''dbo.SMID''),OBJECT_ID(''dbo.EMRunBrch''),OBJECT_ID(''dbo.EMRunChar''),OBJECT_ID(''dbo.Define_104''));
 END;';
+        SET @native_expected=REPLACE(@native_expected,CHAR(13),N'');
         SET @native_uat=REPLACE(@native_expected,N'WITH EXECUTE AS SELF',N'WITH EXECUTE AS ''wf_r740_uat_migrator_v2''');
         SET @native_actual=LTRIM(RTRIM(REPLACE(OBJECT_DEFINITION(OBJECT_ID(N'wf.usp_ReadNativeDocumentMetadata')),CHAR(13),N'')));
         WHILE RIGHT(@native_actual,1)=CHAR(10) SET @native_actual=RTRIM(LEFT(@native_actual,LEN(@native_actual)-1));
+        WHILE LEFT(@native_actual,1)=CHAR(10) SET @native_actual=LTRIM(SUBSTRING(@native_actual,2,LEN(@native_actual)));
         IF LEFT(@native_actual,17) COLLATE Latin1_General_BIN2=N'CREATE PROCEDURE ' COLLATE Latin1_General_BIN2
             SET @native_actual=N'ALTER'+SUBSTRING(@native_actual,7,LEN(@native_actual));
         IF @native_actual IS NULL OR

@@ -138,6 +138,14 @@ only the exact reviewed body and remaps its execution identity after restore.
 It also creates protected activation history and prevents direct application
 updates to the native-writer contract.
 
+The post-restore principal check normalizes catalog leading/trailing LF and the
+expected literal's CRLF before its exact binary comparison. A leading catalog LF
+caused the 23 November refresh to roll back remapping and leave UAT SQL unavailable.
+The correction accepts the reviewed body with CREATE/ALTER or the isolated UAT
+execution identity only; changed statements and appended text remain rejected.
+Rehearse this SQL check on the actual restored catalog before relying on nightly
+refresh. Do not edit immutable migration 277 or weaken the body allowlist.
+
 Use the official wrapper from the developer PC after the authorized deployment
 has installed the same reviewed commit and migration 277. Keep affected writers
 in a maintenance window until activation and business smoke tests finish.

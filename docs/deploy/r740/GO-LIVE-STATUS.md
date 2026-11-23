@@ -14,6 +14,18 @@ migration 278 has not been applied to either live environment. It was committed 
 in the owner-authorized disposable QA database, which was subsequently dropped. No
 live settings, Rebate reset or secondary business writes were performed for this work.
 
+**24 November pre-deploy finding:** both server checkouts still report `830553e`.
+PROD SQL is up; the 23 November 21:00 UAT refresh rolled principal remapping back
+because the native metadata reader's catalog body starts with LF. Its statements
+match immutable migration 277. The principal helper now normalizes leading LF and
+expected CRLF before the same exact binary comparison. Eight real-SQL read-only
+cases accept only reviewed formatting/identity variants and reject changed body,
+extra text or a missing reader. Following a verified UAT COPY_ONLY/CHECKSUM backup,
+the corrected official principal script recovered app/migrator access and proves
+zero UAT-login access to either PROD database. This is UAT prerequisite recovery,
+not a report deployment or native-writer activation. The report release and this
+correction must pass CI and the staged UAT→PROD gates together.
+
 | Candidate scope | Implemented behavior | Acceptance boundary |
 | --- | --- | --- |
 | PriceList / CostList | Read `Note` as Remark; derive special-price status from actual approval columns | Actual read-only UAT loads: 159 rows each, no invalid-column error |

@@ -12,6 +12,10 @@ test('operational app uses the fixed metadata reader without direct catalog acce
  for(const table of require('../services/native-document-metadata.json').tables)assert(body.includes("OBJECT_ID('dbo."+table+"')"));
  const remap=fs.readFileSync(path.join(__dirname,'../../docs/deploy/r740/sql/r740-uat-principals.sql'),'utf8');
  assert(remap.includes(body.replace(/'/g,"''")));assert.match(remap,/native metadata reader differs/);
+ // The SQL catalog retains leading LF; Windows checkouts can put CR in the
+ // expected literal. Both must normalize before the exact binary comparison.
+ assert.match(remap,/SET @native_expected=REPLACE\(@native_expected,CHAR\(13\),N''\)/);
+ assert.match(remap,/WHILE LEFT\(@native_actual,1\)=CHAR\(10\)/);
 });
 test('operational metadata refuses unreadable, changed, enabled, missing, extra or duplicate triggers',()=>{
  const digest=s=>createHash('sha256').update(s).digest('hex');
