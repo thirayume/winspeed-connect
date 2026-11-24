@@ -70,3 +70,21 @@ test('the digest script prints the manifest digest and nothing else', () => {
   has(js, 'digestTargets(resolvePhysicalResetTargets(process.env))');
   assert.ok(!js.includes("require('../db')"));
 });
+// Exercise orchestration in Windows PowerShell without SQL, WSL, or host writes.
+for (const scenario of ['ok','backup-only','first-failed','second-failed','refresh-failed','copy-failed','plan','bad-unc','child-warning','child-nonzero']) {
+  require('node:test').test(`verified nightly backup: ${scenario}`, {skip:process.platform!=='win32'}, () => {
+    const cp=require('node:child_process');
+    const result=cp.spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',
+      require('node:path').join(__dirname,'fixtures/nightly-backup.ps1'),'-RepositoryRoot',require('node:path').resolve(__dirname,'../..'),'-Case',scenario],
+      {encoding:'utf8',windowsHide:true,timeout:15000});
+    const assert=require('node:assert/strict');
+    assert.equal(result.status,0,result.stderr||result.error?.message);
+    const data=JSON.parse(result.stdout);
+    assert.equal(data.success,['ok','backup-only','plan','child-warning'].includes(scenario),JSON.stringify(data));
+    if(scenario.startsWith('child-')){assert.ok(data.events.includes('CHILD_PROOF'));return;}
+    if(['plan','bad-unc'].includes(scenario)){assert.deepEqual(data.events,[]);return;}
+    assert.deepEqual(data.events.slice(0,2),['backup:dbwins_worldfert9','backup:dbwins_worldfert2']);
+    assert.equal(data.events.some(e=>e.startsWith('refresh:')), !['backup-only','first-failed','second-failed'].includes(scenario));
+    assert.equal(data.events.filter(e=>e.startsWith('copy:')).length,['first-failed','second-failed'].includes(scenario)?1:2);
+  });
+}

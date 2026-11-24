@@ -159,6 +159,24 @@ function mapLedgerRow(row) {
   };
 }
 
+// This column stores Bangkok wall time, while the SQL driver's Date exposes
+// those components as UTC. Give this field its actual offset at the API boundary.
+// Other wf timestamps may be true UTC and must retain their own contracts.
+function standingPriceCapturedAt(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString().replace(/Z$/, '+07:00') : null;
+  }
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?$/.test(text)) {
+    return text.replace(' ', 'T') + '+07:00';
+  }
+  // Already offset-qualified values are unambiguous; never subtract twice.
+  return text;
+}
+
 function mapOct31StandingPriceRow(row) {
   if (!row) return null;
   return {
@@ -174,7 +192,7 @@ function mapOct31StandingPriceRow(row) {
     priceListCode: row.PriceListCode ?? null,
     note: row.Note ?? null,
     capturedByUserId: row.CapturedByUserId != null ? Number(row.CapturedByUserId) : null,
-    capturedAt: row.CapturedAt ?? null,
+    capturedAt: standingPriceCapturedAt(row.CapturedAt),
   };
 }
 

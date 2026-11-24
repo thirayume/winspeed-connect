@@ -1,4 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { formatThaiDate } from '../../WSSale-App/src/utils/date';
+
+test('standing-price API offset displays the captured Bangkok time without changing day', () => {
+  expect(formatThaiDate('2026-11-23T17:07:58.627+07:00', true)).toBe('23/11/2569 17:07');
+  expect(formatThaiDate('2026-10-31T23:59:59.997+07:00', true)).toBe('31/10/2569 23:59');
+  expect(formatThaiDate('2026-11-01T00:00:00.000+07:00', true)).toBe('01/11/2569 00:00');
+});
 
 test('opening balance can be selected without old document IDs or user-controlled prices', async ({ page }) => {
   let body: any;

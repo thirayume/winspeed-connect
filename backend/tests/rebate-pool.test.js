@@ -6,6 +6,7 @@ const {
   APPROVAL_STATUS,
   PRICING_MODE,
   computeCycleExpiryDate,
+  mapOct31StandingPriceRow,
 } = require('../services/rebate-pool-models');
 const {
   calculateOrderPricingAndRebate,
@@ -19,6 +20,25 @@ const {
   executeManualTicketConversion,
   getCustomerConversionQueue,
 } = require('../services/rebate-conversion-service');
+
+test('standing price capture keeps its SQL Bangkok date and time at the API boundary', () => {
+  for (const local of ['2026-11-23T17:07:58.627', '2026-10-31T23:59:59.997', '2026-11-01T00:00:00.000']) {
+    const stored = new Date(local + 'Z');
+    const dto = JSON.parse(JSON.stringify(mapOct31StandingPriceRow({ CapturedAt: stored, BasePrice: 18000 })));
+    assert.equal(dto.capturedAt, local + '+07:00');
+    const actual = new Date(Date.parse(dto.capturedAt) + 7 * 3600000).toISOString();
+    assert.equal(actual, local + 'Z');
+    assert.equal(dto.basePrice, 18000);
+    assert.equal(stored.toISOString(), local + 'Z');
+  }
+});
+test('standing price wall-clock text and offset-qualified timestamps are not shifted twice', () => {
+  assert.equal(mapOct31StandingPriceRow({ CapturedAt: '2026-11-23 17:07:58.627' }).capturedAt, '2026-11-23T17:07:58.627+07:00');
+  for (const value of ['2026-11-23T17:07:58+07:00', '2026-11-23T10:07:58Z']) {
+    assert.equal(mapOct31StandingPriceRow({ CapturedAt: value }).capturedAt, value);
+  }
+  for (const value of [null, undefined, '', new Date('invalid')]) assert.equal(mapOct31StandingPriceRow({ CapturedAt: value }).capturedAt, null);
+});
 
 /**
  * Lightweight deterministic in-memory SQL mock tailored for

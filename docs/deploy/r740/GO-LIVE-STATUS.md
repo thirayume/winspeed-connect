@@ -5,6 +5,163 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**24 November — handover readiness and required business setup reviewed at 18:45 ICT.**
+The timestamp/legacy-backup observations in this subsection describe the 18:45
+baseline. A follow-up candidate below is being rehearsed; it is not yet deployed.
+Read-only recheck still verifies both b287e32 runtimes, seven backend hashes each,
+public assets/SQL health and unchanged feature flags/native scope. All three
+schemas remain at 274 entries. The physical refresh acceptance above remains
+valid; no new deploy, Reset, flag change or business write in this documentation task.
+
+Operational readiness is scoped to the two company-9 primary environments, not
+unqualified readiness of company 2 or every legacy PowerBuilder form. Current
+native sales-target periods/rows and BudgetPlan rows are empty in all three DBs.
+Business owners must enter real annual budgets/assigned reviewers/approvers and
+native target periods/per-sales targets before those reports contain those data.
+Company-9 quota rows are individually assigned, their owners active and native
+goods present; current-year standing prices exist. Company-2 native writer/bridge
+remain disabled, its operational staffing/quota-owner activation and standing-price
+setup remain incomplete. Do not silently activate or sync that database.
+
+The current source still has the known standing-price capture-time display issue:
+SQL local 2026-11-23 17:07:58 is serialized by the driver as 17:07:58Z and rendered
+in Bangkok as 24 November 00:07:58. This read-only reproduction confirms the
+seven-hour presentation backlog; no price/ledger correction was performed.
+IT should separately review the legacy backup's SQL password option, off-host
+copies and disaster recovery. Owners should verify ISO codes/revisions/templates,
+physical printing, opening-AR reconciliation and role assignments. Accounting's
+VAT/GL continuation in WinSpeed is the agreed post-107 scope, not an app invoice
+completion gate. The owner baseline acceptance and removed signoff UI are retained;
+new trainee cases are not retrospectively marked passed.
+
+A new private eight-page Prompt manual (handover file 20, b287e32) supersedes old
+workflow text in the 00–14 legacy pack; handover and instructor indexes link it.
+Existing slides and trainee results remain historical/versioned. Document rendered
+through the packaged renderer with installed Word conversion because LibreOffice
+is absent on this Windows host; every page visually inspected. Private counts and
+QA evidence remain local. Current source/deployed/public HEAD stays b287e32.
+
+**24 November — b287e32 deployed UAT/PROD; immediate physical UAT restore and official refresh passed.**
+Owner explicitly approved publishing `b287e32760e9200bcde3f3e5583b0a280b16e782`
+and continuing through CI, staged deployment and the repeated physical restore.
+Exact-tree [UAT CI 45375102589](https://github.com/thirayume/winspeed-connect/actions/runs/45375102589)
+and [PROD CI 45376897005](https://github.com/thirayume/winspeed-connect/actions/runs/45376897005)
+passed. Both public branches and actual server checkouts match b287e32. Official
+apply receipts: UAT `20261124-173637-uat-apply-b287e32.txt`, PROD
+`20261124-174748-prod-apply-b287e32.txt`; 274 unchanged / pending 0 / drift 0,
+no migration or secondary apply. Seven backend file hashes per environment,
+public frontend assets, HTTPS health/SQL and unchanged feature flags verified.
+Native approvals renewed on both primaries with 49 matching fingerprints and
+all busy counts zero; backend-only pause with zero active writes and restart in
+finally. PROD durable approval UTC 10:49:07. Company 2 remains excluded.
+
+The warning fix is covered by seven actual Windows PowerShell cases, including
+nonzero/missing/duplicate/stderr-only proof rejection; full local backend 1,398
+and deploy configuration 31 pass. Hosted Linux CI passed 1,391 backend cases and
+skipped the seven Windows-only cases; the Windows cases passed locally. The old
+outer runner reproduces the warning failure in the negative control. On R740,
+the new official wrapper also retained the real TLS warning and then correctly
+rejected an old copied Production approval without adding release audit.
+No warning suppression or metadata/authorization relaxation was used.
+
+Pre-PROD public UAT acceptance: 37 typed reports, 12 actual XLSX, all 213 historical
+price cells and native receipt/sales reconciliation (zero-cent differences).
+After matching PROD approval, took new COPY_ONLY/CHECKSUM backups of PROD and
+pre-test UAT; both RESTORE VERIFYONLY passed. Replaced only UAT ID 10, keeping the
+recovery file. No WinSpeed session KILL or ROLLBACK IMMEDIATE. Ran the exact
+scheduled action's official checked-out Refresh-UAT.ps1, including principal
+remap, official UAT deploy, native rebind and Rebate relabel. It completed at
+17:51:29 ICT; the guarded rehearsal passed at 17:51:30. Internal apply receipt:
+`20261124-175104-uat-apply-b287e32.txt`; refresh log `refresh-20261124-175039.log`.
+Recovery/source backups are named `dbwins_worldfert9_uat_manual-refresh-20261124-174932_recovery.bak`
+and `dbwins_worldfert9_manual-refresh-20261124-174932_source.bak` in the SQL backup directory.
+The failed 8300 rehearsal and successful recovery remain retained below as history.
+
+Independent UAT audit UTC 10:51:28 links its parent to the actual PROD b287e32
+release; both writer/bridge enabled and 49 fingerprints match. Rebate stays on.
+All three participant environment/generation/phase/ResetId values match their
+pre-release baseline, with generation 1 / READY and 274 ledger rows. No Reset,
+company-2 business write or new WinSpeed business document. PROD remained online
+through both manual UAT backup/restore rehearsals (its authorized deploy/native
+renewal had their own brief backend maintenance window).
+
+Post-restore public password-login acceptance: 36 report payloads plus the correct
+missing-plan selection validation, 12 real XLSX parsed and copied/hash-verified,
+213 native price cells and zero-cent receipt/sales differences. The approved
+synthetic budget fixture was intentionally replaced by the fresh PROD copy;
+no replacement approval or fabricated budget was created. The new synthetic UAT
+login was disabled/revoked with create/close audit; active owned QA logins zero.
+A3 receipt/cheque assignments remained intact. Actual deployed PROD read-only
+price and finance checks also passed. Existing missing sales targets, single
+CostBook period, staff accounting/physical-printer boundaries remain explicit.
+This is not a newly executed transactional document Full Loop or trainee signoff.
+
+The immediate manual refresh gate is now satisfied; there is no need to wait
+until 21:00 to demonstrate this fix. The scheduled trigger/time itself was not
+changed or run by this rehearsal, so its historical LastTaskResult is not falsely
+cleared. That next scheduled execution remains a future event, not a claimed pass.
+Private evidence and final state are in `scratch/report-price-followup-20261124/`.
+Final status edits are local only: deployed/public/source HEAD remain b287e32.
+No new branch/worktree, public private-evidence upload or owner-file deletion.
+
+**24 November — Snapshot timestamp and verified-backup follow-up candidate.**
+Owner requests UAT acceptance before PROD and defers real Budget Plans/sales targets
+to the responsible departments. Snapshot `wf.Oct31StandingPrice.CapturedAt` is
+Bangkok wall-clock SQL datetime. Its driver Date was serialized with Z and the
+frontend added seven hours again. The candidate serializes this one field with
+its actual +07:00 offset; stored timestamps, prices, cutoff and UTC audit fields
+are unchanged. Local backend suite 1,400, targeted Snapshot/backup 27, browser 6
+and deploy configuration 31 pass; frontend build passes. Windows backup tests
+exercise failed first/second backup, refresh/copy failures, backup-only, plan-only
+and rejected non-UNC destinations without SQL or host writes. Actual child stderr
+warnings succeed with exit zero; a nonzero child exit is still rejected.
+
+Read-only backup audit found the legacy 21:00 task used an Interactive/Limited
+principal, a plaintext SQL-password batch, unchecked backups and a forced restore.
+Its historical LastTaskResult was 1. The candidate runner uses Windows integrated
+authentication, CHECKSUM/VERIFYONLY and SHA256 manifests, attempts both companies,
+backs up pre-refresh UAT and invokes only the official refresh/deploy chain.
+It preserves recovery files, refuses external UAT sessions, never restores PROD,
+and propagates failures. A separate S4U/highest task proves actual SQL/WSL access
+without an interactive sign-in. The exact-runner BackupOnly/COPY_ONLY rehearsal
+completed 19:18:57 ICT with task result 0; both company files verified. This is a
+new rehearsal task, not a falsified success for the original nightly task.
+
+An isolated company-2 restore succeeded, but initial DBCC PHYSICAL_ONLY reported
+16 usage-counter consistency errors in eight legacy tables. On a second isolated
+copy, DBCC UPDATEUSAGE followed by PHYSICAL_ONLY passed. Both copies were removed
+with exact DB/file guards. The original company-2 database was never corrected or
+written. Keep the initial failure evidence and arrange a reviewed DBA maintenance
+window for source counters; do not report the source as having a clean DBCC.
+
+The approved off-host share currently returns Access denied; no off-host recovery
+proof or unattended share authorization exists. The owner/IT destination question
+is pending. Local backup success does not close off-host/disaster-recovery readiness.
+No retention deletion is enabled, no SQL-password rotation was attempted, and no
+BudgetPlan/target fixtures, Rebate Reset or secondary business writes were made.
+The full S4U backup/UAT-restore rehearsal passed at 19:27:25 ICT with result 0:
+both source backups and the pre-refresh UAT file verified, UAT-only restore,
+official principal/deploy/native/Rebate refresh, health and target-state checks.
+PROD stayed available throughout. This tests the new host runner against the
+currently approved b287e32 app; it is not a deploy of the Snapshot fix. A subsequent
+S4U negative control reused verified source files, injected an expected failure
+after UAT restore and exercised the new runner's real recovery branch. Pre-test
+UAT/config were restored through the official wrapper; health returned up and the
+test task correctly reported success only after confirming expected failure and
+successful recovery. The failure manifest remains unsuccessful with recovery=passed,
+not relabelled as a successful backup cycle. Source and recovery files are retained.
+The real UAT SQL driver then verified all 71 candidate DTO times/prices against
+raw stored values. The actual Snapshot table browser regression shows the original
+Bangkok date/time and unchanged price. All three standing-price digests, Reset
+IDs/generations/phases, empty BudgetPlans and schema counts match pre-test values.
+Both native approvals remain b287e32 / 49 fingerprints with UAT parent linked to
+the actual PROD approval; secondary writer/bridge remain excluded. Installer plan
+against the real task and exact successful BackupOnly manifest passed, without
+changing the real task. Staged publication/deployment is pending.
+Public and running app release remains b287e32. The original nightly task is not
+yet replaced; its 21:00 trigger and historical failure result are untouched.
+Private proof is retained under `scratch/snapshot-backup-20261124/` only.
+
 **24 November — owner-approved manual restore rehearsal found a warning-handling defect; UAT recovered.**
 At the owner's explicit approval, created fresh COPY_ONLY/CHECKSUM backups of PROD
 and the pre-test UAT, both RESTORE VERIFYONLY passed. Paused only UAT; no external

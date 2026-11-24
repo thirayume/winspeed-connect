@@ -1,5 +1,28 @@
 import { test, expect } from '@playwright/test';
 
+test('Snapshot table shows the stored Bangkok time and unchanged price', async ({page}) => {
+  const mutations:string[]=[];
+  await page.route('**/api/**',async route=>{
+    const request=route.request(),path=new URL(request.url()).pathname;
+    const headers={'access-control-allow-origin':'*','access-control-allow-headers':'*'};
+    if(request.method()==='OPTIONS')return route.fulfill({status:204,headers});
+    if(request.method()!=='GET')mutations.push(path);
+    let json:unknown=[];
+    if(path.endsWith('/admin/reset'))json={enabled:false};
+    if(path.endsWith('/limits'))json={standard:200,max:300,step:100};
+    if(path.endsWith('/customers'))json={items:[],total:0};
+    if(path.endsWith('/oct31-prices'))json={items:[{id:1,goodId:1,goodCode:'FIXTURE-SNAPSHOT',goodName:'สินค้าทดสอบ',basePrice:18000,sourceType:'OCT31_SNAPSHOT',capturedAt:'2026-11-23T17:07:58.627+07:00'}]};
+    return route.fulfill({headers,json});
+  });
+  await page.goto('/tests/rebate-feature-gate.html');
+  await page.getByRole('button',{name:'เปิดสำหรับทดสอบ',exact:true}).click();
+  const row=page.getByRole('row').filter({hasText:'FIXTURE-SNAPSHOT'});
+  await expect(row).toContainText('23/11/2569 17:07');
+  await expect(row).toContainText('18,000.00');
+  await expect(row).not.toContainText('24/11/2569 00:07');
+  expect(mutations).toEqual([]);
+});
+
 test('legacy history loads only on request and preserves old claims without offering new legacy claims',async({page})=>{
  const requests:string[]=[];
  await page.route('**/api/**',async route=>{

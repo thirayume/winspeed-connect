@@ -6,7 +6,7 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Runbook refreshed 2026-11-23 (current v3 rollout, migrations through 277;
+> when working on deploy or the databases. Runbook refreshed 2026-11-24 (current v3 rollout and reports, migrations through 278;
 > older release 2.0.0 notes cover migrations through 253 on UAT,
 > PROD and `dbwins_worldfert2`; see [RELEASE-2.0.0.md](RELEASE-2.0.0.md)). Database care: [sql/maintenance](sql/maintenance/README.md).
 
@@ -26,6 +26,18 @@ The public hostnames have Let's Encrypt certificates through Caddy (DNS-01 with 
 internal CA, so a device that uses the IP address must trust the Caddy root certificate once.
 [DNS, PKI and ACME preparation](TLS-DNS-PKI-ACME.md) covers the remaining options for a company
 domain.
+
+## Business setup at handover
+
+The current release and physical UAT refresh pass do not create annual Budget
+Plans or native sales targets. Assign those data to the business owners, verify
+report ISO/template/publication and physical output, and follow the current
+handover manual. Company-9 quota owners and current-year standing prices are set;
+company 2 still requires its own operational setup and remains excluded from
+native writer/bridge. See GO-LIVE-STATUS for the current read-only findings and
+the scoped capture-time fix and its deployment status. VAT/GL continues in WinSpeed after the
+app's 107 completion. Do not convert these setup items into an automatic Reset,
+secondary activation or an unreviewed database sync.
 
 ## Branches and release flow
 
@@ -466,17 +478,61 @@ R740-SRV\SQL2008. Select the intended database, set its name and the exact usern
 and run the whole file in Preview mode first. Supply the generated hash and set
 @Apply = 1 after confirming the account. Preserve the template without the hash.
 
-## Record WinSpeed and Sale-App operational sign-off
+## Acceptance history and owner setup
 
-After migration 168, an administrator opens **User Management → ผลตรวจรับงาน** and verifies
-the database displayed in the dialog. Pick the topic, enter the agreed procedure, the
-reviewer, the date, and document numbers or a reference to evidence. Select **ยืนยันแล้ว**
-when all four fields are available. The history shows each revision and the actual admin
-who saved it. If the form reports a conflict, reload the latest version before saving again.
+The owner accepted the baseline as of 31 October 2026 and requested removal of the
+**ผลตรวจรับงาน** screen. It is retired; do not instruct users to complete that screen.
+Historical database evidence stays retained. This does not mark new trainee cases or
+unperformed physical-printer checks as passed. Accounting continues VAT/GL in WinSpeed
+after Sale-App completes 107 for the eligible 116 quantities.
 
-Records cover salesperson mapping and first sign-in, Invoice books J/N, accounts receivable,
-Post GL, weighing and transport, and WinSpeed printing. These records are operational
-evidence. They are separate from the EMSales mapping, weighing tolerances, and WinSpeed
-configuration. Later updates use the same page without a release. Enter permanent decisions
-on the intended production database. Nightly refresh can replace UAT-only records with
-the copied production data.
+Per the owner's 24 November instruction, each department enters its real Budget Plans,
+reviewers/approvers and sales targets later. Empty plan/target reports are not permission
+to invent business data. Keep the current Rebate generation, balances and switches.
+
+## Verified nightly backups and UAT recovery
+
+[`host/Invoke-NightlyBackup.ps1`](host/Invoke-NightlyBackup.ps1) replaces the old
+credential-bearing batch plus unchecked restore chain. It plans without `-Apply`.
+It uses Windows integrated SQL authentication, unique full-backup files, `CHECKSUM`,
+`RESTORE VERIFYONLY WITH CHECKSUM` and SHA256 manifests. Both company backups are
+attempted even if one fails; any failure gives the task a nonzero result. `-BackupOnly
+-CopyOnly -Apply` rehearses backup creation without pausing/restoring an application.
+No existing backups are deleted. Under the selected SIMPLE recovery model, the recovery
+point is the completed full backup, not point-in-time recovery between backups.
+
+The full cycle requires matching UAT/PROD source revisions. It pauses only the UAT
+backend after checking active writes, refuses external sessions, creates a verified
+pre-refresh UAT recovery file, restores only UAT ID 10, then invokes the official
+checked-out `Refresh-UAT.ps1` and its deploy wrapper. It checks health/native target
+and the relabelled UAT Rebate state. Failure after restore attempts recovery of the
+pre-refresh UAT file/config through the official wrapper. No session KILL, forced
+rollback, PROD restore, Rebate Reset or secondary business write is performed.
+
+Host logs/manifests: `D:\SaleApp\backup-logs\verified-*.log` / `*.json`.
+Backups: `D:\MSSQL\MSSQL10_50.SQL2008\Backup`. A successful local manifest explicitly
+records whether an off-host destination was configured and each copy verified.
+`VERIFYONLY` is a media check, not a substitute for an isolated restore and DBCC.
+Inspect task LastTaskResult, the latest manifest's run/time/success, all database
+entries, refresh/recovery results and current free disk space; a Ready task alone
+does not demonstrate a successful backup. Retention deletion needs a separate
+approved policy; this runner refuses to start below 15 GiB free.
+
+After an exact-runner `-BackupOnly` rehearsal under the intended task identity,
+review and apply [`host/Set-NightlyBackupTask.ps1`](host/Set-NightlyBackupTask.ps1)
+on R740 with `-RehearsalManifest <verified JSON path>` (add `-Apply` only after review).
+It preserves the existing 21:00 trigger, selects the tested Windows account with
+S4U/highest privileges so it runs without an interactive logon, and installs one
+checked runner action. The test identity must also demonstrate WSL/Docker access.
+It protects the old task/batch rollback copy with SYSTEM/Administrators ACLs and
+removes the SQL password from the active legacy entrypoint. Do not print/export
+that rollback material. Credential rotation requires an IT dependency inventory;
+replacing this batch does not rotate a shared SQL login.
+
+Off-host copies remain a separate gate: the existing approved network share denied
+access during the 24 November audit. S4U does not carry reusable network credentials.
+IT must approve/provision the backup identity/share access and test it under the
+actual unattended identity; do not save a network password in scripts or treat a
+mapped drive visible in a desktop session as unattended proof. The runner accepts
+an optional approved `-OffHostDirectory` UNC, verifies copy hashes and fails the
+cycle on copy errors. The installer leaves this unset until that gate passes.
