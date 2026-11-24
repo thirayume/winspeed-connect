@@ -120,9 +120,14 @@ try {
   $targetFile=Join-Path $AppDir 'docs\deploy\r740\targets\uat.env'
   if([IO.File]::ReadAllText($targetFile) -match '(?m)^NATIVE_DOCUMENT_WRITER_VERSION=v3\r?$') {
     Log 'Revalidating copied native writer approval for UAT ...'
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $driver -Environment uat -OnServer -Auto -NativeWriterRefresh -Distro $Distro *>&1 |
-      ForEach-Object { Add-Content -Path $log -Value ("  native: " + $_); Write-Host $_ }
-    if($LASTEXITCODE -ne 0){throw 'Native UAT refresh proof failed; native writers remain fenced pending review.'}
+    $prev=$ErrorActionPreference
+    try {
+      $ErrorActionPreference='Continue'
+      & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $driver -Environment uat -OnServer -Auto -NativeWriterRefresh -Distro $Distro *>&1 |
+        ForEach-Object { Add-Content -Path $log -Value ("  native: " + $_); Write-Host $_ }
+      $nativeExit=$LASTEXITCODE
+    } finally { $ErrorActionPreference=$prev }
+    if($nativeExit -ne 0){throw 'Native UAT refresh proof failed; native writers remain fenced pending review.'}
   }
 
   # 3. Relabel the copied PROD Rebate state as UAT's own (sql/r740-uat-rebate-adopt.sql). The digest of

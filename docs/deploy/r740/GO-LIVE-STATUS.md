@@ -5,6 +5,118 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**24 November — owner-approved manual restore rehearsal found a warning-handling defect; UAT recovered.**
+At the owner's explicit approval, created fresh COPY_ONLY/CHECKSUM backups of PROD
+and the pre-test UAT, both RESTORE VERIFYONLY passed. Paused only UAT; no external
+WinSpeed sessions or active UAT writes, and no session KILL/ROLLBACK IMMEDIATE.
+Restored the new PROD backup into the existing UAT database (ID 10) only. The strict
+principal remap passed and official UAT deploy at 8300e0c passed with no migrations
+(receipt `20261124-171859-uat-apply-8300e0c.txt`). The next native refresh step failed
+because Windows PowerShell promoted Node DEP0123 stderr to a terminating error.
+This manual refresh did not pass and must not be recorded as successful.
+
+Automatic recovery restored the verified pre-test UAT backup and original config,
+using the official UAT wrapper (receipt `20261124-172016-uat-apply-8300e0c.txt`).
+Recovery completed at 17:20:36 ICT; SQL health and the original 8300e0c native audit
+(49 fingerprints) were independently verified. PROD was never paused/restored;
+no Reset or company-2 business write occurred. Recovery and source backups remain
+on the server, private logs in `scratch/report-price-followup-20261124/`.
+
+Prepared a hotfix that preserves native diagnostics but gates on the actual child
+exit, one stdout proof and audited completion. No global warning suppression or
+SQL/metadata-guard relaxation. Actual Windows PowerShell regression cases seven,
+full backend 1,398 and deploy configuration 31 pass. The old outer boundary fails
+the same warning in the negative control. Application routes/SQL/frontend unchanged.
+Publication/CI and staged UAT/PROD rollout for this follow-up are still pending;
+current source branches and both running environments remain 8300e0c. The copied
+Production approval requires matching source revisions, so the final physical
+restore/rebind must be repeated once both approved deployments match the hotfix.
+
+**24 November — post-release operational closeout (read-only, 17:02 ICT).**
+Both current stacks still match 8300e0c: SQL up, seven backend hashes each and
+public assets verified; switches and native/company scope unchanged. Task history
+shows maintenance at 02:00 completed with result 0. All three databases ONLINE;
+data disk free 109 GiB. msdb records scheduled full backups for both companies on
+23 November at 21:00 and newer COPY_ONLY backups on 24 November. The aggregate
+backup task's result 1 is explained by the subsequent UAT refresh failure, not by
+a claim that all backup steps failed. Last refresh log failed at the strict native
+metadata-reader body check on 23 November; this is the already repaired code path.
+
+Reviewed every scheduled action: action two calls the checked-out
+`D:\SaleApp\uat\app\docs\deploy\r740\host\Refresh-UAT.ps1`, whose normalized
+content and principal SQL match 8300e0c. The older tools copy differs but is not
+called by this task; no copy/delete or task change was necessary. Tonight's 21:00
+restore has not run at observation time and is not certified. Follow its task
+result, terminal refresh log, health, exact SHA, native release rebind and UAT
+participant after completion. No backup/restore/job was triggered in this review.
+Existing legacy backup login handling was observed but not changed; no credentials
+were copied into documentation. Private operational evidence stays in the same
+ignored report-price-followup directory. Instructor notes and handover index were
+updated locally to supersede the old Budget Plan GAP and document current report
+controls; existing slides and 64 NOT RUN trainee results were preserved.
+
+**24 November — 8300e0c deployed and accepted on UAT and PROD.**
+Owner instructed continuation after the test-only publication request. Published
+`8300e0c820524e21185a3d9fdb1f26bddfd98d75`, which retains the application/SQL code of
+approved `a47de0c` and corrects the obsolete admin browser assertion. Exact-tree
+hosted CI passed: [UAT 45362553694](https://github.com/thirayume/winspeed-connect/actions/runs/45362553694)
+and [PROD 45365713246](https://github.com/thirayume/winspeed-connect/actions/runs/45365713246).
+Official wrapper apply receipts:
+`D:\SaleApp\uat\deploy-logs\20261124-161906-uat-apply-8300e0c.txt` and
+`D:\SaleApp\prod\deploy-logs\20261124-163739-prod-apply-8300e0c.txt`.
+Both plans/apply: unchanged 274 / pending 0 / drift 0. No migration or secondary
+write. Actual server checkout SHAs, seven backend file hashes per environment
+and public frontend assets match; both health endpoints return HTTP 200 / SQL up.
+
+Native writer/bridge release audits renewed through the official reviewed actions:
+49 fingerprints unchanged and all unfinished-work counts zero in each primary;
+active app writes zero before a backend-only pause, always restarted in finally.
+UAT's first apply was rejected because its evidence reason differed from its plan.
+Comparison showed only the reason changed; fresh plan with identical apply reason
+succeeded. PROD reused the exact reason from its reviewed JSON and passed first
+attempt. Durable release/ChangeEvent audit revisions match 8300e0c (UAT UTC
+09:23:35, PROD UTC 09:40:01). All three existing participant generations, phases,
+ResetIds, native target/bridge scope and ledger counts remain unchanged. Company 2
+remains excluded from native writer/bridge. No Reset or feature-switch changes.
+
+Actual deployed public UAT password-login acceptance loaded 37 typed report JSON
+responses and downloaded 12 real XLSX files, parsed values/types and verified
+SHA256 after copying to the owner PC. Three preceding/current price periods
+(1, 2, 9 November) reconcile in all 213 cells against native WinSpeed, preserving
+missing prices as blanks. Monthly selection uses the latest native October period
+(19 October). Current price/cost reports hide suspended products by default:
+71 visible products versus 159 including suspended. Comparison, group/search,
+ID sorting and one-period CostList disclosure passed. Receipt 348 headers and
+sales actuals 13 employee rows reconcile independently with zero-cent differences.
+The single synthetic UAT login was disabled and AuthVersion revoked; create/close
+audits retained, active owned QA logins zero. No synthetic PROD login was created.
+
+Real owner ADMIN UI passed on both sites: previous two price sets plus current,
+71/159 suspension toggle, group/code search to one row and numeric ID ordering;
+CostList explicitly discloses its single stored period. Approval memo starts with
+a selection prompt and disables export without a plan; retired acceptance tab
+absent while template settings remain. Existing browser HTML needed one explicit
+reload to display the new controls on UAT. PROD filtered print preview contains
+exactly the selected product/row and its three period prices using the existing
+official Header Master; no physical print job was sent. Actual deployed PROD
+application-driver read-only checks also passed native weekly/monthly prices,
+two parsed workbooks, receipt/cheque/sales reports and zero-cent reconciliation.
+
+CI includes backend 1,391 tests, admin browser nine, trip browser six, report/PDF
+browser 19 and deployment configuration 31 cases, plus the other required groups.
+Native sales targets remain unconfigured; actuals retain the explicit missing-target
+label. No WinSpeed business document or new transactional Full Loop was created
+in this report rollout. Physical-printer certification, staff accounting sign-off
+and the next scheduled nightly restore are not inferred from these checks.
+
+Private evidence: `scratch/report-price-followup-20261124/`, including successful
+CI logs, UAT release gate, copied 12 workbooks, native audits, final runtime/fence
+integrity, deployed PROD read-only proof and real ADMIN screenshots. No secrets,
+customer rows or private evidence were published. Final status edits remain local;
+source HEAD/main/uat stay 8300e0c. No new branch/worktree was created, and the
+owner's original pricelist.xlsx and pre-existing worktrees remain untouched.
+The entries below are historical and superseded by this running snapshot.
+
 **24 November — approved a47de0c published; hosted CI held at obsolete admin browser assertion.**
 Owner approved public publication of `a47de0c` and staged UAT/PROD deployment after
 every gate. The existing work branch was fast-forwarded to that exact commit.

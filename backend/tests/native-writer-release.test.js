@@ -3,6 +3,30 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const {payload,originals,digest}=require('../services/native-writer-release');
 const baseline=require('../services/native-document-metadata.json').triggers;
 const base=()=>({database:'dbwins_worldfert9_uat_v3',approverId:1,actorId:2,reason:'Approved isolated release rehearsal with current metadata',sourceRevision:'QA-WORKTREE'});
+// Exercise the actual deploy functions in Windows PowerShell 5.1: native stderr
+// is an ErrorRecord there, unlike Node's process streams or PowerShell 7.
+for(const [layer,scenario,success] of [
+ ['proof','warning',true],['proof','nonzero',false],['proof','missing',false],
+ ['proof','duplicate',false],['proof','stderr-only',false],
+ ['outer','warning',true],['outer','nonzero',false],
+])test(`Windows native refresh ${layer}: ${scenario}`,{skip:process.platform!=='win32'},()=>{
+ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cp=require('node:child_process');
+ const folder=fs.mkdtempSync(path.join(os.tmpdir(),'wf-native-warning-'));
+ try{
+  fs.copyFileSync(path.join(__dirname,'fixtures/native-refresh-warning.ps1'),path.join(folder,'harness.ps1'));
+  fs.writeFileSync(path.join(folder,'fake-wsl.cjs'),`const mode=process.env.NATIVE_REFRESH_TEST_CASE,p='NATIVE_REFRESH_PAYLOAD_BASE64='+Buffer.from('{}').toString('base64');console.error('[DEP0123] simulated TLS warning');if(mode==='stderr-only')console.error(p);else if(mode!=='missing'){console.log(p);if(mode==='duplicate')console.log(p);}process.exitCode=mode==='nonzero'?3:0;`);
+  fs.writeFileSync(path.join(folder,'fake-wsl.cmd'),`@echo off\r\n"${process.execPath}" "%~dp0fake-wsl.cjs" %*\r\n`);
+  const p=cp.spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(folder,'harness.ps1'),'-RepositoryRoot',path.resolve(__dirname,'../..'),'-Case',scenario,'-Layer',layer],{encoding:'utf8',timeout:15000,windowsHide:true});
+  assert.equal(p.status,0,p.stderr||p.error?.message);
+  const marker=p.stdout.split(/\r?\n/).find(l=>l.startsWith('NATIVE_WARNING_TEST='));assert.ok(marker,p.stdout+p.stderr);
+  const result=JSON.parse(marker.slice('NATIVE_WARNING_TEST='.length));assert.equal(result.success,success,JSON.stringify(result));
+  assert.equal(result.preference,'Stop');if(layer==='proof')assert.equal(result.templateEntered,success);
+ }finally{
+  const temporaryRoot=fs.realpathSync(os.tmpdir()).toLowerCase()+path.sep;
+  assert.ok(fs.realpathSync(folder).toLowerCase().startsWith(temporaryRoot)&&path.basename(folder).startsWith('wf-native-warning-'));
+  fs.rmSync(folder,{recursive:true,force:true});
+ }
+});
 test('restore rebind accepts only a current copied Production approval, never a new or disabled approval',()=>{
  const {copiedApproval}=require('../services/native-writer-refresh');
  const metadata=require('../services/initial-invoice-metadata').EXPECTED,hash=require('../services/coupon-bridge-hooks').moduleHash;

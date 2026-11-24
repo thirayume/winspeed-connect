@@ -145,6 +145,15 @@ The correction accepts the reviewed body with CREATE/ALTER or the isolated UAT
 execution identity only; changed statements and appended text remain rejected.
 Rehearse this SQL check on the actual restored catalog before relying on nightly
 refresh. Do not edit immutable migration 277 or weaken the body allowlist.
+Windows PowerShell treats a child process's stderr as ErrorRecords. Node's
+TLS deprecation warning must be retained as a diagnostic, not treated as a failed
+native refresh by itself. The wrapper captures the native result under a locally
+restored error preference, requires exit code zero and exactly one stdout payload,
+and still requires the audited completion marker. The host refresh checks the
+child wrapper's exit separately. Nonzero exit, missing/duplicate proof or a marker
+sent only on stderr remains rejected; no TLS, SQL or metadata guard is disabled.
+Windows PowerShell regression tests exercise the actual two script boundaries.
+
 The release template must also bind commands to its local transaction (`$tx`).
 Nightly refresh invokes it in a child ScriptBlock; `$script:tx` resolves to the
 wrapper file and leaves commands unbound. A real SqlClient negative control

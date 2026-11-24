@@ -212,9 +212,18 @@ function Invoke-NativeWriterRefresh {
   if($revisionResult.Code -ne 0){Fail 'Cannot read restored UAT source revision.'}
   $revision=$revisionResult.Out[0].Trim()
   if($revision -cnotmatch '^[a-f0-9]{40}$'){Fail 'Invalid UAT source revision.'}
-  $proof=@(& $wsl -d $Distro -u root -- docker exec saleapp-uat-backend-1 node scripts/native-writer-refresh-payload.cjs $revision)
-  if($LASTEXITCODE -ne 0){Fail 'Copied native approval proof failed; UAT native writers remain fenced.'}
-  $encoded=@($proof|Where-Object {$_ -match '^NATIVE_REFRESH_PAYLOAD_BASE64=[A-Za-z0-9+/=]+$'})
+  # Windows PowerShell turns native stderr (including a Node TLS warning) into
+  # ErrorRecords. Keep diagnostics, then decide on the native exit and stdout
+  # proof; a warning must not abort before the process result is inspected.
+  $previousPreference=$ErrorActionPreference
+  try {
+    $ErrorActionPreference='Continue'
+    $proof=@($null | & $wsl -d $Distro -u root -- docker exec saleapp-uat-backend-1 node scripts/native-writer-refresh-payload.cjs $revision 2>&1)
+    $proofExit=$LASTEXITCODE
+  } finally { $ErrorActionPreference=$previousPreference }
+  foreach($diagnostic in $proof|Where-Object {$_ -isnot [string] -or $_ -notmatch '^NATIVE_REFRESH_PAYLOAD_BASE64='}) { Write-Host ([string]$diagnostic) }
+  if($proofExit -ne 0){Fail 'Copied native approval proof failed; UAT native writers remain fenced.'}
+  $encoded=@($proof|Where-Object {$_ -is [string] -and $_ -cmatch '^NATIVE_REFRESH_PAYLOAD_BASE64=[A-Za-z0-9+/=]+$'})
   if($encoded.Count -ne 1){Fail 'Native refresh payload unavailable.'}
   $payload64=$encoded[0].Substring('NATIVE_REFRESH_PAYLOAD_BASE64='.Length)
   $script=[IO.File]::ReadAllText((Join-Path $PSScriptRoot 'native-writer-release.ps1.template'))
