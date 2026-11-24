@@ -1929,6 +1929,7 @@ export type ReportMeta = {
   periodFrom?: string;
   periodTo?: string;
   basis?: string;
+  projects?: import('../utils/budgetPlan').BudgetReportProject[];
   budgetSummary?: {region:string;allocatedAmount:number;estimatedAmount:number}[];
   missingPlanDetailsCount?: number;
   costPendingCount?: number;
@@ -3202,3 +3203,11 @@ export const updateTrip = (tripId: number, data: {
   loadInOrder: boolean; remark: string; expectedRevision: number;
 }) => req<{ tripId: number; tripCode: string; documentRevision: number; warning?: string | null }>(
   `/trips/${tripId}`, { method: 'PUT', body: JSON.stringify(data) });
+
+// Budget downloads keep authentication and the selected database, like report exports.
+export async function exportBudget(path:string,filename:string){
+ const res=await fetch(`${API_BASE}/budget/${path}`,{headers:{...authHeaders(),...dbTargetHeader()}});
+ if(!res.ok){const e=await res.json().catch(()=>null);throw Error(e?.message||'ดาวน์โหลดงบประมาณไม่สำเร็จ');}
+ const url=URL.createObjectURL(await res.blob()),a=document.createElement('a');a.href=url;a.download=filename;
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}

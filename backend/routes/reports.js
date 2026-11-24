@@ -814,7 +814,7 @@ const REPORTS = {
     }),
   },
   'rebate-promotion-plans': {
-    title: 'รายงานรวมแผนงบประมาณและการส่งเสริมการขาย (Annual Promotion & Budget Plans)',
+    title: 'ทะเบียนโปรโมชั่น Rebate เดิม (ประวัติ)',
     category: 'rebate',
     columns: [
       { key: 'PlanNo', label: 'เลขที่แผน', type: 'identifier' },
@@ -858,6 +858,7 @@ REPORTS['daily-invoice'] = {title:'Daily Invoice — ใบส่งของแ
 REPORTS['net-sales-detail'] = {title:'ยอดขายสุทธิรายลูกค้าและสินค้า หลังลดหนี้ เพิ่มหนี้ และรับคืน',category:'finance',columns:invoiceReports.netColumns,run:p=>invoiceReports.run('net-sales-detail',p)};
 REPORTS['cn-returns']={title:'ทะเบียนใบลดหนี้และรับคืนสินค้าจาก WinSpeed',category:'finance',columns:invoiceReports.netColumns,run:p=>invoiceReports.run('credit-returns',p)};
 const budgetReports=require('../services/promotion-budget-report');
+REPORTS['budget-project-register']={title:'ทะเบียนโครงการส่งเสริมการขายตามแผนรายปี',category:'finance',columns:budgetReports.projectColumns,run:p=>budgetReports.run(p,{register:true})};
 REPORTS['budget-annual-estimate']={title:'ประมาณการค่าใช้จ่ายส่งเสริมการขายรายปี (1 ม.ค. – 31 ธ.ค.)',category:'finance',columns:budgetReports.columns,run:p=>budgetReports.run(p)};
 REPORTS['budget-plan-approval']={title:'คำขออนุมัติงบส่งเสริมการขาย',category:'finance',columns:budgetReports.columns,run:p=>{
   if(!p.planId)throw Object.assign(Error('กรุณาเลือกเลขแผนที่ต้องการพิมพ์คำขออนุมัติ'),{status:400});
@@ -868,6 +869,7 @@ const REPORT_ROLES = {
   'daily-invoice': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
   'net-sales-detail': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
   'budget-annual-estimate': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
+  'budget-project-register': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
   'budget-plan-approval': ['ACCOUNTING','MANAGER','C_LEVEL','ADMIN'],
   'rule-incidents': ['WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so-status': null,
@@ -1360,6 +1362,7 @@ router.get('/:type/export', async (req, res) => {
 
     const wb = (req.params.type === 'pricelist_sheet' || req.params.type === 'costlist_sheet')
       ? buildSheetWorkbook({ reportData: data })
+      : data.type.startsWith('budget-') ? require('../services/promotion-budget-workbook').workbook(data)
       : (() => {
           const book = XLSX.utils.book_new();
           XLSX.utils.book_append_sheet(book, ws, 'Report');

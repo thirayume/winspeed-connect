@@ -33,18 +33,19 @@ test('Budget Plan writes region caps and estimates separately, then submits the 
   if(method==='OPTIONS')return route.fulfill({status:204});
   if(url.pathname.endsWith('/budget/approvers'))return route.fulfill({json:{data:[{Id:2,DisplayName:'QA Manager',CanReview:true},{Id:3,DisplayName:'QA CLevel',CanApprove:true}]}});
   if(url.pathname.endsWith('/budget/plans')&&method==='GET')return route.fulfill({json:{data:[]}});
-  if(url.pathname.endsWith('/budget/plans')&&method==='POST'){saved=route.request().postDataJSON();return route.fulfill({json:pending});}
+  if(url.pathname.endsWith('/budget/plans')&&method==='POST'){saved=route.request().postDataJSON();Object.assign(pending,{Title:saved.title,Channel:saved.channel,document:saved.document,allocations:saved.allocations.map((a:any)=>({Region:a.region,Amount:Number(a.amount)})),lines:saved.lines.map((l:any)=>({ProjectKey:l.projectKey,Region:l.region,Amount:Number(l.amount)}))});return route.fulfill({json:pending});}
   if(url.pathname.endsWith('/submit')){const b=route.request().postDataJSON();expect(b.expectedVersion).toBe(version);pending.Status='PENDING';pending.EditVersion=++version;return route.fulfill({json:pending});}
   return route.fulfill({json:{}});
  });
  await page.goto('/tests/report-readiness.html');
- await page.getByLabel('ปีแผน',{exact:true}).fill('2641');
+ await page.getByLabel('เลือกปีงบประมาณ',{exact:true}).fill('2641');await page.getByRole('button',{name:'แผนใหม่',exact:true}).click();
  await page.getByRole('button',{name:'+ เพิ่มวงเงินภาค',exact:true}).click();await page.getByLabel('ภาควงเงิน 1',{exact:true}).fill('QA North');await page.getByLabel('วงเงิน 1',{exact:true}).fill('1000');
+ await page.getByLabel('ผู้ตรวจสอบ (Manager)',{exact:true}).selectOption('2');await page.getByLabel('ผู้อนุมัติ (C_Level)',{exact:true}).selectOption('3');await page.getByRole('button',{name:'2. ข้อมูลโครงการ',exact:true}).click();await page.getByLabel('ชื่อโครงการ',{exact:true}).fill('QA project');await page.getByLabel('วงเงินโครงการ',{exact:true}).fill('500');await page.getByRole('button',{name:'4. ประมาณการค่าใช้จ่าย',exact:true}).click();await page.getByRole('button',{name:'+ เพิ่มรายการ',exact:true}).click();
  await page.getByLabel('region บรรทัด 1',{exact:true}).fill('QA North');await page.getByLabel('category บรรทัด 1',{exact:true}).fill('1.1');await page.getByLabel('itemName บรรทัด 1',{exact:true}).fill('QA bag');await page.getByLabel('quantity บรรทัด 1',{exact:true}).fill('10');await page.getByLabel('unitPrice บรรทัด 1',{exact:true}).fill('11');await expect(page.getByLabel('amount บรรทัด 1',{exact:true})).toHaveValue('110.00');
- await page.getByLabel('ผู้ตรวจสอบ (Manager)',{exact:true}).selectOption('2');await page.getByLabel('ผู้อนุมัติ (C_Level)',{exact:true}).selectOption('3');await page.getByLabel('เหตุผลการดำเนินการ').fill('QA create');await page.getByRole('button',{name:'บันทึกร่าง',exact:true}).click();
+ await page.getByLabel('เหตุผลบันทึกงบประมาณ').fill('QA create');await page.getByRole('button',{name:'บันทึกร่าง',exact:true}).click();
  await expect.poll(()=>saved).toBeTruthy();expect(saved.allocations[0].amount).toBe('1000');expect(saved.lines[0].amount).toBe('110.00');
  await expect(page.getByLabel('เลือกปีงบประมาณ',{exact:true})).toHaveValue('2641');
- await page.getByLabel('เหตุผลการดำเนินการ').fill('QA submit');await page.getByRole('button',{name:'ยื่นตรวจสอบ',exact:true}).click();await expect(page.getByText(/PENDING · รุ่น 3/)).toBeVisible();await expect(page.getByRole('button',{name:'ตรวจสอบและส่งอนุมัติ',exact:true})).toHaveCount(0);
+ await page.getByLabel('เหตุผลการดำเนินการ').fill('QA submit');await page.getByRole('button',{name:'ยื่นตรวจสอบ',exact:true}).click();await expect(page.getByText(/รุ่น 3/)).toBeVisible();await expect(page.getByRole('button',{name:'ตรวจสอบและส่งอนุมัติ',exact:true})).toHaveCount(0);
  await page.screenshot({path:'test-results/report-readiness/budget-plan.png',fullPage:true});
 });
 test('a legacy CE plan opens with the correct BE year in the form and list filter',async({page})=>{
@@ -53,7 +54,7 @@ test('a legacy CE plan opens with the correct BE year in the form and list filte
   if(url.pathname.endsWith('/budget/plans/1'))return route.fulfill({json:{PlanId:1,PreparedBy:1,PeriodYear:2026,Channel:'ทั่วไป',Title:'QA CE plan',Status:'DRAFT',EditVersion:1,allocations:[],lines:[]}});
   return route.fulfill({json:{data:[{planId:1,periodYear:2026,title:'QA CE plan',channel:'ทั่วไป',status:'DRAFT'}]}});
  });
- await page.goto('/tests/report-readiness.html');await page.getByLabel('เลือกปีงบประมาณ',{exact:true}).fill('2569');await page.getByLabel('เลือกแผน').selectOption('1');await expect(page.getByLabel('ปีแผน',{exact:true})).toHaveValue('2569');await expect(page.getByLabel('เลือกปีงบประมาณ',{exact:true})).toHaveValue('2569');
+ await page.goto('/tests/report-readiness.html');await page.getByLabel('เลือกปีงบประมาณ',{exact:true}).fill('2569');await page.getByRole('button',{name:'เปิดแผน 1',exact:true}).click();await page.getByRole('button',{name:'แก้ไขแผน / โครงการ',exact:true}).click();await expect(page.getByLabel('ปีแผน',{exact:true})).toHaveValue('2569');await expect(page.getByLabel('เลือกปีงบประมาณ',{exact:true})).toHaveValue('2569');
 });
 test('assigned reviewer sees the reviewed state after a successful API response',async({page})=>{
  const plan={PlanId:1,PreparedBy:2,AssignedReviewerId:1,AssignedApproverId:3,PeriodYear:2569,Channel:'ทั่วไป',Title:'QA review',Status:'PENDING',EditVersion:1,ReviewedAt:null as string|null,allocations:[],lines:[]};
@@ -65,7 +66,7 @@ test('assigned reviewer sees the reviewed state after a successful API response'
   if(path.endsWith('/approvers'))return route.fulfill({json:{data:[]}});
   return route.fulfill({json:{data:[{planId:1,periodYear:2569,title:'QA review',channel:'ทั่วไป',status:'PENDING'}]}});
  });
- await page.goto('/tests/report-readiness.html');await page.getByLabel('เลือกแผน').selectOption('1');await expect(page.getByLabel('เหตุผลการดำเนินการ')).toBeDisabled();release();await expect(page.getByLabel('เหตุผลการดำเนินการ')).toBeEnabled();await page.getByLabel('เหตุผลการดำเนินการ').fill('QA review');await page.getByRole('button',{name:'ตรวจสอบและส่งอนุมัติ',exact:true}).click();await expect(page.getByRole('button',{name:'ตรวจสอบและส่งอนุมัติ',exact:true})).toHaveCount(0);await expect(page.getByText(/PENDING · รุ่น 2/)).toBeVisible();
+ await page.goto('/tests/report-readiness.html');await page.getByRole('button',{name:'เปิดแผน 1',exact:true}).click();await expect(page.getByRole('button',{name:'เปิดแผน 1',exact:true})).toBeDisabled();release();await expect(page.getByLabel('เหตุผลการดำเนินการ')).toBeEnabled();await page.getByLabel('เหตุผลการดำเนินการ').fill('QA review');await page.getByRole('button',{name:'ตรวจสอบและส่งอนุมัติ',exact:true}).click();await expect(page.getByRole('button',{name:'ตรวจสอบและส่งอนุมัติ',exact:true})).toHaveCount(0);await expect(page.getByText(/รุ่น 2/)).toBeVisible();
 });
 test('Daily Invoice sends combined filters, groups J/N and prints the configured ISO on A3',async({page})=>{
  const queries:string[]=[];

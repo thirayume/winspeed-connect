@@ -66,10 +66,10 @@ router.get('/plans', async (req, res) => {
       LEFT JOIN wf.AppUser prep ON prep.Id = p.PreparedBy
       LEFT JOIN wf.AppUser rev ON rev.Id = p.ReviewedBy
       LEFT JOIN wf.AppUser appr ON appr.Id = p.ApprovedBy
-      WHERE CASE WHEN p.PeriodYear BETWEEN 2400 AND 3000 THEN p.PeriodYear-543 ELSE p.PeriodYear END >= @startYear
-        AND (@all=1 OR p.PreparedBy=@uid OR p.AssignedReviewerId=@uid OR p.AssignedApproverId=@uid)
+      WHERE (@includeDeleted=1 OR p.DeletedAt IS NULL) AND CASE WHEN p.PeriodYear BETWEEN 2400 AND 3000 THEN p.PeriodYear-543 ELSE p.PeriodYear END >= @startYear
+        AND (@all=1 OR p.PreparedBy=@uid OR p.PreparedActorId=@uid OR p.AssignedReviewerId=@uid OR p.AssignedApproverId=@uid)
       ORDER BY p.PeriodYear DESC, p.Channel
-    `, { startYear: { type: sql.Int, value: Number(start.slice(0, 4)) },all:{type:sql.Bit,value:all},uid:{type:sql.Int,value:ids.effective} });
+    `, { startYear: { type: sql.Int, value: Number(start.slice(0, 4)) },all:{type:sql.Bit,value:all},uid:{type:sql.Int,value:ids.effective},includeDeleted:{type:sql.Bit,value:req.query.includeDeleted==='true'} });
     res.json({ data: camelizeRows((result.recordset || []).filter(p=>budget.canRead(req.user,p))) });
   } catch (error) {
     console.error('[budget]', error);
@@ -77,6 +77,17 @@ router.get('/plans', async (req, res) => {
   }
 });
 
+router.get('/staff',async(req,res)=>{
+ try{
+  const {actorPerspective}=require('../services/business-identity'),{getVisibleScope,scopeFilter}=require('../services/visible-scope');
+  const actor=actorPerspective(req.user);for(const u of [req.user,actor])if(!hasPermission(u,'budget.plan.create'))return res.status(403).json({message:'ไม่มีสิทธิ์ค้นผู้ร่วมงาน'});
+  const effective=await getVisibleScope(req.user),actual=actor===req.user?null:await getVisibleScope(actor);
+  const filter=require('../services/secondary-read-scope').withActorScope(scopeFilter(effective,{userCol:'u.Id',empCol:'u.EmpId',prefix:'bp'}),actual,{userCol:'u.Id',empCol:'u.EmpId'},'bpa');
+  const q=String(req.query.q||'').trim();if(q.length>100)return res.status(400).json({message:'คำค้นยาวเกินไป'});
+  const r=await wfQuery(`SELECT TOP 50 u.Id,u.DisplayName,u.Role,u.PositionCode FROM wf.AppUser u WHERE u.IsActive=1 AND ${filter.sql} AND (@q=N'' OR u.DisplayName LIKE @search OR u.PositionCode LIKE @search) ORDER BY u.DisplayName,u.Id`,{...filter.inputs,q:{type:sql.NVarChar(100),value:q},search:{type:sql.NVarChar(202),value:'%'+q+'%'}});
+  res.json({data:r.recordset||[]});
+ }catch(e){res.status(e.status||500).json({message:e.message});}
+});
 router.get('/approvers',async(req,res)=>{
  try{
   if(!['budget.plan.create','budget.plan.review','budget.plan.approve'].some(k=>hasPermission(req.user,k)))return res.status(403).json({message:'ไม่มีสิทธิ์'});
@@ -86,26 +97,44 @@ router.get('/approvers',async(req,res)=>{
 });
 router.get('/plans/:id',async(req,res)=>{
  try{
-  const p=await budget.load(wfQuery,Number(req.params.id));
+  const p=await budget.load(wfQuery,Number(req.params.id),false,req.query.includeDeleted==='true');
   if(!budget.canRead(req.user,p))return res.status(403).json({message:'ไม่มีสิทธิ์ในแผนนี้'});
   const start=(await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
   if(budget.year(p.PeriodYear)<Number(start.slice(0,4)))return res.status(404).json({message:'แผนอยู่ก่อนวันเริ่มข้อมูล'});
   res.json(p);
  }catch(e){res.status(e.status||500).json({message:e.message,code:e.code});}
 });
-router.get('/plans/:id/report',async(req,res)=>{
- try{
-  const p=await budget.load(wfQuery,Number(req.params.id));if(!budget.canRead(req.user,p))return res.status(403).json({message:'ไม่มีสิทธิ์'});
-  const start=(await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
-  if(budget.year(p.PeriodYear)<Number(start.slice(0,4)))return res.status(404).json({message:'แผนอยู่ก่อนวันเริ่มข้อมูล'});
-  const result=await require('../services/promotion-budget-report').run({planId:p.PlanId,year:p.PeriodYear});
-  const reports=require('./reports'),key='budget-plan-approval';
-  const config=await require('../services/report-catalog').createReportCatalog(require('../db'),[key]).get();
-  const template=await reports.resolveReportTemplate(key);
-  res.json({data:{type:key,title:`คำขออนุมัติงบส่งเสริมการขาย ${p.Title}`,columns:require('../services/promotion-budget-report').columns,...result,isoStamp:config.isoStamps?.[key]||null},template});
+router.get('/plans/:id/history',async(req,res)=>{
+ try{const p=await budget.load(wfQuery,Number(req.params.id),false,true);if(!budget.canRead(req.user,p))return res.status(403).json({message:'ไม่มีสิทธิ์'});
+ const start=(await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;if(budget.year(p.PeriodYear)<Number(start.slice(0,4)))return res.status(404).json({message:'แผนอยู่ก่อนวันเริ่มข้อมูล'});
+ const r=await wfQuery("SELECT TOP 200 EventId,Action,ReasonText,UserId,ActorUserId,CreatedAt FROM wf.ChangeEvent WHERE EntityType='PROMOTION_BUDGET' AND EntityId=@id ORDER BY CreatedAt DESC,EventId DESC",{id:{type:sql.NVarChar(100),value:String(p.PlanId)}});res.json({data:r.recordset||[]});
  }catch(e){res.status(e.status||500).json({message:e.message});}
 });
-for(const [method,path,action]of[['post','/plans','save'],['put','/plans/:id','save'],...['submit','review','approve','reject','cancel'].map(a=>['post',`/plans/:id/${a}`,a])]){
+async function report(req,key,id){
+ if(id!==null&&(!Number.isSafeInteger(id)||id<=0))throw Object.assign(Error('เลขแผนไม่ถูกต้อง'),{status:400});
+ const reports=require('./reports');
+ const config=await require('../services/report-catalog').createReportCatalog(require('../db'),[key]).get();
+ if(config.visibility[key]===false)throw Object.assign(Error('รายงานนี้ยังไม่เผยแพร่'),{status:403});
+ if(!id){const actor=require('../services/business-identity').actorPerspective(req.user);for(const u of [req.user,actor])if(!hasPermission(u,'budget.plan.review')&&!hasPermission(u,'budget.plan.approve')&&!hasRole(u,'ACCOUNTING'))throw Object.assign(Error('ไม่มีสิทธิ์ดูรายงานรวมทุกแผน'),{status:403});}
+ const data=await require('../db').wfTransaction(async tx=>{
+  const q=budget.query(tx,sql);let p;
+  if(id){p=await budget.load(q,id,true);if(!budget.canRead(req.user,p))throw Object.assign(Error('ไม่มีสิทธิ์ในแผนนี้'),{status:403});const start=(await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;if(budget.year(p.PeriodYear)<Number(start.slice(0,4)))throw Object.assign(Error('แผนอยู่ก่อนวันเริ่มข้อมูล'),{status:404});}
+  const r=await require('../services/promotion-budget-report').run({...req.query,planId:id||undefined,year:p?.PeriodYear||req.query.year},{queryFn:q,register:key==='budget-project-register'});
+  return {type:key,title:key==='budget-plan-approval'?'คำขออนุมัติงบส่งเสริมการขาย '+p.Title:key==='budget-project-register'?'ทะเบียนโครงการส่งเสริมการขาย':'ประมาณการค่าใช้จ่ายส่งเสริมการขายรายปี',columns:require('../services/promotion-budget-report').columns,...r,isoStamp:config.isoStamps?.[key]||null};
+ },{isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE});
+ return {data,template:await reports.resolveReportTemplate(key)};
+}
+async function sendReport(req,res,key,id){try{const result=await report(req,key,id);if(req.path.endsWith('/export')){
+ const XLSX=require('xlsx'),wb=require('../services/promotion-budget-workbook').workbook(result.data);
+ res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');res.setHeader('Content-Disposition','attachment; filename="'+key+'-'+(id||'annual')+'.xlsx"');return res.send(XLSX.write(wb,{type:'buffer',bookType:'xlsx'}));
+ }res.json(result);}catch(e){res.status(e.status||500).json({message:e.message,code:e.code});}}
+router.get('/plans/:id/report',(req,res)=>sendReport(req,res,'budget-plan-approval',Number(req.params.id)));
+router.get('/plans/:id/export',(req,res)=>sendReport(req,res,'budget-plan-approval',Number(req.params.id)));
+router.get('/reports/annual',(req,res)=>sendReport(req,res,'budget-annual-estimate',null));
+router.get('/reports/annual/export',(req,res)=>sendReport(req,res,'budget-annual-estimate',null));
+router.get('/reports/projects',(req,res)=>sendReport(req,res,'budget-project-register',null));
+router.get('/reports/projects/export',(req,res)=>sendReport(req,res,'budget-project-register',null));
+for(const [method,path,action]of[['delete','/plans/:id','delete'],['post','/plans','save'],['put','/plans/:id','save'],...['submit','review','approve','reject','cancel','restore'].map(a=>['post',`/plans/:id/${a}`,a])]){
  router[method](path,async(req,res)=>{
   try{
    const result=await budget.write(require('../db'),req.user,req.body||{},req.params.id?Number(req.params.id):null,action,req.body?.reason,req.ip);

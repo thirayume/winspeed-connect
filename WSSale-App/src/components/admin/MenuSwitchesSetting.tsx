@@ -7,7 +7,7 @@ import { AdminReportCatalogModal } from './AdminReportCatalogModal';
 const MENU_LABELS: Record<string, string> = {
   sales: 'ขาย', voucher: 'ชุดตั๋วคุม — รายชื่อตามสังกัด', 'edit-requests': 'คำขอแก้ไขและอนุมัติ', quotation: 'เสนอราคา',
   store: 'คลัง', stock: 'สต๊อกปฏิบัติการ', papertrail: 'Paper Trail', 'control-ticket': 'ชุดตั๋วคุม — รายการและเตือนอายุ',
-  'scale-reports': 'สถานะการชั่งรถ', aging: 'บิลค้างส่ง', rebate: 'รีเบท (App)', 'rebate-plan': 'Rebate Plan',
+  'scale-reports': 'สถานะการชั่งรถ', aging: 'บิลค้างส่ง', rebate: 'รีเบท (App)',
   giveaway: 'ของแถม', accounting: 'บัญชี', recon: 'กระทบยอด', incidents: 'เหตุการณ์ผิดกฎ', reports: 'รายงาน',
   master: 'ข้อมูลหลัก', policy: 'นโยบายอนุมัติ', ops: 'สถานะระบบ', org: 'ผังองค์กร', beneficiaries: 'จัดการสิทธิ์ตั๋วร่วม',
 };

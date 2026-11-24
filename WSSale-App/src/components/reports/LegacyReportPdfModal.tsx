@@ -1,3 +1,4 @@
+import {budgetDetailPages} from '../../utils/budgetReportDetails';
 import { Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { Printer, X, FileText, AlertCircle } from 'lucide-react';
@@ -163,7 +164,8 @@ export function LegacyReportPdfModal({
     document.title = prevTitle;
   };
 
-  const totalPages = pages.length;
+  const appendix=budgetDetailPages(data.meta?.projects||[],Boolean(isLandscape),pageHeight);
+  const totalPages = pages.length+appendix.length;
 
   // Logo rendering decision
   const hasLogo = typeof resolvedHeader.logoUrl === 'string' && resolvedHeader.logoUrl.trim().length > 0;
@@ -226,7 +228,7 @@ export function LegacyReportPdfModal({
         {/* Printable Multi-Page Area */}
         <div ref={areaRef} className="report-print-area flex-1 overflow-y-auto p-6 bg-gray-100 print:overflow-visible print:p-0 print:bg-transparent print:block space-y-8 print:space-y-0">
           {pages.map((pageRows, pageIdx) => {
-            const isLastPage = pageIdx === totalPages - 1;
+            const isLastPage = pageIdx === pages.length - 1;
             const pageNumberStr = `หน้า ${pageIdx + 1} / ${totalPages}`;
             const startRowIndex = pages.slice(0,pageIdx).reduce((count,rows)=>count+rows.length,0);
 
@@ -450,6 +452,11 @@ export function LegacyReportPdfModal({
               </div>
             );
           })}
+          {appendix.map((rows,index)=><div key={'budget-appendix-'+index} className="report-page-container mx-auto" style={{maxWidth:`${pageWidth}mm`}}><div className="report-page bg-white border rounded-xl p-8 shadow-sm min-h-[700px] flex flex-col" data-testid="budget-project-appendix">
+            <header className="border-b border-black pb-3 mb-4"><h2 className="font-bold">{resolvedHeader.companyNameTh}</h2><p>{data.title}</p><p className="text-xs">รายละเอียดโครงการและผู้มีส่วนร่วม · เอกสารแนบคำขออนุมัติ</p></header>
+            <table className="w-full text-xs border-collapse table-fixed"><tbody>{rows.map((r,i)=><tr key={i}><th className="border p-2 text-left align-top w-1/4 font-semibold">{r.label}</th><td className="border p-2 align-top" style={{overflowWrap:'anywhere'}}>{r.value}</td></tr>)}</tbody></table>
+            <footer className="mt-auto pt-4 text-[10px] flex justify-between"><span>{resolvedHeader.showPageNumber?`หน้า ${pages.length+index+1} / ${totalPages}`:''}</span>{data.isoStamp&&<span data-testid="report-iso-stamp">{data.isoStamp.code} Rev.{data.isoStamp.revision}{data.isoStamp.effectiveDate?` (${formatThaiDate(data.isoStamp.effectiveDate)})`:''}</span>}</footer>
+          </div></div>)}
         </div>
 
       </div>

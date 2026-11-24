@@ -10,7 +10,9 @@ const db=h.installDbStub(({kind,text,inputs:p})=>{
  if(text.includes('INSERT INTO wf.BudgetPlan')){state.plan={PlanId:1,PeriodYear:p.periodYear,Channel:p.channel,Title:p.title,PreparedBy:p.preparedBy,PreparedActorId:p.preparedActorId,Status:'DRAFT',EditVersion:1};return [{PlanId:1}];}
  if(text.includes('UPDATE wf.BudgetPlan')){
   assert.equal(kind,'tx');const b=state.plan;b.EditVersion++;
-  if(text.includes("Status='DRAFT'"))Object.assign(b,{Status:'DRAFT',Title:p.title,PeriodYear:p.periodYear,Channel:p.channel,AssignedReviewerId:p.reviewer,AssignedApproverId:p.approver,ReviewedBy:null,ReviewedAt:null,ApprovedBy:null,ApprovedAt:null});
+  if(text.includes('DeletedAt=GETUTCDATE'))Object.assign(b,{DeletedAt:'2026-11-25',DeletedBy:p.uid});
+  else if(text.includes('DeletedAt=NULL'))Object.assign(b,{DeletedAt:null,DeletedBy:null});
+  else if(text.includes("Status='DRAFT'"))Object.assign(b,{DocumentJson:p.document,Status:'DRAFT',Title:p.title,PeriodYear:p.periodYear,Channel:p.channel,AssignedReviewerId:p.reviewer,AssignedApproverId:p.approver,ReviewedBy:null,ReviewedAt:null,ApprovedBy:null,ApprovedAt:null});
   else if(text.includes("Status='PENDING'"))Object.assign(b,{Status:'PENDING',PreparedAt:'2026-11-23',ReviewedBy:null,ReviewedActorId:null,ReviewedAt:null,ApprovedBy:null,ApprovedActorId:null,ApprovedAt:null});
   else if(text.includes("Status='APPROVED'"))Object.assign(b,{Status:'APPROVED',ApprovedBy:p.uid,ApprovedActorId:p.actor,ApprovedAt:'2026-11-23'});
   else if(text.includes("Status='REJECTED'"))b.Status='REJECTED';
@@ -19,7 +21,7 @@ const db=h.installDbStub(({kind,text,inputs:p})=>{
  }
  if(text.includes('DELETE FROM wf.PromotionBudgetLine'))state.lines=[];
  if(text.includes('DELETE FROM wf.PromotionBudgetAllocation'))state.allocations=[];
- if(text.includes('INSERT INTO wf.PromotionBudgetLine'))state.lines.push({Region:p.region,Amount:p.amount,Category:p.category,ItemName:p.itemName});
+ if(text.includes('INSERT INTO wf.PromotionBudgetLine'))state.lines.push({ProjectKey:p.projectKey,Quantity:p.quantity,UnitPrice:p.unitPrice,Region:p.region,Amount:p.amount,Category:p.category,ItemName:p.itemName});
  if(text.includes('INSERT INTO wf.PromotionBudgetAllocation'))state.allocations.push({Region:p.region,Amount:p.amount});
  if(text.includes('wf.fn_UserHasPermission'))return [20,30].includes(p.uid)?[{Id:p.uid}]:[];
  return [];
@@ -64,4 +66,35 @@ test('Budget Plan menu follows assigned permissions, including custom reviewers 
  assert.ok(menu({role:'APPROVER',permissions:['budget.plan.review']}).includes('budget-plan'));
  assert.ok(!menu({role:'SALES',permissions:[]}).includes('budget-plan'));
  assert.ok(menu({role:'ACCOUNTING',permissions:[]}).includes('budget-plan'));
+});
+const project=()=>({key:'P1',title:'QA project',category:'QA promotion',refDoc:'QA-REF',region:'QA North',budgetAmount:500,validFrom:'2026-01-01',validTo:'2026-12-31',objective:'QA objective',internalParticipants:[{name:'QA staff',role:'QA role',dept:'QA dept'}],externalParticipants:[{custCode:'QA-1',custName:'QA customer',note:'QA'}]});
+const detailed=()=>({...payload(),document:{version:1,projects:[project()]},lines:[{...payload().lines[0],projectKey:'P1'}]});
+test('structured projects round-trip with participants and keyed lines; over-budget submit is rejected without changing state',async()=>{
+ await write(users.sales,'save',detailed());assert.equal(state.plan.DocumentJson.includes('QA staff'),true);assert.equal(state.lines[0].ProjectKey,'P1');
+ const p=await budget.load(db.stub.wfQuery,1);assert.equal(p.document.projects[0].externalParticipants[0].custCode,'QA-1');
+ await write(users.sales,'save',{...detailed(),document:{version:1,projects:[{...project(),budgetAmount:100}]}});
+ const before=structuredClone(state);await assert.rejects(write(users.sales,'submit'),/เกินวงเงินโครงการ/);assert.deepEqual(state,before);
+ await write(users.sales,'save',detailed());await write(users.sales,'submit');assert.equal(state.plan.Status,'PENDING');
+});
+test('deletion is audited and reversible; deleted and approved plans cannot be overwritten or hard-deleted',async()=>{
+ await write(users.sales,'save',detailed());await write(users.sales,'delete');assert.ok(state.plan.DeletedAt);assert.equal(state.lines.length,1);assert.equal(state.events.at(-1).action,'DELETE');
+ await assert.rejects(budget.load(db.stub.wfQuery,1),e=>e.status===404);await assert.rejects(write(users.sales,'save',detailed()),e=>e.status===404);
+ await write(users.sales,'restore');assert.equal(state.plan.DeletedAt,null);assert.equal(state.events.at(-1).action,'RESTORE');
+ await write(users.sales,'submit');await write(users.reviewer,'review');await write(users.approver,'approve');await assert.rejects(write(users.sales,'delete'),e=>e.status===409);
+});
+test('project references, dates, participant payloads and every budget ceiling are checked',()=>{
+ const doc=require('../services/promotion-budget-document');
+ for(const p of [{...project(),validTo:'2027-01-01'},{...project(),validFrom:'2026-02-30'},{...project(),budgetAmount:-1},{...project(),internalParticipants:[{name:''}]}])assert.throws(()=>budget.validate({...detailed(),document:{version:1,projects:[p]}}));
+ assert.throws(()=>budget.validate({...detailed(),document:{version:1,projects:[project(),project()]}}),/ซ้ำ/);
+ assert.throws(()=>budget.validate({...detailed(),lines:[{...detailed().lines[0],projectKey:'OTHER'}]}),/ระบุโครงการ/);
+ assert.throws(()=>doc.parse('{invalid'),{code:'BUDGET_DOCUMENT_INVALID'});
+ assert.throws(()=>doc.assertReady({DocumentJson:JSON.stringify({version:1,projects:[{...project(),budgetAmount:1001}]}),lines:[],allocations:[{Region:'QA North',Amount:1000}]}),/วงเงินโครงการรวม/);
+ assert.throws(()=>doc.assertReady({lines:[{Region:'N',Amount:101}],allocations:[{Region:'N',Amount:100}]}),/วงเงินรายภาค/);
+});
+test('deletion audit failure rolls back, and an old client cannot erase rich project details',async()=>{
+ await write(users.sales,'save',detailed());const before=structuredClone(state);failAudit=true;await assert.rejects(write(users.sales,'delete'),/AUDIT_FAILED/);assert.deepEqual(state,before);failAudit=false;
+ await assert.rejects(write(users.sales,'save',payload()),e=>e.status===409);assert.deepEqual(state,before);
+});
+test('submission excludes the actual preparer behind Access As from both approval assignments',async()=>{
+ await write(users.sales,'save',detailed());state.plan.PreparedActorId=users.reviewer.sub;await assert.rejects(write(users.sales,'submit'),/คนละบัญชี/);assert.equal(state.plan.Status,'DRAFT');
 });

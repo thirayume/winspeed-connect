@@ -46,7 +46,6 @@ const MENUS = Object.freeze({
   'scale-reports': ['WAREHOUSE', 'WEIGHBRIDGE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   aging: ['SALES', 'WAREHOUSE', 'ACCOUNTING', 'C_LEVEL', 'ADMIN'],
   rebate: ['SALES', 'COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  'rebate-plan': ['APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   giveaway: ['SALES', 'COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   accounting: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   recon: ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],

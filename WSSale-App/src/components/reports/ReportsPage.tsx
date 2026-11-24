@@ -400,9 +400,10 @@ export function ReportsPage() {
   const isTargetReport = active==='sales-target-comparison';
   const [invoiceFilters,setInvoiceFilters] = useState<Record<string,string>>({});
   const [financeFilters,setFinanceFilters] = useState<Record<string,string>>({});
-  const isBudgetReport = ['budget-annual-estimate','budget-plan-approval'].includes(active);
+  const isBudgetReport = ['budget-annual-estimate','budget-plan-approval','budget-project-register'].includes(active);
   const [budgetYear,setBudgetYear] = useState(new Date().getFullYear()+543);
   const [budgetPlanId,setBudgetPlanId] = useState('');
+  const [budgetFilters,setBudgetFilters]=useState({channel:'',region:'',category:'',status:'APPROVED'});
 
   useEffect(() => {
     fetchReportTypes()
@@ -473,9 +474,9 @@ export function ReportsPage() {
       const keys=isTargetReport?['empCode']:active==='ar-receipt-history'?['docFrom','docTo','custCode','empCode','receiptType']:['docFrom','docTo','custCode','bankCode','chequeNo','status'];
       for(const k of keys)if(financeFilters[k]?.trim())p[k]=financeFilters[k].trim();
     }
-    if (isBudgetReport){p.year=String(budgetYear);if(active==='budget-plan-approval'&&budgetPlanId)p.planId=budgetPlanId;}
+    if (isBudgetReport){Object.assign(p,budgetFilters);p.year=String(budgetYear);if(active==='budget-plan-approval'&&budgetPlanId)p.planId=budgetPlanId;}
     return Object.keys(p).length ? p : undefined;
-  }, [sheetHideSuspended,sheetSort,sheetDirection,sheetGroup,sheetSearch,active, isSheetReport, sheetMode, sheetGranularity, selectedPeriodState, from, to, custCode, book, isInvoiceReport, invoiceFilters,isBudgetReport,budgetYear,budgetPlanId,isFinanceReport,isTargetReport,financeFilters]);
+  }, [sheetHideSuspended,sheetSort,sheetDirection,sheetGroup,sheetSearch,active, isSheetReport, sheetMode, sheetGranularity, selectedPeriodState, from, to, custCode, book, isInvoiceReport, invoiceFilters,isBudgetReport,budgetYear,budgetPlanId,budgetFilters,isFinanceReport,isTargetReport,financeFilters]);
 
   const load = useCallback(async (type: string, range?: Record<string, string>) => {
     if (!type) return;
@@ -687,6 +688,7 @@ export function ReportsPage() {
           )}
 
           {isBudgetReport&&<div className="flex gap-2 items-center"><label>ปี พ.ศ. <input aria-label="ปีรายงานงบประมาณ" type="number" className="border rounded px-2 py-2 w-28" value={budgetYear} onChange={e=>setBudgetYear(Number(e.target.value))}/></label>{active==='budget-plan-approval'&&<input aria-label="เลขแผนงบประมาณ" type="number" min="1" className="border rounded px-2 py-2 w-32" placeholder="เลขแผน" value={budgetPlanId} onChange={e=>setBudgetPlanId(e.target.value)}/>}</div>}
+          {isBudgetReport&&<div className="flex flex-wrap gap-2"><select aria-label="ช่องทางรายงานงบประมาณ" className="border rounded-lg px-2 py-2" value={budgetFilters.channel} onChange={e=>setBudgetFilters(f=>({...f,channel:e.target.value}))}><option value="">ทุกช่องทาง</option><option>ทั่วไป</option><option>โรงงานน้ำตาล</option></select>{(['region','category'] as const).map(k=><input key={k} aria-label={k==='region'?'ภาครายงานงบประมาณ':'หมวดรายงานงบประมาณ'} placeholder={k==='region'?'ภาค / หน่วยงาน':'หมวดโครงการ'} className="border rounded-lg px-2 py-2 w-40" value={budgetFilters[k]} onChange={e=>setBudgetFilters(f=>({...f,[k]:e.target.value}))}/>)}{active==='budget-project-register'&&<select aria-label="สถานะรายงานโครงการ" className="border rounded-lg px-2" value={budgetFilters.status} onChange={e=>setBudgetFilters(f=>({...f,status:e.target.value}))}>{['ALL','DRAFT','PENDING','REJECTED','APPROVED','CLOSED'].map(v=><option key={v}>{v}</option>)}</select>}</div>}
           {(isFinanceReport||isTargetReport)&&<div className="flex gap-2 flex-wrap">
             {(isTargetReport?[['empCode','รหัสฝ่ายขาย']]:active==='ar-receipt-history'?[['docFrom','เอกสารรับชำระตั้งแต่'],['docTo','เอกสารรับชำระถึง'],['custCode','รหัสลูกค้า'],['empCode','รหัสพนักงาน']]:[['docFrom','เอกสารรับเช็คตั้งแต่'],['docTo','เอกสารรับเช็คถึง'],['custCode','รหัสลูกค้า'],['bankCode','รหัสธนาคาร'],['chequeNo','เลขที่เช็ค']]).map(([key,label])=><input key={key} aria-label={label} placeholder={label} maxLength={100} className="w-36 border rounded-lg px-2 py-2 text-xs" value={financeFilters[key]||''} onChange={e=>setFinanceFilters(p=>({...p,[key]:e.target.value}))}/>)}
             {active==='ar-receipt-history'&&<select aria-label="ประเภทรับชำระ" className="border rounded-lg px-2 text-xs" value={financeFilters.receiptType||'ALL'} onChange={e=>setFinanceFilters(p=>({...p,receiptType:e.target.value}))}><option value="ALL">รับชำระหนี้และขายสด</option><option value="DEBT">รับชำระหนี้ 206</option><option value="CASH">รับจากขายสด 108</option></select>}

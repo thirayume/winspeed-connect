@@ -133,6 +133,7 @@ function filteredCapabilities(user) {
   if (["budget.plan.create", "budget.plan.review", "budget.plan.approve"].some(k => hasPermission(user,k)) || userRoles(user).includes("ACCOUNTING"))
     inherited.add("budget-plan");
   else inherited.delete("budget-plan");
+  inherited.delete("rebate-plan"); // The annual Budget Plan is the single promotion-budget workspace.
   if (
     ["so.create", "so.edit", "so.confirm"].some((k) => hasPermission(user, k))
   )

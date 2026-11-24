@@ -1820,6 +1820,13 @@ const PLAN_TIER_ROLES = {
 };
 
 // GET /api/rebate/plans/:id/approvals — ร่องรอยการอนุมัติของโปรโมชั่น
+// Annual project metadata belongs to the unified, audited budget workflow.
+// Keep legacy financial-rule reads/decisions; cached annual-budget forms must reload.
+router.use('/plans',(req,res,next)=>{
+ if(['POST','PATCH','PUT'].includes(req.method)&&['planCategory','objective','detailsJson'].some(k=>Object.hasOwn(req.body||{},k)))
+  return res.status(410).json({code:'PROMOTION_BUDGET_UNIFIED',message:'จัดทำโครงการและงบประมาณรายปีที่ Budget Plan',replacement:'/api/budget/plans'});
+ next();
+});
 router.get('/plans/:id/approvals', hideRebateMoneyFromSales, async (req, res) => {
   try {
     const rows = (await wfQuery(

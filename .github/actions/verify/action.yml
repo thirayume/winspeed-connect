@@ -80,6 +80,10 @@ runs:
       shell: bash
       run: npx playwright test --config e2e/playwright.ticket-readiness.config.ts
 
+    - name: Annual budget CRUD, participant and PDF browser regressions
+      shell: bash
+      run: npx playwright test --config e2e/playwright.budget-workspace.config.ts
+
     - name: Batch files are ASCII only
       shell: bash
       run: |

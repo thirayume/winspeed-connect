@@ -5,6 +5,73 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**25 November — unified annual Budget Plan candidate (not deployed).**
+The two screens previously wrote different systems: RebatePlan held individual
+promotion/financial-rule definitions, while BudgetPlan held annual regional caps
+and the three-person approval chain. The owner approved one annual workspace,
+using the richer project modal as the basis. Read-only UAT/PROD preflight found
+zero plans in both systems, zero legacy allocations/linked ledger and zero estimates.
+No automatic import, financial-rule activation, Rebate allocation or quota change
+is performed. Historical Rebate rule/ledger reads and their report stay separate;
+the old annual-metadata writer now returns410 so cached forms cannot create a
+second annual-budget source. Three unused legacy form/approval/print components
+were removed; the stored rebate-plan portal resolves to Budget Plan, subject to
+its existing budget permissions and menu switch.
+
+**User flow after rollout:** one annual plan per year/channel (general or sugar
+factory), with regional/department caps and multiple projects. The modal has four
+sections: annual plan/caps/assigned reviewers; projects with category, reference,
+dates, requested budget, objective, product/benefit/NET references and notes;
+internal/external participants (scoped staff/customer lookup or manual entry);
+and estimate lines keyed to projects and regions. Product and benefit references
+are descriptive and do not configure actual prices or Rebate rules.
+
+The preparer saves/edits a draft and submits it to the assigned Manager reviewer,
+then the assigned C_Level approver. Real/effective identity, assignment, active
+permissions, optimistic EditVersion and distinct preparer/actor/reviewer/approver
+identities are enforced. Returned plans restart the review chain. Approved plans
+remain read-only. Delete is an audited soft delete for draft/returned plans, with
+an archive filter and restore; cancel preserves details and audit. The annual
+uniqueness constraint remains, including deleted plans: restore the old plan
+instead of making a competing annual header. Metadata, estimates, allocations,
+status and ChangeEvent commit together; audit failure rolls the write back.
+Project/region/year caps, keyed references, dates and decimal arithmetic are
+validated; legacy clients cannot erase rich project metadata.
+
+**Reports:** budget-plan-approval (selected plan including workflow signatures,
+project/participant appendices); budget-annual-estimate (approved plans only,
+1January–31December with region pivot); budget-project-register (year/channel /
+status/region/category filters). PDF uses server templates and per-report ISO;
+appendices preserve Thai word boundaries, physical pagination and an ISO stamp
+on each page. XLSX has typed numeric cells plus summary, project, participant
+and signature sheets; the summary remains in the first sheet for compatibility.
+Legacy CE/BE years and selected-plan periods normalize correctly. Legacy records
+without project caps are explicitly marked; no project cap is inferred from an
+annual cap. Actual expenditure remains distinct from estimates.
+
+**Schema / gates:** additive migration279 adds only wf.BudgetPlan DocumentJson /
+DeletedAt / DeletedBy and wf.PromotionBudgetLine ProjectKey. No dbo alteration,
+Rebate reset, business writes to the secondary company or flag change. Migration
+down refuses stored workspace history and retains additive columns. One actual
+v3-copy rehearsal applied278/279 inside an outer serializable rollback, used the
+QA app principal and synthetic distinct identities, exercised save/delete/restore /
+submit/review/approve, rejected stale/out-of-order/unauthorized writes, verified
+six audit events and audit-failure rollback, and parsed annual/request/project
+reports and actual XLSX. Row/schema/permission-ledger/native-trigger baseline
+matched after rollback and owned worker/session/files were removed. Later input,
+identity and presentation guards have focused regressions; no SQL contract change.
+
+Local gates: backend1424/1424; migration-runner14/14; browser42/42 (budget7,
+report/PDF19, ticket7, Admin9); frontend build. Long-Thai request PDF contains all
+40 synthetic participants and ISO on all six physical pages; real XLSX download
+round-trips. These are automated/synthetic checks, not a real-staff UAT sign-off.
+Fresh25Nov00:38ICT read-only check: actual UAT/PROD still4ef1311, both annual /
+legacy plan counts and estimate lines0, migration279absent. Budget/targets are
+still business setup after deployment. New candidate includes unpushed a38ee50;
+exact public release approval, CI, official UAT deploy/authenticated acceptance,
+then PROD remain pending. Evidence is private, aggregate/synthetic only:
+scratch/budget-unification-20261125/. Unrelated host/DBA edits are preserved.
+
 **24 November — unified ticket workspace candidate (not deployed).**
 The owner approved merging expiry follow-up into Control Ticket Management and
 renaming Aging to bills waiting to ship. Current live/public release remains

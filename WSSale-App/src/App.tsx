@@ -31,7 +31,6 @@ const RebatePage = lazy(() => import('./components/rebate/RebatePage').then(m =>
 // ── ปิด lazy import 03/09/2569 — หน้าเหล่านี้ถูกตัด/ซ่อนออกจากเมนูแล้ว ──
 // ปิดที่นี่ด้วยเพื่อไม่ให้ vite สร้าง chunk ที่ไม่มีใครเรียก
 // ไฟล์ทั้งหมดยังอยู่ครบ · เปิดกลับได้ด้วยการเอาคอมเมนต์ออกทั้งบรรทัดนี้และในเมนู/render
-const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').then(m => ({ default: m.RebatePlanPage })));
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const WeighingReportsPage = lazy(() => import('./components/reports/WeighingReportsPage').then(m => ({ default: m.WeighingReportsPage })));
@@ -98,7 +97,6 @@ const NAV_GROUPS: NavGroup[] = [
     color: 'text-emerald-600',
     items: [
       { key: 'rebate',     label: 'รีเบท (App)', sub: 'Rebate Pool FIFO · แปลงตั๋ว · คำขอเคลม', icon: Coins, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
-      { key: 'rebate-plan',label: 'Rebate Plan', sub: 'แผนจัดสรรงบรีเบท',        icon: ClipboardList, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'ACCOUNTING'] },
       // ── รายงานที่ซ่อนไว้ — เจ้าของให้คงรายงานไว้ก่อน (17/11/2569) ──
       // { key: 'incentive-report', label: 'Incentive & Retained', sub: 'สัดส่วน · สะสมบริษัท', icon: Award, roles: [...] },
       { key: 'budget-plan',label:'Budget Plan',sub:'งบส่งเสริมการขายรายปี · ยื่นและอนุมัติ',icon:ClipboardList,roles:['SALES','COUNTER_SALES','ACCOUNTING','MANAGER','C_LEVEL','ADMIN'] },
@@ -345,7 +343,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
     if (user?.capabilities?.disabledMenus?.includes(n.key)) return { label: n.label, sub: 'ปิดอยู่สำหรับผู้ใช้อื่น' };
     return { label: n.label, sub: n.sub };
   };
-  const current = ALL_NAV.find(n => n.key === (activePortal==='voucher'?'control-ticket':activePortal));
+  const current = ALL_NAV.find(n => n.key === (activePortal==='voucher'?'control-ticket':activePortal==='rebate-plan'?'budget-plan':activePortal));
   const currentText = current ? displayNavLabel(current) : null;
   const portalLabel = currentText ? `${currentText.label} — ${currentText.sub}` : '';
   const toggleGroup = (groupLabel: string) => {
@@ -597,12 +595,11 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'store'      && <StorePortal />}
                 {activePortal === 'papertrail' && <PaperTrailPage />}
                 {activePortal === 'rebate'     && <RebatePage />}
-                {activePortal === 'rebate-plan' && <RebatePlanPage />}
                 {(activePortal === 'control-ticket'||activePortal==='voucher') && (ticketMenus.control||ticketMenus.hierarchy) && <ControlTicketPage key={activePortal} warningsOnly={!ticketMenus.control} allowHierarchy={ticketMenus.hierarchy} initialHierarchy={activePortal==='voucher'}/>}
                 {activePortal === 'reports'    && <ReportsPage />}
                 {activePortal === 'scale-reports' && <WeighingReportsPage />}
                 {/* ปิดไว้ 03/09/2569 — IncentiveReport */}
-                {activePortal === 'budget-plan' && <BudgetPlanPage />}
+                {(activePortal === 'budget-plan'||activePortal==='rebate-plan') && (capMenus?capMenus.includes('budget-plan'):['SALES','COUNTER_SALES','ACCOUNTING','MANAGER','C_LEVEL','ADMIN'].includes(role||'')) && <BudgetPlanPage />}
                 {activePortal === 'accounting' && <AccountingPage />}
                 {activePortal === 'recon'      && <ReconciliationPage />}
                 {activePortal === 'incidents'  && <IncidentsPage />}

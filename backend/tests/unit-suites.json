@@ -236,6 +236,7 @@
     "tests/invoice-register-report.test.js",
     "tests/report-iso-stamp.test.js",
     "tests/promotion-budget-workflow.test.js",
+    "tests/promotion-budget-workspace-route.test.js",
     "tests/invoice-report-export.test.js",
     "tests/promotion-budget-report.test.js",
     "tests/native-finance-reports.test.js",
