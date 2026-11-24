@@ -11,6 +11,8 @@ const { wfQuery, sql } = require('../db');
 const { requireAuth, canViewAllRebateAmounts } = require('../middleware/auth');
 const { getVisibleScope } = require('../services/visible-scope');
 const { hasPermission } = require('../services/role-capabilities');
+const nativeFinanceReports = require('../services/native-finance-reports');
+const salesTargetReport = require('../services/sales-target-report');
 const {
   listSelectablePeriods,
   buildSheetReport,
@@ -483,16 +485,8 @@ const REPORTS = {
   'ar-receipt-history': {
     title: 'รายงานรายละเอียดการรับชำระเงินลูกหนี้ (AR Receipt & Payment History)',
     category: 'finance',
-    available: false,
-    unavailableReason: 'ยังไม่มี native AR receipt payment history implementation ที่สมบูรณ์ (ไม่อนุญาตให้แสดงข้อมูล SO projection สมมุติเป็นใบเสร็จ)',
-    columns: [
-      { key: 'ReceiptNo', label: 'เลขที่ใบรับเงิน', type: 'identifier' },
-      { key: 'ReceiptDate', label: 'วันที่รับเงิน', type: 'date' },
-      { key: 'CustName', label: 'ลูกค้า', type: 'text' },
-      { key: 'RefDocNo', label: 'อ้างอิง SO/บิล', type: 'identifier' },
-      { key: 'PayType', label: 'ประเภทการชำระ', type: 'text' },
-      { key: 'Amount', label: 'จำนวนเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-    ],
+    columns: nativeFinanceReports.receiptColumns,
+    run: params => nativeFinanceReports.receipts(params),
   },
   'ap-liabilities': {
     title: 'รายงานสรุปเจ้าหนี้การค้าและค้างชำระค่าวัตถุดิบ (AP Aging & Material Liabilities)',
@@ -655,43 +649,14 @@ const REPORTS = {
   'cq-cheque-register': {
     title: 'รายงานสถานะเช็ครับค้างนำฝาก (Cheque Register & Clearance Status)',
     category: 'finance',
-    available: false,
-    unavailableReason: 'ยังไม่มี native cheque register implementation ในระบบ WinSpeed ERP จริง (ไม่อนุญาตให้แสดงข้อมูลสมมุติ)',
-    columns: [
-      { key: 'ChequeNo', label: 'เลขที่เช็ค', type: 'identifier' },
-      { key: 'ChequeDate', label: 'วันที่หน้าเช็ค', type: 'date' },
-      { key: 'BankName', label: 'ธนาคาร', type: 'text' },
-      { key: 'CustName', label: 'ลูกค้าผู้สั่งจ่าย', type: 'text' },
-      { key: 'Amount', label: 'จำนวนเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-      { key: 'Status', label: 'สถานะเช็ค', type: 'text' },
-    ],
+    columns: nativeFinanceReports.chequeColumns,
+    run: params => nativeFinanceReports.cheques(params),
   },
   'sales-target-comparison': {
     title: 'รายงานเปรียบเทียบยอดขายกับเป้าหมาย (Sales vs Target Breakdown)',
     category: 'sales',
-    available: false,
-    unavailableReason: 'ยังไม่มีข้อมูลเป้าหมายขายในระบบ — ฉบับเดิมใช้เป้าคงที่ 1,000 ตัน / 15 ล้านบาทเท่ากันทุกคนเทียบกับยอดสะสมทั้งหมด (ไม่อนุญาตให้แสดงเป้าสมมุติ)',
-    columns: [
-      { key: 'SalesName', label: 'พนักงานขาย', type: 'text' },
-      { key: 'TargetTon', label: 'เป้าหมาย (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
-      { key: 'ActualTon', label: 'ยอดขายจริง (ตัน)', type: 'quantity', precision: 3, unit: 'ตัน', aggregation: 'sum' },
-      { key: 'AchievedPct', label: 'บรรลุเป้า %', type: 'percent', precision: 2, unit: '%' },
-      { key: 'TargetAmt', label: 'เป้าหมาย (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-      { key: 'ActualAmt', label: 'ยอดขายจริง (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
-    ],
-    sql: `SELECT 
-            ISNULL(emp.EmpName, N'พนักงานขายทั่วไป') AS SalesName,
-            CAST(1000.00 AS DECIMAL(10,2)) AS TargetTon,
-            CAST(SUM(dt.GoodQty2) AS DECIMAL(10,2)) AS ActualTon,
-            CAST((SUM(dt.GoodQty2) / 1000.00) * 100.0 AS DECIMAL(10,2)) AS AchievedPct,
-            CAST(15000000.00 AS DECIMAL(14,2)) AS TargetAmt,
-            CAST(SUM(dt.GoodAmnt) AS DECIMAL(14,2)) AS ActualAmt
-          FROM dbo.SOHD hd WITH (NOLOCK)
-          JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-          LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = hd.EmpID
-          WHERE hd.DocuType IN (103, 104) AND hd.DocuStatus <> 'C'
-          GROUP BY emp.EmpName
-          ORDER BY ActualTon DESC`,
+    columns: salesTargetReport.columns,
+    run: params => salesTargetReport.run(params),
   },
   'rebate-claim-detail': {
     title: 'รายงานรายละเอียดใบขอเคลียร์รีเบทและการอนุมัติ (Rebate Claim Detail)',
@@ -1264,7 +1229,7 @@ router.get('/:type/export', async (req, res) => {
     if (config.visibility[req.params.type] === false && !isUserAdmin(req.user)) {
       return res.status(403).json({ message: 'รายงานนี้ถูกปิดการแสดงผลโดยผู้ดูแลระบบ' });
     }
-    const data = await runReport(req.params.type, ['daily-invoice','net-sales-detail','cn-returns'].includes(req.params.type)?{...req.query,exportAll:'true'}:req.query);
+    const data = await runReport(req.params.type, ['daily-invoice','net-sales-detail','cn-returns','ar-receipt-history','cq-cheque-register','sales-target-comparison'].includes(req.params.type)?{...req.query,exportAll:'true'}:req.query);
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     data.isoStamp = config.isoStamps?.[req.params.type] || null;
 
@@ -1292,6 +1257,7 @@ router.get('/:type/export', async (req, res) => {
       [contactParts.join('  |  ')],
       [`รายงาน: ${data.title}${titleSuffix}  |  พิมพ์เมื่อ: ${formatThaiBeDate(new Date(), true)}  |  ระบบอ้างอิง: WINSpeed ERP · แม่แบบ: ${template.templateCode} (v${template.version})`],
     ];
+    for (const note of data.meta?.notes || []) headerRows.push([note]);
 
     if (data.meta?.missingPlanDetailsCount) {
       headerRows.push([`⚠️ ข้อมูลไม่ครบ: แผนเดิม ${data.meta.missingPlanDetailsCount} แผนยังไม่มีรายละเอียดประมาณการ ไม่ได้ถือเป็นศูนย์ กรุณาตรวจรายละเอียดก่อนใช้ยอดรวม`]);

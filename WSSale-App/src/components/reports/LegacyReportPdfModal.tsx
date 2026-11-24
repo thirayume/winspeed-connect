@@ -31,9 +31,14 @@ export function LegacyReportPdfModal({
   const {pages,areaRef}=useReportPagination(data,template,pageHeight,defaultLimit);
   // Transport references can be long. Keep every reference in a second row
   // instead of shrinking a 21-column invoice register until it is unreadable.
-  const referenceKeys=['BookingRefs','SaleRefs','DebtRefs','TicketRefs','SlipRefs','TruckPlates','TraceState','DetailState','CostState'];
-  const referenceColumns=data.type==='daily-invoice'?data.columns.filter(c=>referenceKeys.includes(c.key)):[];
-  const printColumns=data.type==='daily-invoice'?data.columns.filter(c=>c.key!=='DocBook'&&!referenceKeys.includes(c.key)):data.columns;
+  const referencesByType: Record<string,string[]> = {
+  'ar-receipt-history':['ReceiptKind','EmpCode','RefDocNo','ChequeRefs','PostedGL'],
+  'cq-cheque-register':['LastMoveNo','LastMoveDate','StatusCode','BankCode','CustCode'],
+  'daily-invoice':['BookingRefs','SaleRefs','DebtRefs','TicketRefs','SlipRefs','TruckPlates','TraceState','DetailState','CostState'],
+  };
+  const referenceKeys=referencesByType[data.type]||[];
+  const referenceColumns=data.columns.filter(c=>referenceKeys.includes(c.key));
+  const printColumns=data.columns.filter(c=>!(data.type==='daily-invoice'&&c.key==='DocBook')&&!referenceKeys.includes(c.key));
 
   const PRINT_CSS = `
 .report-invoice-table { table-layout: fixed; width: 100%; }
@@ -286,7 +291,7 @@ export function LegacyReportPdfModal({
                     {/* Data Table */}
                     {pageIdx===0&&<ReportContext data={data}/>}
                     <div className="overflow-x-auto mb-4">
-                      <table data-report-rows className={`w-full text-xs text-left border-collapse border border-gray-300 ${data.type==='daily-invoice'?'report-invoice-table':''}`}>
+                      <table data-report-rows className={`w-full text-xs text-left border-collapse border border-gray-300 ${referenceKeys.length?'report-invoice-table':''}`}>
                         <thead>
                           <tr className="bg-[#1F3864] text-white text-[11px] font-semibold uppercase tracking-wider">
                             <th className="border border-gray-400 px-2.5 py-2 text-center w-10">#</th>

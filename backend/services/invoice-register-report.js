@@ -59,9 +59,11 @@ async function run(kind,params={},options={}){
  ORDER BY h.DocuDate,h.SOInvID)
  SELECT h.SOInvID,h.DocuType,h.Sign,h.ReturnType,h.RefNo,h.NetAmnt,h.VATAmnt,h.BillDiscAmnt,h.DocuNo,
  CONVERT(varchar(10),h.DocuDate,120) DocuDate,c.CustCode,COALESCE(c.CustName,h.CustName) CustName,
+ h.EmpID,e.EmpCode,e.EmpName SalesName,
  d.ListNo,g.GoodCode,d.GoodName,d.GoodQty2 QtyTon,d.GoodPrice2 PricePerTon,d.GoodAmnt LineGross
  FROM headers h LEFT JOIN dbo.SOInvDT d ON d.SOInvID=h.SOInvID
  LEFT JOIN dbo.EMCust c ON c.CustID=h.CustID LEFT JOIN dbo.EMGood g ON g.GoodID=d.GoodID
+ LEFT JOIN dbo.EMEmp e ON e.EmpID=h.EmpID
  ORDER BY h.DocuDate,h.SOInvID,d.ListNo`,inputs)).recordset||[];
  const ids=[...new Set(data.map(r=>Number(r.SOInvID)))],truncated=ids.length>cap;
  const kept=truncated?new Set(ids.slice(0,cap)):new Set(ids);

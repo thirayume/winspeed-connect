@@ -5,7 +5,123 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**24 November post-deploy admin review — report rendering hotfix prepared, not yet deployed.**
+**24 November — the remaining three reports are implemented and rehearsed; release not yet deployed.**
+The running UAT/PROD release remains `422818d`. This candidate makes all 37 report
+implementations available, retaining the existing role, visible-scope and ADMIN
+publication/ISO/template controls. No schema migration is introduced.
+
+- AR receipt history reads native `ARReceHD` documents 206/108 once per header.
+  Invoice allocations and cheque references are read separately; cheque linkage
+  uses `CQCheqList.FromID = ARReceHD.PostID`. It excludes 106 Rebate returns and
+  does not label receipt totals as sales or outstanding receivables.
+- Received-cheque register reads native paper cheques and their valid movement
+  history **as of the selected end date**, as confirmed by the owner. Future
+  movements and replacements do not rewrite a historical report. Initial status
+  is H when no prior valid movement exists. Native H/S/B/R/C/P meanings and
+  replacement amounts were checked against the current WinSpeed report source.
+  Earlier cheques are opening aggregates with document/customer/bank identities
+  redacted. Unknown states or invalid replacement balances suppress outstanding
+  totals and explain the incomplete result.
+- Sales versus target reads native `EMSalePeriod`/`EMSaleTarget`; actuals are
+  signed 107/108 less 109 returns/credits plus 110 debits, excluding VAT, on each
+  document's own date. A full matching target period is required; no daily
+  proration, fixed invented targets or percentages for missing/duplicate targets.
+  UAT has no native target rows, so actuals render with a missing-target label.
+  A positive configured-target case passed SQL Server 2008 table-variable proof.
+
+Validation: backend 1,385/1,385; report browser/PDF 14/14; frontend typecheck/build
+and deploy-config 31/31 passed. CI now includes the report browser suite. Final
+candidate ran in a separate UAT process using the existing app SQL identity and
+an actual password login for an audited synthetic C_LEVEL user; the running
+server route was not replaced. October receipts: 348 headers, native header sum
+difference 0 cents. Sales actual sum versus native invoice/adjustment headers:
+difference 0 cents. Cheque report: 9 rows including redacted opening groups;
+sales target report: 13 employee rows, all target/percentage cells null because
+native targets are absent. Native SQL fixtures proved historical status,
+cancelled-movement exclusion, replacement cutoff and opening redaction without
+persistent schema or business-table writes.
+
+Bounded HTTP downloads replaced the failed browser download-event capture.
+Nine actual XLSX files were parsed and verified (numeric cells, string identifiers,
+row values, workbook headers and matching SHA256 after copying privately to the
+owner's PC), including public PriceList/CostList/annual budget and six candidate
+exports. This proves HTTP file retrieval, not the browser's save dialog or a
+physical printer. Candidate receipt/cheque print references use continuation rows;
+physical multipage PDF counts, horizontal bounds and ISO stamps passed.
+All four synthetic UAT logins are disabled, authentication versions revoked and
+create/close audits retained. No business test documents, Reset, Rebate flag
+change, PROD write or company-2 write occurred in this rehearsal.
+
+Private proof: `scratch/report-completion-20261124/` (final candidate HTTP/SQL
+logs, downloaded workbooks and hashes, QA cleanup and local test logs). These
+files contain private operational evidence and are not part of the release.
+Next: exact-commit public publication approval, hosted CI, official UAT rollout
+and authenticated acceptance, then PROD promotion/rollout and postchecks. Renew
+the primary native-writer source bindings through the official wrapper for the
+new SHA; do not install QA hooks or change company-2 writer scope.
+
+The following deployment and earlier unavailable-report statements are historical.
+
+**24 November — owner-approved hotfix `422818d` deployed to UAT and PROD.**
+The owner authorized public publication and UAT→PROD deployment of this functional
+fix. Both exact-release CI promotions passed: UAT `45305561596`, PROD `45308556484`.
+The official wrapper verified unchanged 274 / pending 0 / drift 0 on each primary
+database. No migration was applied in this hotfix rollout. Company 2's official
+read-only plan also has pending 0 / drift 0; no company-2 writes were performed.
+Apply receipts:
+
+- UAT: `D:\SaleApp\uat\deploy-logs\20261124-083733-uat-apply-422818d.txt`.
+- PROD: `D:\SaleApp\prod\deploy-logs\20261124-103641-prod-apply-422818d.txt`.
+
+Public main/uat and both running server checkouts are `422818d`. Four running
+backend file hashes match that exact tree, public frontend assets match their
+containers, and both health endpoints return HTTP 200 / SQL up. Both primary
+native-writer audit bindings were renewed with 49 matching metadata fingerprints,
+unfinished work 0 and active app writes 0 before the brief backend-only pauses;
+both backends restarted in finally. Native target/bridge remain enabled on the
+two primary databases and disabled on company 2. Feature/worker flags are unchanged.
+All three participant fences retain generation 1 / READY and their prior ResetId.
+No Reset, new business test document or secondary business write was performed.
+
+Authenticated UAT screens now render successfully: default giveaway table
+(6 columns / 54 table rows including headers and total), PriceList, CostList,
+Daily Invoice (24 columns / 17 invoice groups), adjusted net sales, annual budget
+and selected budget approval. The 31 October Daily Invoice filter gives J=9 groups
+and N=8 groups with the expected book labels. Future-year synthetic UAT budget
+2642 remains readable: caps and estimates are separate; selected plan 1 has
+three item rows and three workflow signatories. Annual and approval print previews
+open using their assigned templates. No production plan was created for acceptance.
+
+Browser Excel-event capture failed twice and reset the browser-control runtime;
+even the retry with explicit timeout did not return within that bound. These are
+failed tool attempts, not passed download checks or demonstrated application
+errors. No more download-event retries were made. Workbook/export acceptance from
+the backend/driver rehearsals remains separate; physical printing is not certified.
+The application tab stayed intact. PROD deployment was still waiting at its normal
+restart confirmation during the second tool stall; it was resumed through the
+official wrapper and completed successfully afterwards. The PROD admin session
+expired during that stall. The owner subsequently renewed the ADMIN login, and
+**authenticated PROD report-screen review has now passed** for the supported
+screens in this smoke test: default giveaway, PriceList, CostList, Daily Invoice,
+adjusted net sales, annual budget and Budget Plan. Both price sheets render 82
+table rows across their paired-column sections, with print/Excel controls enabled.
+Daily Invoice shows 24 columns / 17 groups; J=9 and N=8 correctly filter by book.
+Net sales shows 16 columns / 44 table rows including group headings and totals.
+No new fatal column/iterability error appears in the reviewed browser error log.
+The annual 2569 report correctly displays an empty-period message and opens its
+assigned print template. The 2569 Budget Plan selector has no saved plan choice.
+The approval memo requires a plan ID before printing, as designed; completed
+memo content/signatures were verified on the existing synthetic UAT plan only.
+No plan was created in PROD to force a populated result.
+
+Private evidence: `scratch/report-release-20261124/hotfix-postdeploy-integrity.json`,
+`hotfix-native-audit.json`, `hotfix-browser-review.json`,
+`hotfix-prod-browser-review.json`, official receipts and CI logs.
+The three intentionally unavailable reports, next scheduled physical UAT restore,
+existing employee signoff and physical-printer acceptance remain the boundaries
+listed below. The following prepared/not-deployed statements are historical.
+
+**24 November earlier post-deploy admin review — report rendering hotfix prepared.**
 After the owner renewed both ADMIN sessions, Budget Plan opened on both websites.
 The report catalog then exposed a real rendering failure: plain node-mssql
 recordset arrays have a `.columns` metadata map. `runReport` incorrectly treated

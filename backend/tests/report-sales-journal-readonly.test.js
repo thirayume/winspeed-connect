@@ -326,38 +326,24 @@ test('Read-Only Boundaries: strict FromFlag rejection, whole-voucher protection,
 });
 
 // ─────────────────────────────────────────────────────────────
-// Test 4: Unavailable Reports Isolation
+// Test 4: Native reports remain available through JSON and real XLSX exports.
 // ─────────────────────────────────────────────────────────────
-test('Read-Only Isolation: Unavailable reports return 503 REPORT_UNAVAILABLE and are marked in types list', async () => {
-  // 1. GET /api/reports/cq-cheque-register returns 503 REPORT_UNAVAILABLE
-  const cqRes = await fetch(`${baseUrl}/api/reports/cq-cheque-register`, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-  });
-  assert.equal(cqRes.status, 503, 'cq-cheque-register must return 503 Service Unavailable');
-  const cqData = await cqRes.json();
-  assert.equal(cqData.code, 'REPORT_UNAVAILABLE');
-  assert.match(cqData.message, /native cheque register/);
-
-  // 2. GET /api/reports/cq-cheque-register/export returns 503 REPORT_UNAVAILABLE
-  const cqExportRes = await fetch(`${baseUrl}/api/reports/cq-cheque-register/export`, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-  });
-  assert.equal(cqExportRes.status, 503, 'cq-cheque-register export must return 503');
-
-  // 3. GET /api/reports/ar-receipt-history returns 503 REPORT_UNAVAILABLE
-  const arRes = await fetch(`${baseUrl}/api/reports/ar-receipt-history`, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-  });
-  assert.equal(arRes.status, 503, 'ar-receipt-history must return 503');
-
-  // 4. GET /api/reports/types marks unavailable reports clearly
-  const typesRes = await fetch(`${baseUrl}/api/reports/types`, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-  });
+test('native receipt, as-of cheque and sales-target reports expose typed columns and exports', async () => {
+  const headers = { Authorization: `Bearer ${adminToken}` };
+  const typesRes = await fetch(`${baseUrl}/api/reports/types`, { headers });
   assert.equal(typesRes.status, 200);
-  const typesData = await typesRes.json();
-  const cqType = typesData.find(t => t.key === 'cq-cheque-register');
-  assert.ok(cqType);
-  assert.equal(cqType.available, false);
-  assert.match(cqType.title, /ยังไม่เปิดใช้งาน/);
+  const types = await typesRes.json();
+  for (const key of ['ar-receipt-history', 'cq-cheque-register', 'sales-target-comparison']) {
+    assert.equal(types.find(t => t.key === key)?.available, true);
+    const params = '?from=2026-10-01&to=2026-10-31';
+    const response = await fetch(`${baseUrl}/api/reports/${key}${params}`, { headers });
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.ok(Array.isArray(data.columns) && data.columns.length > 0);
+    assert.ok(Array.isArray(data.rows));
+    const exported = await fetch(`${baseUrl}/api/reports/${key}/export${params}`, { headers });
+    assert.equal(exported.status, 200);
+    const workbook = XLSX.read(Buffer.from(await exported.arrayBuffer()), { type: 'buffer' });
+    assert.ok(workbook.SheetNames.length > 0);
+  }
 });

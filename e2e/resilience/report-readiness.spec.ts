@@ -120,3 +120,41 @@ test('multipage Daily Invoice keeps transport references and ISO on physical pag
  await expect(print).toContainText('QA-116-2');await expect(print).toContainText('QA-TRUCK-2');
  const pdf=await page.pdf({path:'test-results/report-readiness/daily-multipage.pdf',preferCSSPageSize:true,printBackground:true});expect((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)||[]).length).toBe(pages);
 });
+
+for(const key of ['ar-receipt-history','cq-cheque-register','sales-target-comparison'])test(key+' filters and native context survive screen and print',async({page})=>{
+ const finance=createRequire(__filename)('../../backend/services/native-finance-reports.js');
+ const targets=createRequire(__filename)('../../backend/services/sales-target-report.js');
+ const note=key==='cq-cheque-register'?'สถานะ ณ วันที่ 2026-10-31 จากประวัติ WinSpeed':key==='ar-receipt-history'?'หนึ่งแถวต่อเอกสารรับชำระ':'ไม่มีเป้าหรือเป้าซ้ำจะแสดงค่าว่าง';
+ const columns=key==='cq-cheque-register'?finance.chequeColumns:key==='ar-receipt-history'?finance.receiptColumns:targets.columns;
+ const row=key==='cq-cheque-register'?{RowKind:'ยอดยกมา (ไม่แสดงเลขเอกสารเดิม)',ChequeAmount:100,UnreplacedAmount:80,OpenAmount:80,Status:'เช็คฝาก',ChequeCount:1}:key==='ar-receipt-history'?{ReceiptNo:'RC-QA',CustCode:'0001',Amount:123.45}:{EmpCode:'0001',SalesName:'QA',ActualTon:1,ActualAmt:100,TargetAmt:null,AchievedPct:null,TargetState:'ยังไม่กำหนดงวดเป้า'};
+ let request:URL|undefined;const payload={type:key,title:'QA '+key,columns,rows:[row],isoStamp:stamp,meta:{notes:[note]}};
+ await page.route('**/api/**',async route=>{const url=new URL(route.request().url());if(route.request().method()==='OPTIONS')return route.fulfill({status:204});
+  if(url.pathname.endsWith('/reports/types'))return route.fulfill({json:[{key,title:payload.title,category:'finance',available:true}]});
+  if(url.pathname.endsWith('/template'))return route.fulfill({json:{reportKey:key,template}});
+  if(url.pathname.endsWith('/reports/'+key)){request=url;return route.fulfill({json:payload});}
+  return route.fulfill({json:{}});
+ });
+ await page.goto('/tests/report-readiness.html?page=reports');await expect(page.getByText(note,{exact:true})).toBeVisible();
+ if(key==='cq-cheque-register'){await page.getByLabel('เลขที่เช็ค',{exact:true}).fill('0007');await page.getByLabel('รหัสธนาคาร',{exact:true}).fill('001');await page.getByLabel('สถานะเช็ค ณ วันสิ้นสุด').selectOption('ALL');}
+ else if(key==='ar-receipt-history'){await page.getByLabel('รหัสลูกค้า',{exact:true}).fill('0001');await page.getByLabel('ประเภทรับชำระ').selectOption('DEBT');}
+ else {await page.getByLabel('รหัสฝ่ายขาย',{exact:true}).fill('0001');await expect(page.getByRole('table')).toContainText('ยังไม่กำหนดงวดเป้า');}
+ await page.getByRole('button',{name:'รีเฟรชข้อมูล',exact:true}).click();
+ await expect.poll(()=>request?.searchParams.get(key==='cq-cheque-register'?'chequeNo':key==='ar-receipt-history'?'custCode':'empCode')).toBe(key==='cq-cheque-register'?'0007':'0001');
+ if(key==='cq-cheque-register')expect(request?.searchParams.get('status')).toBe('ALL');
+ if(key==='ar-receipt-history')expect(request?.searchParams.get('receiptType')).toBe('DEBT');
+ expect(request?.searchParams.has('book')).toBe(false);
+ await page.getByRole('button',{name:'พิมพ์ / Export PDF',exact:true}).click();await expect(page.locator('.report-print-area')).toContainText(note);await expect(page.getByTestId('report-iso-stamp')).toHaveCount(1);
+ const fits=await page.locator('[data-report-rows]').evaluate(table=>table.scrollWidth<=table.clientWidth+1);expect(fits).toBe(true);
+ await page.screenshot({path:'test-results/report-readiness/'+key+'.png',fullPage:true});
+});
+
+for(const key of ['ar-receipt-history','cq-cheque-register'])test(key+' multipage PDF retains references and stays inside paper bounds',async({page})=>{
+ const native=createRequire(__filename)('../../backend/services/native-finance-reports.js');
+ const payload={type:key,title:'QA financial multipage',columns:key==='ar-receipt-history'?native.receiptColumns:native.chequeColumns,rows:Array.from({length:35},(_,i)=>key==='ar-receipt-history'?{ReceiptNo:'RC-QA-'+i,Amount:100.25,CustCode:'0001',CustName:'QA',RefDocNo:'QA-INVOICE (2026-10-01), QA-SECOND (2026-10-02)',ChequeRefs:'0007, 0008',ReceiptKind:'รับชำระหนี้ (206)',PostedGL:'Y'}:{RowKind:'รายการในช่วง',ChequeNo:'0007-'+i,ChequeAmount:100.25,UnreplacedAmount:100.25,OpenAmount:100.25,Status:'เช็คฝาก',ChequeCount:1,LastMoveNo:'QA-MOVE-'+i,LastMoveDate:'2026-10-31'}),isoStamp:stamp,meta:{notes:['QA as-of context']}};
+ await page.route('**/api/**',async route=>{const url=new URL(route.request().url());if(route.request().method()==='OPTIONS')return route.fulfill({status:204});if(url.pathname.endsWith('/reports/types'))return route.fulfill({json:[{key,title:payload.title,category:'finance',available:true}]});if(url.pathname.endsWith('/template'))return route.fulfill({json:{reportKey:key,template}});if(url.pathname.endsWith('/reports/'+key))return route.fulfill({json:payload});return route.fulfill({json:{}});});
+ await page.goto('/tests/report-readiness.html?page=reports');await page.getByRole('button',{name:'พิมพ์ / Export PDF',exact:true}).click();await page.evaluate(()=>document.fonts.ready);await page.emulateMedia({media:'print'});
+ await expect.poll(async()=>page.locator('.report-page').evaluateAll(pages=>pages.every(p=>p.getBoundingClientRect().height<=1064))).toBe(true);
+ const pages=await page.locator('.report-page').count();expect(pages).toBeGreaterThan(1);await expect(page.getByTestId('report-iso-stamp')).toHaveCount(pages);
+ await expect(page.locator('.report-print-area')).toContainText(key==='ar-receipt-history'?'RC-QA-34':'QA-MOVE-34');
+ const pdf=await page.pdf({path:'test-results/report-readiness/'+key+'-multipage.pdf',preferCSSPageSize:true,printBackground:true});expect((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)||[]).length).toBe(pages);
+});

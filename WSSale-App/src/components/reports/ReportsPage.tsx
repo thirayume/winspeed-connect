@@ -388,7 +388,10 @@ export function ReportsPage() {
   const needsBookFilter = BOOK_FILTER_REPORTS.includes(active);
   const [book, setBook] = useState('');
   const isInvoiceReport = ['daily-invoice','net-sales-detail','cn-returns'].includes(active);
+  const isFinanceReport = ['ar-receipt-history','cq-cheque-register'].includes(active);
+  const isTargetReport = active==='sales-target-comparison';
   const [invoiceFilters,setInvoiceFilters] = useState<Record<string,string>>({});
+  const [financeFilters,setFinanceFilters] = useState<Record<string,string>>({});
   const isBudgetReport = ['budget-annual-estimate','budget-plan-approval'].includes(active);
   const [budgetYear,setBudgetYear] = useState(new Date().getFullYear()+543);
   const [budgetPlanId,setBudgetPlanId] = useState('');
@@ -454,9 +457,13 @@ export function ReportsPage() {
       p.book = book;
     }
     if (isInvoiceReport) Object.entries(invoiceFilters).forEach(([k,v])=>{if(v.trim() && !(active!=='daily-invoice' && ['book','plate'].includes(k)))p[k]=v.trim();});
+    if (isFinanceReport||isTargetReport) {
+      const keys=isTargetReport?['empCode']:active==='ar-receipt-history'?['docFrom','docTo','custCode','empCode','receiptType']:['docFrom','docTo','custCode','bankCode','chequeNo','status'];
+      for(const k of keys)if(financeFilters[k]?.trim())p[k]=financeFilters[k].trim();
+    }
     if (isBudgetReport){p.year=String(budgetYear);if(active==='budget-plan-approval'&&budgetPlanId)p.planId=budgetPlanId;}
     return Object.keys(p).length ? p : undefined;
-  }, [active, isSheetReport, sheetMode, sheetGranularity, selectedPeriodState, from, to, custCode, book, isInvoiceReport, invoiceFilters,isBudgetReport,budgetYear,budgetPlanId]);
+  }, [active, isSheetReport, sheetMode, sheetGranularity, selectedPeriodState, from, to, custCode, book, isInvoiceReport, invoiceFilters,isBudgetReport,budgetYear,budgetPlanId,isFinanceReport,isTargetReport,financeFilters]);
 
   const load = useCallback(async (type: string, range?: Record<string, string>) => {
     if (!type) return;
@@ -664,6 +671,11 @@ export function ReportsPage() {
           )}
 
           {isBudgetReport&&<div className="flex gap-2 items-center"><label>ปี พ.ศ. <input aria-label="ปีรายงานงบประมาณ" type="number" className="border rounded px-2 py-2 w-28" value={budgetYear} onChange={e=>setBudgetYear(Number(e.target.value))}/></label>{active==='budget-plan-approval'&&<input aria-label="เลขแผนงบประมาณ" type="number" min="1" className="border rounded px-2 py-2 w-32" placeholder="เลขแผน" value={budgetPlanId} onChange={e=>setBudgetPlanId(e.target.value)}/>}</div>}
+          {(isFinanceReport||isTargetReport)&&<div className="flex gap-2 flex-wrap">
+            {(isTargetReport?[['empCode','รหัสฝ่ายขาย']]:active==='ar-receipt-history'?[['docFrom','เอกสารรับชำระตั้งแต่'],['docTo','เอกสารรับชำระถึง'],['custCode','รหัสลูกค้า'],['empCode','รหัสพนักงาน']]:[['docFrom','เอกสารรับเช็คตั้งแต่'],['docTo','เอกสารรับเช็คถึง'],['custCode','รหัสลูกค้า'],['bankCode','รหัสธนาคาร'],['chequeNo','เลขที่เช็ค']]).map(([key,label])=><input key={key} aria-label={label} placeholder={label} maxLength={100} className="w-36 border rounded-lg px-2 py-2 text-xs" value={financeFilters[key]||''} onChange={e=>setFinanceFilters(p=>({...p,[key]:e.target.value}))}/>)}
+            {active==='ar-receipt-history'&&<select aria-label="ประเภทรับชำระ" className="border rounded-lg px-2 text-xs" value={financeFilters.receiptType||'ALL'} onChange={e=>setFinanceFilters(p=>({...p,receiptType:e.target.value}))}><option value="ALL">รับชำระหนี้และขายสด</option><option value="DEBT">รับชำระหนี้ 206</option><option value="CASH">รับจากขายสด 108</option></select>}
+            {active==='cq-cheque-register'&&<select aria-label="สถานะเช็ค ณ วันสิ้นสุด" className="border rounded-lg px-2 text-xs" value={financeFilters.status||'OPEN'} onChange={e=>setFinanceFilters(p=>({...p,status:e.target.value}))}>{[['OPEN','ยังไม่ผ่าน / ไม่ยกเลิก'],['ALL','ทุกสถานะ'],['H','เช็คในมือ'],['B','เช็คฝาก'],['S','ขายลดเช็ค'],['R','เช็คคืน'],['P','เช็คผ่าน'],['C','ยกเลิกเช็ค']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select>}
+          </div>}
           {isInvoiceReport && <div className="flex gap-2 flex-wrap">
             {[['docFrom','เอกสารตั้งแต่'],['docTo','เอกสารถึง'],['custCode','รหัสลูกค้า'],['goodCode','รหัสสินค้า'],['empCode','รหัสฝ่ายขาย'],...(active==='daily-invoice'?[['plate','ทะเบียนรถ']]:[])].map(([key,label])=>
               <input key={key} aria-label={label} placeholder={label} maxLength={100} value={invoiceFilters[key]||''} onChange={e=>setInvoiceFilters(p=>({...p,[key]:e.target.value}))} className="w-36 border rounded-lg px-2 py-2 text-xs" />)}

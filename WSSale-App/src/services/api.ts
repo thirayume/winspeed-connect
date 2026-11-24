@@ -1917,6 +1917,7 @@ export interface SheetLayout {
 }
 
 export type ReportMeta = {
+  notes?: string[];
   groupBy?: string[];
   dateBasis?: string;
   amountBasis?: string;
