@@ -260,15 +260,14 @@ test("create ADMIN-based role with fully editable permissions", async ({
   });
 });
 
-// The readiness sign-off tab is back for the v2.0.0 hand-over (owner, 20 Nov 2026), next to the ADMIN menu switches.
-test("App Settings switches tabs, shows acceptance and menu switches, and fits mobile", async ({
+// Owner closed the handover acceptance workflow; settings retain normal policy and ADMIN menu controls.
+test("App Settings switches tabs, retires acceptance, preserves menu controls, and fits mobile", async ({
   page,
 }) => {
   await page.getByRole("button", { name: "settings", exact: true }).click();
   const tabs = page.getByRole("tablist", { name: "หัวข้อการตั้งค่า" });
   await expect(tabs.getByRole("tab", { name: "กำหนดรับสินค้า" })).toHaveAttribute("aria-selected", "true");
-  await tabs.getByRole("tab", { name: "ผลตรวจรับงาน" }).click();
-  await expect(page.getByText("ผูกพนักงานและเข้าใช้ครั้งแรก")).toBeVisible();
+  await expect(tabs.getByRole("tab", { name: "ผลตรวจรับงาน" })).toHaveCount(0);
   await tabs.getByRole("tab", { name: "เปิด/ปิดเมนูและรายงาน" }).click();
   const quotation = page.getByLabel("เปิดเมนู เสนอราคา", { exact: true });
   await expect(quotation).toBeChecked();

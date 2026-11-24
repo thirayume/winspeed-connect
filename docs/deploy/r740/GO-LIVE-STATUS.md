@@ -5,8 +5,32 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**24 November — approved a47de0c published; hosted CI held at obsolete admin browser assertion.**
+Owner approved public publication of `a47de0c` and staged UAT/PROD deployment after
+every gate. The existing work branch was fast-forwarded to that exact commit.
+[Hosted UAT promotion 45349487662](https://github.com/thirayume/winspeed-connect/actions/runs/45349487662)
+failed because the older admin-management browser suite still clicked the retired
+acceptance tab. This regression fixture had not been updated alongside the report
+suite. UAT was not pushed, and no server deployment or native activation occurred.
+Public main/uat and both running environments remain `2f14daa`.
+
+Prepared a test-only follow-up: replace the obsolete click/content expectation
+with absence of the closed tab while preserving the remaining menu-switch,
+policy-tab and mobile checks. Full admin suite nine cases, remaining trip suite
+six cases and deployment config 31 cases pass locally. Application source, SQL,
+permissions and feature settings are unchanged from the approved `a47de0c`.
+Do not count the failed hosted CI as passed or bypass promotion. The follow-up
+needs exact-commit public publication approval before a fresh CI attempt; finish
+UAT public HTTP/UI/download and native release gates before PROD promotion.
+Private CI log and follow-up proof remain in `scratch/report-price-followup-20261124/`.
+The pre-deploy baseline matched seven backend hashes per environment, public
+assets, SQL health, unchanged switches and all three Reset participant fences.
+No schema/business write, QA account creation, Reset or secondary write in this
+publication/CI attempt. The previous candidate results below remain scoped tests,
+not evidence of a successful live rollout.
+
 **24 November — follow-up candidate: historical price comparisons, report filters and closed acceptance UI.**
-UAT and PROD still run `2f14daa`; the candidate below has not been published or deployed.
+UAT and PROD still run `2f14daa`; the candidate below was published as `a47de0c` but has not been deployed.
 Owner feedback identified that comparison used only the single imported wf.PriceBook,
 although native WinSpeed holds older price sets. The report now reads those native
 sets without reconciling/importing or writing master data, combines only identical
