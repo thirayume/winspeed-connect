@@ -125,7 +125,7 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'master',     label: 'ข้อมูลหลัก',  sub: 'สินค้า · ลูกค้า · ต้นทุน & ราคาขาย', icon: Database, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'] },
       { key: 'policy',     label: 'นโยบายอนุมัติ', sub: 'อำนาจอนุมัติ · วงเงิน', icon: ScrollText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
       { key: 'ops',        label: 'สถานะระบบ',   sub: 'Health · Watchdog · Alert', icon: Activity, roles: ['C_LEVEL', 'ADMIN', 'MANAGER'] },
-      { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · ผลตรวจรับ · แม่แบบรายงาน', icon: Settings, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
+      { key: 'app-settings', label: 'App Settings', sub: 'นโยบายระบบ · แม่แบบรายงาน', icon: Settings, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
       { key: 'admin',      label: 'ผู้ใช้งานและสิทธิ์', sub: 'จัดการผู้ใช้งาน · บทบาท · ผังองค์กร · ผู้อนุมัติ', icon: Users, roles: ['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING'] },
       // ซ่อนชั่วคราวตามคำสั่งเจ้าของระบบ: จัดการสิทธิ์ตั๋วร่วม
       // { key: 'beneficiaries', label: 'จัดการสิทธิ์ตั๋วร่วม', sub: 'มอบ/ถอนสิทธิ์ตั๋วร่วมระหว่างลูกค้า', icon: Ticket, roles: ['ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'] },

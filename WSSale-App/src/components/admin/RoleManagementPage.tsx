@@ -63,7 +63,7 @@ const names: Record<string, string> = {
   "coupon.settle": "ตัดยอดตั๋ว",
   "giveaway.budget": "จัดการงบของแถม",
   "roles.manage": "จัดการ Role และสมาชิก",
-  "settings.manage": "ตั้งค่าแอปและผลตรวจรับ",
+  "settings.manage": "ตั้งค่าแอปและแม่แบบรายงาน",
   "users.manage": "จัดการผู้ใช้",
   "access-as": "ทำรายการแทน",
   "database.switch": "สลับฐานใน session",

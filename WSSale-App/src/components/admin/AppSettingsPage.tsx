@@ -12,7 +12,6 @@ import {
   CreditCard,
   RotateCcw,
   ToggleLeft,
-  ClipboardCheck,
   Gift,
 } from 'lucide-react';
 import { SystemSettingsModal, type TabKey } from './SystemSettingsModal';
@@ -22,11 +21,10 @@ import { ResetRebateSetting } from './ResetRebateSetting';
 import { useFeature } from '../../utils/capabilities';
 import { MenuSwitchesSetting } from './MenuSwitchesSetting';
 import { GiveawaySetZeroSetting } from './GiveawaySetZeroSetting';
-import { ReadinessSignoffModal } from './ReadinessSignoffModal';
 import { useAuthStore } from '../../store/auth-store';
 import { confirmLeaveEditors } from '../../utils/unsaved-changes';
 
-export type SettingsTabKey = TabKey | 'reports' | 'data-window' | 'rebate-reset' | 'menus' | 'signoff' | 'giveaway-zero';
+export type SettingsTabKey = TabKey | 'reports' | 'data-window' | 'rebate-reset' | 'menus' | 'giveaway-zero';
 
 const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'pickup', name: 'กำหนดรับสินค้า', Icon: Calendar },
@@ -42,7 +40,6 @@ const TABS: { key: SettingsTabKey; name: string; Icon: any }[] = [
   { key: 'history', name: 'ประวัติ Version', Icon: History },
   { key: 'reports', name: 'แม่แบบ & หัวกระดาษรายงาน', Icon: FileSpreadsheet },
   { key: 'menus', name: 'เปิด/ปิดเมนูและรายงาน', Icon: ToggleLeft },
-  { key: 'signoff', name: 'ผลตรวจรับงาน', Icon: ClipboardCheck },
 ];
 
 export function AppSettingsPage() {
@@ -51,7 +48,7 @@ export function AppSettingsPage() {
   // UAT feedback 18 Nov 2026 (picture 6): show "start Rebate again" only while the Rebate Pool switch is on.
   // The tab stays in the code: the owner's Rebate reset on Production still needs it.
   const rebatePoolOn = useFeature()('rebate-pool-103');
-  // Owner, 20 Nov 2026: menu switches are ADMIN only; the acceptance record is back for the v2.0.0 hand-over.
+  // Owner closed handover acceptance on 31 October 2026; retain audit history outside the settings UI.
   const authUser = useAuthStore(s => s.user);
   const isAdmin = authUser?.role === 'ADMIN' || Boolean(authUser?.roles?.includes('ADMIN'));
   const tabs = TABS.filter(t => (t.key !== 'rebate-reset' || rebatePoolOn) && (!['menus', 'giveaway-zero'].includes(t.key) || isAdmin));
@@ -66,7 +63,7 @@ export function AppSettingsPage() {
             <Settings className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" /> App Settings · ตั้งค่าแอปพลิเคชัน
           </h1>
           <p className="text-xs sm:text-sm text-gray-500 mt-1">
-            นโยบายระบบและผลตรวจรับงาน (ควบคุมพารามิเตอร์หลักตามสิทธิ์ ADMIN พร้อมระบบ Versioning & Change Audit)
+            นโยบายระบบและแม่แบบรายงาน (ควบคุมพารามิเตอร์หลักตามสิทธิ์ ADMIN พร้อมระบบ Versioning & Change Audit)
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -111,13 +108,13 @@ export function AppSettingsPage() {
           role="tabpanel"
           id="tabpanel-policy"
           aria-labelledby={'tab-' + shownTab}
-          hidden={['reports', 'data-window', 'rebate-reset', 'menus', 'signoff', 'giveaway-zero'].includes(shownTab)}
+          hidden={['reports', 'data-window', 'rebate-reset', 'menus', 'giveaway-zero'].includes(shownTab)}
           className="w-full"
         >
           <SystemSettingsModal
             isOpen={true}
             embedded={true}
-            activeTab={['reports', 'data-window', 'rebate-reset', 'menus', 'signoff', 'giveaway-zero'].includes(shownTab) ? 'pickup' : (shownTab as TabKey)}
+            activeTab={['reports', 'data-window', 'rebate-reset', 'menus', 'giveaway-zero'].includes(shownTab) ? 'pickup' : (shownTab as TabKey)}
             onRevisionLoaded={setRevision}
             onClose={() => {}}
           />
@@ -127,7 +124,6 @@ export function AppSettingsPage() {
         {shownTab === 'rebate-reset' && <div role="tabpanel" id="tabpanel-rebate-reset" aria-labelledby="tab-rebate-reset"><ResetRebateSetting /></div>}
         {shownTab === 'menus' && <div role="tabpanel" id="tabpanel-menus" aria-labelledby="tab-menus"><MenuSwitchesSetting /></div>}
         {shownTab === 'giveaway-zero' && <div role="tabpanel" id="tabpanel-giveaway-zero" aria-labelledby="tab-giveaway-zero"><GiveawaySetZeroSetting /></div>}
-        {shownTab === 'signoff' && <div role="tabpanel" id="tabpanel-signoff" aria-labelledby="tab-signoff"><ReadinessSignoffModal embedded onClose={() => {}} /></div>}
 
         {/* Reports Template & Header Management Tab */}
         <div

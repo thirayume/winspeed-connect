@@ -238,7 +238,8 @@
     "tests/promotion-budget-report.test.js",
     "tests/native-finance-reports.test.js",
     "tests/sales-target-report.test.js",
-    "tests/native-finance-export.test.js"
+    "tests/native-finance-export.test.js",
+    "tests/price-report-history.test.js"
   ],
   "test:unit": [
     "tests/policy-contract.test.js",
@@ -378,6 +379,7 @@
     "tests/promotion-budget-report.test.js",
     "tests/native-finance-reports.test.js",
     "tests/sales-target-report.test.js",
-    "tests/native-finance-export.test.js"
+    "tests/native-finance-export.test.js",
+    "tests/price-report-history.test.js"
   ]
 }

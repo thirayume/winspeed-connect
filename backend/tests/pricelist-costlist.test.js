@@ -715,6 +715,7 @@ test('Reports: -2..+2 contiguous window validation, BE dd/mm/yyyy format, Sheet 
   const sheetReport = await buildSheetReport({
     kind: 'pricelist',
     mode: 'current',
+    hideSuspended: false,
     granularity: 'week',
   });
   assert.equal(sheetReport.meta.kind, 'pricelist');

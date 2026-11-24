@@ -785,6 +785,9 @@ const REPORTS = {
       granularity: params?.granularity,
       periodIds: params?.periodIds,
       offsets: params?.offsets,
+      hideSuspended: params?.hideSuspended,
+      sortBy: params?.sortBy, sortDirection: params?.sortDirection,
+      groupId: params?.groupId, search: params?.search,
     }),
   },
   'costlist_sheet': {
@@ -805,6 +808,9 @@ const REPORTS = {
       granularity: params?.granularity,
       periodIds: params?.periodIds,
       offsets: params?.offsets,
+      hideSuspended: params?.hideSuspended,
+      sortBy: params?.sortBy, sortDirection: params?.sortDirection,
+      groupId: params?.groupId, search: params?.search,
     }),
   },
   'rebate-promotion-plans': {

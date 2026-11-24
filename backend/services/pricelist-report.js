@@ -110,7 +110,37 @@ async function loadBooks(kind, queryFn = wfQuery) {
     WHERE Status IN ('ACTIVE', 'APPROVED', 'DRAFT', 'ARCHIVED')
     ORDER BY COALESCE(EffectiveFrom, '1900-01-01') ASC, Id ASC
   `);
-  return r?.recordset || [];
+  const books = [...(r?.recordset || [])];
+  if (isCost) return books;
+  // Read native history without importing/reconciling master data. One period can
+  // have separate compound/base documents; combine only identical date ranges.
+  const native = await queryFn(`
+    SELECT hd.SetPriceID, RTRIM(hd.DocuNo) AS DocuNo,
+           CONVERT(VARCHAR(10), hd.BeginDate, 23) AS EffectiveFrom,
+           CONVERT(VARCHAR(10), hd.EndDate, 23) AS EffectiveTo
+    FROM dbo.EMSetPriceHD hd
+    WHERE hd.CustID IS NULL AND hd.BeginDate IS NOT NULL
+      AND EXISTS (SELECT 1 FROM dbo.EMSetPriceDT dt WHERE dt.SetPriceID=hd.SetPriceID AND dt.GoodPriceNet>0)
+    ORDER BY hd.BeginDate, hd.SetPriceID
+  `);
+  const represented = new Set(books.map(b => `${b.EffectiveFrom || ''}|${b.EffectiveTo || ''}`));
+  const groups = new Map();
+  for (const row of native?.recordset || []) {
+    const key = `${row.EffectiveFrom || ''}|${row.EffectiveTo || ''}`;
+    if (represented.has(key)) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const today = getBangkokDateString();
+  for (const rows of groups.values()) {
+    const first = rows[0];
+    books.push({ Id: -Number(first.SetPriceID), Name: rows.map(r => r.DocuNo).join(', '),
+      EffectiveFrom: first.EffectiveFrom, EffectiveTo: first.EffectiveTo,
+      EffectiveMonth: first.EffectiveFrom.slice(0,7),
+      Status: first.EffectiveFrom > today ? 'APPROVED' : 'ARCHIVED',
+      nativeSetIds: rows.map(r => Number(r.SetPriceID)) });
+  }
+  return books.sort((a,b) => String(a.EffectiveFrom || '').localeCompare(String(b.EffectiveFrom || '')) || Number(a.Id)-Number(b.Id));
 }
 
 function chooseCurrentIndex(items, todayStr) {
@@ -169,10 +199,11 @@ async function listSelectablePeriods({ kind = 'pricelist', granularity = 'week',
       const prev = byMonth.get(mKey);
       const curPri = STATUS_PRIORITY[b.Status] || 0;
       const prevPri = prev ? (STATUS_PRIORITY[prev.status] || 0) : -1;
-      if (!prev || curPri > prevPri || (curPri === prevPri && Number(b.Id) > Number(prev.id))) {
+      if (!prev || curPri > prevPri || (curPri === prevPri && (String(b.EffectiveFrom || '') > String(prev.effectiveFrom || '') || (String(b.EffectiveFrom || '') === String(prev.effectiveFrom || '') && Number(b.Id) > Number(prev.id))))) {
         byMonth.set(mKey, {
           key: mKey,
           id: Number(b.Id),
+          nativeSetIds: b.nativeSetIds,
           bookIds: prev ? [...prev.bookIds, Number(b.Id)] : [Number(b.Id)],
           name: b.Name,
           effectiveMonth: mKey,
@@ -196,6 +227,7 @@ async function listSelectablePeriods({ kind = 'pricelist', granularity = 'week',
         key: String(b.Id),
         id: Number(b.Id),
         bookIds: [Number(b.Id)],
+        nativeSetIds: b.nativeSetIds,
         name: b.Name,
         effectiveMonth: deriveMonthKey(b),
         effectiveFrom: b.EffectiveFrom || null,
@@ -376,11 +408,21 @@ async function fetchSpecialPricesForBooks(bookIds, queryFn = wfQuery) {
   return res?.recordset || [];
 }
 
+async function fetchCurrentSaleStatuses(queryFn) {
+  const r = await queryFn(`SELECT l.GoodId,l.GoodCode,l.GoodName,l.LineStatus
+    FROM wf.PriceBookLine l JOIN wf.PriceBook b ON b.Id=l.PriceBookId
+    WHERE b.Status IN ('ACTIVE','APPROVED') AND l.LineStatus='SUSPENDED'
+      AND (b.EffectiveFrom IS NULL OR b.EffectiveFrom<=@statusDate)
+      AND (b.EffectiveTo IS NULL OR b.EffectiveTo>=@statusDate)`,
+    {statusDate:{type:sql.Date,value:getBangkokDateString()}});
+  return r?.recordset || [];
+}
+
 function canonicalProductKey(line) {
   const name = String(line.GoodName || '').trim().toLowerCase();
   const code = String(line.GoodCode || '').trim().toLowerCase();
   const gid = String(line.GoodId || '').trim();
-  return name || code || gid;
+  return gid ? `id:${gid}` : code ? `code:${code}` : `name:${name}`;
 }
 
 function buildSideBySidePairs(items) {
@@ -406,6 +448,7 @@ async function buildSheetReport({
   granularity = 'week',
   periodIds,
   offsets,
+  hideSuspended = true, sortBy = 'group-code', sortDirection = 'asc', groupId, search,
   queryFn = wfQuery,
 } = {}) {
   const normKind = kind === 'costlist' ? 'costlist' : 'pricelist';
@@ -427,10 +470,58 @@ async function buildSheetReport({
     }
   }
 
-  const bookIds = selectedPeriods.map(p => p.id);
-  const allLines = await fetchLinesForBooks(normKind, bookIds, queryFn);
+  const bookIds = selectedPeriods.filter(p => !p.nativeSetIds).map(p => p.id);
+  let allLines = await fetchLinesForBooks(normKind, bookIds, queryFn);
+  const nativePeriods = selectedPeriods.filter(p => p.nativeSetIds?.length);
+  const setIds = [...new Set(nativePeriods.flatMap(p => p.nativeSetIds))];
+  if (setIds.length) {
+    const inputs = {};
+    const ids = setIds.map((id,i) => { inputs[`sid${i}`]={type:sql.Int,value:id}; return `@sid${i}`; });
+    const r = await queryFn(`SELECT dt.ListID AS Id,dt.SetPriceID,CONVERT(VARCHAR(30),g.GoodID) AS GoodId,
+      RTRIM(g.GoodCode) AS GoodCode,RTRIM(g.GoodName1) AS GoodName,g.GoodGroupID AS GoodGroupId,
+      RTRIM(gg.GoodGroupName) AS GoodGroupName,dt.GoodPriceNet AS Price,RTRIM(dt.Remark) AS Remark,
+      'ACTIVE' AS LineStatus FROM dbo.EMSetPriceDT dt
+      JOIN dbo.EMGood g ON g.GoodID=dt.ListID
+      LEFT JOIN dbo.EMGoodGroup gg ON gg.GoodGroupID=g.GoodGroupID
+      WHERE dt.SetPriceID IN (${ids.join(',')}) AND dt.GoodPriceNet>0 ORDER BY dt.SetPriceID,dt.ListID`,inputs);
+    for (const period of nativePeriods) {
+      const lines = (r?.recordset || []).filter(l => period.nativeSetIds.includes(Number(l.SetPriceID)));
+      const seen = new Set();
+      for (const line of lines) {
+        const key = canonicalProductKey(line);
+        if (seen.has(key)) throw Object.assign(new Error('พบราคาสินค้าซ้ำในรอบตาราง WinSpeed กรุณาตรวจชุดราคาให้เหลือรายการเดียวต่อรหัสสินค้า'),{status:409,code:'AMBIGUOUS_NATIVE_PRICE'});
+        seen.add(key);allLines.push({...line,BookId:period.id});
+      }
+    }
+  }
+  // Current sales suspension applies to both reports, even when comparing history.
+  const current = selectable.periods.find(p => p.isCurrent);
+  const statusLines = normKind === 'pricelist' && current && bookIds.includes(current.id)
+    ? allLines.filter(l => Number(l.BookId)===current.id)
+    : await fetchCurrentSaleStatuses(queryFn);
+  const suspended = new Set(statusLines.filter(l => l.LineStatus==='SUSPENDED').map(canonicalProductKey));
+  const groups = [...new Map(allLines.map(l => [String(l.GoodGroupId || ''),
+    {id:String(l.GoodGroupId || ''),name:l.GoodGroupName || 'ไม่ระบุกลุ่ม'}])).values()].sort((a,b)=>Number(a.id)-Number(b.id));
+  const hiding = hideSuspended !== false && hideSuspended !== 'false';
+  const q = String(search || '').trim().toLowerCase();
+  allLines = allLines.filter(l => (!hiding || (!suspended.has(canonicalProductKey(l)) && l.LineStatus!=='SUSPENDED'))
+    && (!groupId || String(l.GoodGroupId)===String(groupId))
+    && (!q || `${l.GoodId} ${l.GoodCode} ${l.GoodName}`.toLowerCase().includes(q)));
+  const sort = ['group-code','group-id','group-name'].includes(sortBy) ? sortBy : 'group-code';
+  const direction = sortDirection === 'desc' ? -1 : 1;
+  const compareProducts = (a,b) => {
+    const group = Number(a.GoodGroupId || 0)-Number(b.GoodGroupId || 0);
+    const field = sort==='group-id' ? 'GoodId' : sort==='group-name' ? 'GoodName' : 'GoodCode';
+    return group || direction * String(a[field] || '').localeCompare(String(b[field] || ''),'th',{numeric:field==='GoodId'})
+      || String(a.GoodId || '').localeCompare(String(b.GoodId || ''),'en',{numeric:true});
+  };
+  allLines.sort(compareProducts);
+  const selectionMeta = {groups,hideSuspended:hiding,sortBy:sort,sortDirection:direction===1?'asc':'desc',
+    comparisonNotice:normMode==='compare' && selectedPeriods.length<2 ? 'มีข้อมูลเพียงรอบเดียว ยังไม่สามารถเปรียบเทียบกับรอบอื่นได้' : null};
   const specialPrices = normKind === 'pricelist'
-    ? await fetchSpecialPricesForBooks(bookIds, queryFn)
+    ? (await fetchSpecialPricesForBooks(bookIds, queryFn)).filter(sp =>
+      (!hiding || !suspended.has(canonicalProductKey(sp))) &&
+      ((!groupId && !q) || allLines.some(l => canonicalProductKey(l)===canonicalProductKey(sp))))
     : [];
 
   const linesByBook = new Map();
@@ -440,11 +531,13 @@ async function buildSheetReport({
     linesByBook.get(bid).push(l);
   }
 
+  if(selectionMeta.comparisonNotice) selectionMeta.notes=[selectionMeta.comparisonNotice];
+
   const titlePrefix = normKind === 'costlist'
     ? 'ตารางราคาทุน (COST LIST) — เฉพาะผู้ได้รับสิทธิ์'
     : 'ตารางราคาขาย (PRICE LIST) — ราคา NET / ตัน';
 
-  if (normMode === 'current' || selectedPeriods.length <= 1) {
+  if (normMode === 'current') {
     const period = selectedPeriods[0] || null;
     const pLines = period ? (linesByBook.get(period.id) || []) : [];
 
@@ -462,6 +555,7 @@ async function buildSheetReport({
         marker: formatStatusMarker(l.LineStatus),
         remark: l.Remark || '',
         groupType: grp,
+        goodGroupName:l.GoodGroupName || '',
       };
       if (grp === 'SINGLE') single.push(entry);
       else compound.push(entry);
@@ -484,7 +578,7 @@ async function buildSheetReport({
 
     const rows = [
       ...compound.map((it, idx) => ({
-        SectionLabel: 'ปุ๋ยสูตร',
+        SectionLabel: it.goodGroupName || 'ปุ๋ยสูตร',
         ItemNo: idx + 1,
         GoodCode: it.goodCode || it.goodId,
         GoodName: it.goodName,
@@ -493,7 +587,7 @@ async function buildSheetReport({
         Remark: it.remark || '',
       })),
       ...single.map((it, idx) => ({
-        SectionLabel: 'ปุ๋ยเดี่ยว/แม่ปุ๋ย',
+        SectionLabel: it.goodGroupName || 'ปุ๋ยเดี่ยว/แม่ปุ๋ย',
         ItemNo: compound.length + idx + 1,
         GoodCode: it.goodCode || it.goodId,
         GoodName: it.goodName,
@@ -511,6 +605,7 @@ async function buildSheetReport({
       columns,
       rows,
       meta: {
+        ...selectionMeta,
         kind: normKind,
         mode: 'current',
         granularity: selectable.granularity,
@@ -557,6 +652,8 @@ async function buildSheetReport({
       if (!productMap.has(pk)) {
         productMap.set(pk, {
           groupType: classifyProductGroup(l),
+          GoodGroupId:l.GoodGroupId, GoodId:l.GoodId, GoodCode:l.GoodCode, GoodName:l.GoodName,
+          goodGroupName:l.GoodGroupName || '',
           goodId: l.GoodId ? String(l.GoodId) : '',
           goodCode: l.GoodCode ? String(l.GoodCode) : '',
           goodName: l.GoodName || '',
@@ -576,7 +673,7 @@ async function buildSheetReport({
 
   const allProducts = [...productMap.values()].sort((a, b) => {
     if (a.groupType !== b.groupType) return a.groupType === 'COMPOUND' ? -1 : 1;
-    return String(a.goodName).localeCompare(String(b.goodName), 'th');
+    return compareProducts(a,b);
   });
 
   const periodCols = selectedPeriods.map((sp, idx) => ({
@@ -600,7 +697,7 @@ async function buildSheetReport({
 
   const rows = allProducts.map((prod, idx) => {
     const row = {
-      SectionLabel: prod.groupType === 'SINGLE' ? 'ปุ๋ยเดี่ยว/แม่ปุ๋ย' : 'ปุ๋ยสูตร',
+      SectionLabel: prod.goodGroupName || (prod.groupType === 'SINGLE' ? 'ปุ๋ยเดี่ยว/แม่ปุ๋ย' : 'ปุ๋ยสูตร'),
       ItemNo: idx + 1,
       GoodCode: prod.goodCode || prod.goodId,
       GoodName: prod.goodName,
@@ -633,6 +730,7 @@ async function buildSheetReport({
     columns,
     rows,
     meta: {
+      ...selectionMeta,
       kind: normKind,
       mode: 'compare',
       granularity: selectable.granularity,
@@ -744,7 +842,7 @@ function buildSheetWorkbook({ reportData }) {
 
     aoa.push(Array(14).fill(''));
     const footRow = aoa.length;
-    aoa.push([layout.footnote || '', ...Array(13).fill('')]);
+    aoa.push([[layout.footnote,reportData.meta?.comparisonNotice].filter(Boolean).join(' | '), ...Array(13).fill('')]);
     merges.push({ s: { r: footRow, c: 0 }, e: { r: footRow, c: 13 } });
 
     if (layout.specialPrices && layout.specialPrices.length > 0) {
@@ -784,7 +882,7 @@ function buildSheetWorkbook({ reportData }) {
   }
   aoa.push(Array(colsCount).fill(''));
   aoa.push(['', layout.signatures?.leftLabel || 'ฝ่ายขาย', '___________________', layout.signatures?.rightLabel || 'ผู้อนุมัติ', '___________________', ...Array(Math.max(0, colsCount - 5)).fill('')]);
-  aoa.push([layout.footnote || '', ...Array(colsCount - 1).fill('')]);
+  aoa.push([[layout.footnote,reportData.meta?.comparisonNotice].filter(Boolean).join(' | '), ...Array(colsCount - 1).fill('')]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!merges'] = merges;

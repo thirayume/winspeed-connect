@@ -1868,6 +1868,7 @@ export interface SheetLayoutLineEntry {
   marker: string;
   remark: string;
   groupType: 'COMPOUND' | 'SINGLE';
+  goodGroupName?: string;
 }
 
 export interface SheetLayoutPair {
@@ -1894,6 +1895,7 @@ export interface SheetComparePeriodCell {
 
 export interface SheetCompareProduct {
   groupType: 'COMPOUND' | 'SINGLE';
+  goodGroupName?: string;
   goodId: string;
   goodCode: string;
   goodName: string;
@@ -1958,6 +1960,8 @@ export type ReportMeta = {
   periods?: ReportPeriodItem[];
   selectedPeriods?: ReportPeriodItem[];
   sheetLayout?: SheetLayout;
+  groups?: Array<{id:string;name:string}>;
+  comparisonNotice?: string | null;
 };
 
 export type ReportData = {

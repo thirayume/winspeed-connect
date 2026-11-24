@@ -5,7 +5,109 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
-**24 November — UAT 7b818c7 passed API/download acceptance; PROD is held for print configuration UI.**
+**24 November — follow-up candidate: historical price comparisons, report filters and closed acceptance UI.**
+UAT and PROD still run `2f14daa`; the candidate below has not been published or deployed.
+Owner feedback identified that comparison used only the single imported wf.PriceBook,
+although native WinSpeed holds older price sets. The report now reads those native
+sets without reconciling/importing or writing master data, combines only identical
+date ranges, and retains the existing current PriceBook suspension policy. Product
+identity uses native ID/code rather than name; duplicate native product prices are
+rejected explicitly. Both report endpoints preserve role/Access As cost controls.
+
+PriceList/CostList now default to hiding suspended products, with an explicit toggle,
+product-group filter, code/ID/name search and ascending/descending ordering by code,
+ID or name within product groups. Screen, Excel and PDF share the filtered report
+rows. Codes and IDs are visible in the screen. Export/print is disabled until the
+loaded data matches the selected report/filters, including the debounce interval.
+CostList has only one stored period: comparison stays in comparison mode and clearly
+states that no second period is available, including print/Excel context.
+
+The approval memo no longer sends a request without PlanId: it asks the user to select
+a plan and disables print/export until selection. This was the error state in the
+owner's screenshot, not a SQL column failure. Read-only UAT application-driver
+inventory over the UI default date range (25 September–24 November) loaded all 37
+reports with valid parameters. A separate real ADMIN screen recheck confirmed the
+sequence-counter report loads; an initial rapid navigation observation carried the
+previous approval-memo error and was not counted as a report failure.
+
+Owner declares the prior handover accepted on 31 October 2026. The settings tab,
+component mount and navigation/permission descriptions for the acceptance workflow
+are removed; existing evidence, audit records and backend history are retained.
+No historical sign-off results or technical test dates are backfilled.
+
+Candidate proof: backend 1,391 tests, report browser/PDF 19 tests and frontend build.
+Actual UAT read-only comparison shows 1/2/9 November periods, 71 visible products
+versus 159 including suspended items. All 213 comparison cells reconcile with
+native data (a missing native price remains blank); two real XLSX workbooks parse
+successfully. Current and historical queries perform no business writes. Private
+artifacts and visual proof remain in `scratch/report-price-followup-20261124/`.
+Initial SQL key/fixture/absent-price assertion failures were corrected and retained
+separately; they are not counted as passes. No deployment, Reset, feature-switch
+change, secondary write, new branch or worktree in this follow-up. Exact-commit
+public publication approval is required before hosted CI and staged rollout.
+
+**24 November — 2f14daa deployed and report acceptance completed on UAT and PROD.**
+Owner approved public publication of `2f14daa09e5cabcb7cb07d280616f8df28ce6eb5`
+and deployment after every release gate. Hosted exact-tree promotion CI passed:
+[UAT 45337522105](https://github.com/thirayume/winspeed-connect/actions/runs/45337522105)
+and [PROD 45340220788](https://github.com/thirayume/winspeed-connect/actions/runs/45340220788).
+Both server checkouts and public main/uat heads match this revision. Official apply receipts:
+`D:\SaleApp\uat\deploy-logs\20261124-131428-uat-apply-2f14daa.txt` and
+`D:\SaleApp\prod\deploy-logs\20261124-133416-prod-apply-2f14daa.txt`.
+Both plans/apply: unchanged 274 / pending 0 / drift 0; no new migration. Six backend
+file hashes per environment and public frontend assets match the release; both
+health endpoints return HTTP 200 / SQL up. Official native writer/bridge release
+audits renewed against 49 fingerprints per primary, with unfinished work and
+active app writes zero, backend-only pause and finally restart. Audited revisions
+match the independently checked server SHA. Company 2 remains excluded from
+native writer/bridge. Final three-database checks confirm unchanged migration
+ledger counts, Rebate participant generations/phases/ResetIds and writer scope.
+No Reset, feature-switch change, native business document or secondary write.
+
+All 37 report implementations are now available subject to existing RBAC,
+publication and visible-scope controls. Public UAT password-login acceptance
+verified 37 typed JSON report responses and nine actual downloaded XLSX files,
+including copied-file hashes and cell values/types; no browser download-event
+wait was used. Separate October native reconciliation: receipts 348 headers and
+sales actuals 13 employee rows each differ from independent native sums by zero
+cents. Cheque status is as of the selected end date, with nine rows including
+three redacted opening groups and zero unknown statuses/invalid amounts.
+PROD actual application-driver read-only acceptance passed these three new
+reports and zero-cent reconciliations. Native target periods/targets are empty
+in both primary datasets: actuals are shown with explicit missing-target labels;
+no target amounts or achievement percentages are invented. All six owned UAT
+export fixtures are disabled/revoked; six create and six close audits retained.
+
+Real owner ADMIN sessions verified the three report screens on both sites and
+created `TPL_FIN_REGISTER_A3` (A3 landscape, existing CORP_HQ header, page numbers,
+no approval signatures). Only receipt/cheque report assignments use this new
+template. Each environment has three durable ADMIN ChangeEvents for the new
+template and two assignments. Existing global templates were not changed and
+no company 2 report configuration was written. The Admin paper selector supports
+A3/A4/A5/Letter/Legal through the existing audited/versioned API.
+
+Hosted backend 1,385 tests and report browser/PDF 15 tests passed. Additional
+exact-release isolated renderer tests used actual public UAT payloads and the
+resolved A3 template: receipt 348 rows / 78 pages and cheque nine rows / three
+pages; all rows retained, no overflowing bounds or wrapped money cells. Every
+PDF page is A3 landscape (1190.55 x 841.89 pt); all 81 pages rendered with Poppler
+and representative first/middle/last pages visually checked. These are renderer
+PDF checks, not physical printer certification. The compact live browser preview
+still responsively wraps nine long money cells; physical A3 PDF output has zero.
+Real-staff accounting sign-off, a physical printer and the next scheduled nightly
+restore have not been observed in this report-release acceptance. This does not
+claim a new systemwide transactional Full Loop or VAT/GL accounting sign-off.
+
+Private proof: `scratch/report-completion-20261124/` contains final acceptance,
+runtime/native-audit/fence integrity, public download workbooks and hashes,
+ADMIN template audit, screenshots and actual-data PDF checks. Customer-bearing
+artifacts remain ignored/private. Final status documentation is local and does
+not change the deployed source revision. No new branch or worktree was created;
+pre-existing worktrees and the owner's original `pricelist.xlsx` are preserved.
+
+The entries below are historical observations, superseded by the current snapshot above.
+
+**Historical 24 November — UAT 7b818c7 passed API/download acceptance; PROD held at that stage.**
 Owner approved publication and staged deployment of `7b818c7`. Hosted UAT promotion
 [45331942701](https://github.com/thirayume/winspeed-connect/actions/runs/45331942701)
 passed on that exact merged tree. Official receipt:

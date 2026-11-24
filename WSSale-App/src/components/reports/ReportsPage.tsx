@@ -99,6 +99,7 @@ function SheetSideBySideSection({
               <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">***</span>
             )}
           </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">{entry.goodCode} · ID {entry.goodId}</div>
           {entry.remark && <div className="text-[10px] text-gray-500 mt-0.5">{entry.remark}</div>}
         </td>
         <td className="px-3 py-2 text-right text-xs whitespace-nowrap">
@@ -224,10 +225,10 @@ function SheetReportPreview({ layout }: { layout: SheetLayout }) {
                   return (
                     <tr key={`${prod.goodCode}-${idx}`} className="hover:bg-blue-50/20">
                       <td className="px-3 py-2 text-[11px] font-medium text-gray-600 whitespace-nowrap">
-                        {prod.groupType === 'SINGLE' ? 'ปุ๋ยเดี่ยว/แม่ปุ๋ย' : 'ปุ๋ยสูตร'}
+                        {prod.goodGroupName || (prod.groupType === 'SINGLE' ? 'ปุ๋ยเดี่ยว/แม่ปุ๋ย' : 'ปุ๋ยสูตร')}
                       </td>
                       <td className="px-2 py-2 text-center text-gray-500 tabular-nums">{idx + 1}</td>
-                      <td className="px-3 py-2 font-semibold text-gray-900">{prod.goodName}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-900">{prod.goodName}<div className="text-[10px] font-normal text-slate-500 mt-0.5">{prod.goodCode} · ID {prod.goodId}</div></td>
                       {periods.map(sp => (
                         <td
                           key={sp.key}
@@ -342,6 +343,7 @@ export function ReportsPage() {
   const [data, setData] = useState<ReportData | null>(null);
   const [activeTemplate, setActiveTemplate] = useState<ResolvedReportTemplateDto | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadedRequest,setLoadedRequest] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [showPdfModal, setShowPdfModal] = useState(false);
@@ -370,6 +372,12 @@ export function ReportsPage() {
   const isSheetReport = active === 'pricelist_sheet' || active === 'costlist_sheet';
   const needsDateRange = !isSheetReport;
 
+  const [sheetHideSuspended,setSheetHideSuspended] = useState(true);
+  const [sheetSort,setSheetSort] = useState('group-code');
+  const [sheetDirection,setSheetDirection] = useState('asc');
+  const [sheetGroup,setSheetGroup] = useState('');
+  const [sheetSearch,setSheetSearch] = useState('');
+  const [sheetPeriodError,setSheetPeriodError] = useState<string|null>(null);
   const [sheetMode, setSheetMode] = useState<'current' | 'compare'>('current');
   const [sheetGranularity, setSheetGranularity] = useState<'week' | 'month'>('week');
   const [sheetPeriods, setSheetPeriods] = useState<ReportPeriodItem[]>([]);
@@ -412,6 +420,8 @@ export function ReportsPage() {
     if (!isSheetReport) return;
     const kind: 'pricelist' | 'costlist' = active === 'costlist_sheet' ? 'costlist' : 'pricelist';
     let cancelled = false;
+    setSheetPeriodError(null);
+    setSheetPeriods([]);
     fetchReportPeriods(kind, sheetGranularity)
       .then(res => {
         if (cancelled) return;
@@ -427,7 +437,7 @@ export function ReportsPage() {
         });
       })
       .catch(err => {
-        if (!cancelled) console.error('Failed to load sheet periods:', err);
+        if (!cancelled) {setSheetPeriods([]);setSheetPeriodError((err as Error).message || 'ไม่สามารถโหลดรอบตารางได้');}
       });
     return () => { cancelled = true; };
   }, [isSheetReport, active, sheetGranularity, sheetMode]);
@@ -436,6 +446,8 @@ export function ReportsPage() {
     const p: Record<string, string> = {};
     if (isSheetReport) {
       const kind: 'pricelist' | 'costlist' = active === 'costlist_sheet' ? 'costlist' : 'pricelist';
+      p.hideSuspended=String(sheetHideSuspended);p.sortBy=sheetSort;p.sortDirection=sheetDirection;
+      if(sheetGroup)p.groupId=sheetGroup;if(sheetSearch.trim())p.search=sheetSearch.trim();
       p.mode = sheetMode;
       p.granularity = sheetGranularity;
       if (
@@ -463,7 +475,7 @@ export function ReportsPage() {
     }
     if (isBudgetReport){p.year=String(budgetYear);if(active==='budget-plan-approval'&&budgetPlanId)p.planId=budgetPlanId;}
     return Object.keys(p).length ? p : undefined;
-  }, [active, isSheetReport, sheetMode, sheetGranularity, selectedPeriodState, from, to, custCode, book, isInvoiceReport, invoiceFilters,isBudgetReport,budgetYear,budgetPlanId,isFinanceReport,isTargetReport,financeFilters]);
+  }, [sheetHideSuspended,sheetSort,sheetDirection,sheetGroup,sheetSearch,active, isSheetReport, sheetMode, sheetGranularity, selectedPeriodState, from, to, custCode, book, isInvoiceReport, invoiceFilters,isBudgetReport,budgetYear,budgetPlanId,isFinanceReport,isTargetReport,financeFilters]);
 
   const load = useCallback(async (type: string, range?: Record<string, string>) => {
     if (!type) return;
@@ -471,6 +483,7 @@ export function ReportsPage() {
     setLoading(true);
     setError(null);
     setTemplateError(null);
+    if(type==='budget-plan-approval' && !range?.planId) {setData(null);setLoading(false);return;}
 
     try {
       const [res, tplRes] = await Promise.allSettled([
@@ -480,6 +493,7 @@ export function ReportsPage() {
       if (activeReqIdRef.current === reqId) {
         if (res.status === 'fulfilled') {
           setData(res.value);
+          setLoadedRequest(JSON.stringify([type,range || {}]));
           setError(null);
         } else {
           setError((res.reason as Error)?.message || 'โหลดรายงานไม่สำเร็จ');
@@ -579,6 +593,8 @@ export function ReportsPage() {
     return calculateReportTotals(data.columns, data.rows);
   }, [data]);
 
+  const matchesCurrentRequest = loadedRequest===JSON.stringify([active,reportParams() || {}]);
+
   const hasTotals = useMemo(() => {
     return data?.columns.some(c => c.aggregation === 'sum') ?? false;
   }, [data]);
@@ -607,7 +623,7 @@ export function ReportsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowPdfModal(true)}
-            disabled={!data || loading || exporting || !activeTemplate}
+            disabled={!data || !matchesCurrentRequest || data.type!==active || (active==='budget-plan-approval'&&!budgetPlanId) || loading || exporting || !activeTemplate}
             className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50 hover:bg-red-700 transition-colors shadow-sm cursor-pointer disabled:cursor-not-allowed"
             style={{ background: '#E53935' }}
             title={!activeTemplate ? 'ไม่สามารถพิมพ์ได้เนื่องจากไม่พบแม่แบบรายงานทางการ (Authoritative Master Required)' : 'พิมพ์ / Export PDF'}
@@ -617,7 +633,7 @@ export function ReportsPage() {
 
           <button
             onClick={doExport}
-            disabled={!data || loading || exporting}
+            disabled={!data || !matchesCurrentRequest || data.type!==active || (active==='budget-plan-approval'&&!budgetPlanId) || loading || exporting}
             className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50 hover:bg-green-800 transition-colors cursor-pointer disabled:cursor-not-allowed"
             style={{ background: '#3B6D11' }}
           >
@@ -792,7 +808,12 @@ export function ReportsPage() {
 
         {/* Report Content Area */}
         <div className="flex-1 overflow-auto p-2 sm:p-6 custom-scrollbar">
-          {loading ? (
+          {active==='budget-plan-approval' && !budgetPlanId ? (
+            <div role="status" className="py-20 text-center text-gray-700">
+              <h3 className="font-bold">เลือกแผนงบประมาณที่ต้องการพิมพ์</h3>
+              <p className="text-sm mt-2">ระบุเลขแผนจากหน้า Budget Plan ในช่องด้านบน เพื่อแสดงคำขออนุมัติของแผนนั้น</p>
+            </div>
+          ) : loading ? (
             <div className="py-24 flex flex-col items-center justify-center gap-3">
               <RefreshCw size={32} className="animate-spin text-[#0C447C]" />
               <p className="text-xs text-gray-500 font-medium">กำลังโหลดรายงาน...</p>
@@ -957,6 +978,15 @@ export function ReportsPage() {
                     )}
                   </div>
 
+                  <div className="flex flex-wrap gap-3 items-center text-xs">
+                    <label className="flex items-center gap-1"><input type="checkbox" checked={sheetHideSuspended} onChange={e=>setSheetHideSuspended(e.target.checked)}/>ไม่แสดงสินค้างดขาย</label>
+                    <label>เรียงตาม <select aria-label="เรียงตารางราคา" value={sheetSort} onChange={e=>setSheetSort(e.target.value)} className="border rounded p-1.5 bg-white"><option value="group-code">กลุ่มสินค้า → รหัสสินค้า</option><option value="group-id">กลุ่มสินค้า → ID สินค้า</option><option value="group-name">กลุ่มสินค้า → ชื่อสินค้า</option></select></label>
+                    <select aria-label="ทิศทางเรียงตารางราคา" value={sheetDirection} onChange={e=>setSheetDirection(e.target.value)} className="border rounded p-1.5 bg-white"><option value="asc">น้อยไปมาก</option><option value="desc">มากไปน้อย</option></select>
+                    <select aria-label="กลุ่มสินค้าในตารางราคา" value={sheetGroup} onChange={e=>setSheetGroup(e.target.value)} className="border rounded p-1.5 bg-white"><option value="">ทุกกลุ่มสินค้า</option>{data?.meta?.groups?.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select>
+                    <input aria-label="ค้นหาสินค้าในตารางราคา" value={sheetSearch} onChange={e=>setSheetSearch(e.target.value)} placeholder="รหัส / ID / ชื่อสินค้า" className="border rounded p-1.5"/>
+                  </div>
+                  {sheetPeriodError && <p role="alert" className="text-red-700 text-xs">{sheetPeriodError}</p>}
+                  {data?.meta?.comparisonNotice && <p role="status" className="text-amber-800 text-xs">{data.meta.comparisonNotice}</p>}
                   {sheetMode === 'compare' && (
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="text-[11px] font-semibold text-gray-600 mr-1">
