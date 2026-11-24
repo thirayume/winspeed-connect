@@ -918,7 +918,7 @@ function parseDateParam(value, fallback) {
 // Chart is team-scoped → no reports; one not yet placed still sees all).
 router.use(async (req, _res, next) => {
   try {
-    req.scopeSeesAll = (await getVisibleScope(req.user)).all;
+    req.scopeSeesAll = await require('../services/secondary-budget-report-access').allReportScopes(req.user);
   } catch (e) {
     console.error('[reports] scope lookup failed:', e.message);
     req.scopeSeesAll = false;
@@ -928,22 +928,18 @@ router.use(async (req, _res, next) => {
 
 function isUserAdmin(user) {
   if (!user) return false;
-  if (user.role === 'ADMIN') return true;
-  if (Array.isArray(user.roles) && user.roles.includes('ADMIN')) return true;
-  return false;
+  return require('../services/secondary-budget-report-access').perspectives(user,true).every(p=>require('../services/role-capabilities').hasRole(p.user,'ADMIN'));
 }
 
 function canRunReport(req, type) {
   const rule = REPORT_ROLES[type];
   if (rule === undefined) return false;
   if (req.scopeSeesAll !== true) return false;
-  if (rule === null) return Boolean(req.user);
-  if (typeof rule === 'function') return Boolean(rule(req.user));
-  if (Array.isArray(rule)) {
-    const roles = Array.isArray(req.user?.roles) ? req.user.roles : (req.user?.role ? [req.user.role] : []);
-    return rule.some(r => roles.includes(r));
-  }
-  return false;
+  return require('../services/secondary-budget-report-access').perspectives(req.user,true).every(({user})=>{
+    if(rule===null)return Boolean(user);
+    if(typeof rule==='function')return Boolean(rule(user));
+    return Array.isArray(rule)&&rule.some(r=>require('../services/role-capabilities').hasRole(user,r));
+  });
 }
 
 const catalog = require('../services/report-catalog').createReportCatalog(require('../db'), Object.keys(REPORTS));
@@ -952,9 +948,7 @@ const saveReportCatalogConfig = catalog.save;
 
 function canManageReports(user) {
   if (!user) return false;
-  if (isUserAdmin(user)) return true;
-  const roles = Array.isArray(user.roles) ? user.roles : (user.role ? [user.role] : []);
-  return ['ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'].some(r => roles.includes(r));
+  return require('../services/secondary-budget-report-access').perspectives(user,true).every(p=>require('../services/role-capabilities').hasRole(p.user,'ACCOUNTING','MANAGER','C_LEVEL','ADMIN'));
 }
 
 router.get('/catalog-config', async (req, res) => {

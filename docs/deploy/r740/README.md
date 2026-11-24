@@ -6,7 +6,7 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Runbook refreshed 2026-11-24 (current v3 rollout and reports, migrations through 278;
+> when working on deploy or the databases. Runbook refreshed 2026-11-24 (current v3 rollout and reports, migrations through 279;
 > older release 2.0.0 notes cover migrations through 253 on UAT,
 > PROD and `dbwins_worldfert2`; see [RELEASE-2.0.0.md](RELEASE-2.0.0.md)). Database care: [sql/maintenance](sql/maintenance/README.md).
 
@@ -536,3 +536,28 @@ actual unattended identity; do not save a network password in scripts or treat a
 mapped drive visible in a desktop session as unattended proof. The runner accepts
 an optional approved `-OffHostDirectory` UNC, verifies copy hashes and fails the
 cycle on copy errors. The installer leaves this unset until that gate passes.
+
+## Reviewed secondary Budget Plan and report access
+
+Budget Plan CRUD/workflow and report reads/template resolution/Excel can use a
+selected secondary database only through reviewed bindings of both the effective
+user and the Access As actor. Identity remains anchored to the primary database;
+these modules additionally intersect current target-account role permissions.
+Database role restrictions and the deployment allowlist still apply. Team-scoped
+users do not acquire company-wide reports from a broader identity in either
+company. Unreviewed administrative/report-configuration writes stay fenced.
+
+Prepare explicit account bindings using the existing ADMIN identity-registry
+screen/API. Equal IDs or usernames alone do not establish identity. Annual plans
+need separate active preparer/Manager/C_Level accounts with current permission in
+the selected company; do not automatically create/reactivate real staff accounts.
+The Budget Plan list returns mapped user/action context. Writes carry the
+database captured when the form was opened and a current EditVersion; reload
+after switching databases or losing permission. The target ChangeEvent uses
+business IDs, while a primary admission audit retains both identity namespaces.
+
+Schema279 must exist in every selected budget/report database (already applied
+in both live companies and UAT). No new migration, Rebate Reset, flag change or
+company2 native writer activation is needed. UAT remains limited to its clone;
+cross-company acceptance uses isolated copies and a login without live access.
+See GO-LIVE-STATUS for candidate versus actual deployed results.

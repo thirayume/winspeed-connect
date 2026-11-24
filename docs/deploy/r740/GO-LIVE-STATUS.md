@@ -5,6 +5,59 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**25 November — reviewed secondary Budget Plan/report candidate (not deployed).**
+Current UAT/PROD runtimes are aa96df3. This candidate admits exact Budget Plan
+CRUD/workflow routes and report GET/template/export routes through the existing
+cross-database fence. Every operation still needs the environment database
+allowlist, database role restrictions and current reviewed bindings for both
+actual and effective users. The target accounts and role permissions are loaded
+fresh; a primary ADMIN does not override a removed target permission. JWT-supplied
+module authorization is discarded. Unreviewed routes/methods remain fenced.
+
+Budget actions use translated business IDs, assigned reviewers and separate
+actor/effective identity in target ChangeEvent. A durable attempt audit records
+both primary and business identities on the primary database before admission.
+Budget document/lines/caps/status and business audit remain one serializable
+target transaction; this is not a distributed cross-database transaction.
+Secondary writes require expectedDatabase. The client captures the database
+when opening a document/editor, receives mapped user/action context, and clears
+old grants/selection if refresh is denied. Participant directories intersect
+both company hierarchies and both Access As identities; primary team members
+need current reviewed mappings before appearing in target-directory results.
+
+Company-wide reports require all-record scope and the report's role/permission
+rule independently for both identities in both databases. Read/print/Excel and
+target template resolution work without opening report-configuration writes or
+other administrative APIs on the secondary database. Existing publication,
+ISO/template and business cutoff rules remain. UAT stays isolated from live
+company2; its deployment allowlist is unchanged. Native writers/bridge on company2
+remain excluded. No migration or Rebate flag/reset change is required.
+
+Validation: backend1430/1430, frontend build, browser29/29 (Budget10, reports19).
+Two isolated UAT copies used a dedicated SQL login with no access to the three
+live databases. Five synthetic password logins, five actual reviewed-binding
+API saves with different IDs and signed database switches passed. Real API
+CRUD/delete/restore/cancel/return/resubmit/Manager/C_Level approval, simultaneous
+one200/one409, stale-database denial in both directions, ownership, revoked
+bindings/disabled target accounts and explicit permission removal passed.
+Positive Access As create/cancel audits used distinct target actor/effective IDs;
+the real preparer could not review through Access As. Target audit failure rolled
+back metadata/version; failed primary attempt audit stopped business writes.
+Catalog38 and six actual Excel exports were parsed on R740 with numeric/hash
+proof. Target header/signatures and approved-only forecast matched the synthetic
+data; the primary copy had no plans. All owned copies/login/transient backup,
+protected config and temporary source were removed after acceptance.
+
+Actual staff accounts and approver mappings require explicit owner setup; do not
+reactivate accounts or infer identity from matching IDs/usernames. The annual
+workflow still requires distinct preparer, reviewer and approver identities.
+Actual staff training remains NOT RUN. Public release approval, CI, official
+UAT rollout/acceptance and then PROD remain pending. Private aggregate/hash
+evidence: scratch/secondary-budget-report-20261125/. Existing IT/DBA local edits
+and the aa96df3 operational notes are preserved.
+
+**Prior aa96df3 candidate notes below are historical; its rollout passed before this candidate.**
+
 **25 November — unified annual Budget Plan candidate (not deployed).**
 The two screens previously wrote different systems: RebatePlan held individual
 promotion/financial-rule definitions, while BudgetPlan held annual regional caps

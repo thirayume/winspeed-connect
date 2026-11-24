@@ -32,7 +32,7 @@ test('Budget Plan writes region caps and estimates separately, then submits the 
  await page.route('**/api/**',async route=>{const url=new URL(route.request().url()),method=route.request().method();
   if(method==='OPTIONS')return route.fulfill({status:204});
   if(url.pathname.endsWith('/budget/approvers'))return route.fulfill({json:{data:[{Id:2,DisplayName:'QA Manager',CanReview:true},{Id:3,DisplayName:'QA CLevel',CanApprove:true}]}});
-  if(url.pathname.endsWith('/budget/plans')&&method==='GET')return route.fulfill({json:{data:[]}});
+  if(url.pathname.endsWith('/budget/plans')&&method==='GET')return route.fulfill({json:{context:{database:'QA_PRIMARY',userId:1,actions:['budget.plan.create','budget.plan.review','budget.plan.approve','settings.manage'],canReadAnnual:true},data:[]}});
   if(url.pathname.endsWith('/budget/plans')&&method==='POST'){saved=route.request().postDataJSON();Object.assign(pending,{Title:saved.title,Channel:saved.channel,document:saved.document,allocations:saved.allocations.map((a:any)=>({Region:a.region,Amount:Number(a.amount)})),lines:saved.lines.map((l:any)=>({ProjectKey:l.projectKey,Region:l.region,Amount:Number(l.amount)}))});return route.fulfill({json:pending});}
   if(url.pathname.endsWith('/submit')){const b=route.request().postDataJSON();expect(b.expectedVersion).toBe(version);pending.Status='PENDING';pending.EditVersion=++version;return route.fulfill({json:pending});}
   return route.fulfill({json:{}});
@@ -52,7 +52,7 @@ test('a legacy CE plan opens with the correct BE year in the form and list filte
  await page.route('**/api/**',async route=>{const url=new URL(route.request().url());if(route.request().method()==='OPTIONS')return route.fulfill({status:204});
   if(url.pathname.endsWith('/budget/approvers'))return route.fulfill({json:{data:[]}});
   if(url.pathname.endsWith('/budget/plans/1'))return route.fulfill({json:{PlanId:1,PreparedBy:1,PeriodYear:2026,Channel:'ทั่วไป',Title:'QA CE plan',Status:'DRAFT',EditVersion:1,allocations:[],lines:[]}});
-  return route.fulfill({json:{data:[{planId:1,periodYear:2026,title:'QA CE plan',channel:'ทั่วไป',status:'DRAFT'}]}});
+  return route.fulfill({json:{context:{database:'QA_PRIMARY',userId:1,actions:['budget.plan.create','budget.plan.review','budget.plan.approve','settings.manage'],canReadAnnual:true},data:[{planId:1,periodYear:2026,title:'QA CE plan',channel:'ทั่วไป',status:'DRAFT'}]}});
  });
  await page.goto('/tests/report-readiness.html');await page.getByLabel('เลือกปีงบประมาณ',{exact:true}).fill('2569');await page.getByRole('button',{name:'เปิดแผน 1',exact:true}).click();await page.getByRole('button',{name:'แก้ไขแผน / โครงการ',exact:true}).click();await expect(page.getByLabel('ปีแผน',{exact:true})).toHaveValue('2569');await expect(page.getByLabel('เลือกปีงบประมาณ',{exact:true})).toHaveValue('2569');
 });
@@ -64,7 +64,7 @@ test('assigned reviewer sees the reviewed state after a successful API response'
   if(path.endsWith('/review')){plan.ReviewedAt='2026-11-23T10:00:00Z';plan.EditVersion++;return route.fulfill({json:plan});}
   if(path.endsWith('/plans/1')){await loading;return route.fulfill({json:plan});}
   if(path.endsWith('/approvers'))return route.fulfill({json:{data:[]}});
-  return route.fulfill({json:{data:[{planId:1,periodYear:2569,title:'QA review',channel:'ทั่วไป',status:'PENDING'}]}});
+  return route.fulfill({json:{context:{database:'QA_PRIMARY',userId:1,actions:['budget.plan.create','budget.plan.review','budget.plan.approve','settings.manage'],canReadAnnual:true},data:[{planId:1,periodYear:2569,title:'QA review',channel:'ทั่วไป',status:'PENDING'}]}});
  });
  await page.goto('/tests/report-readiness.html');await page.getByRole('button',{name:'เปิดแผน 1',exact:true}).click();await expect(page.getByRole('button',{name:'เปิดแผน 1',exact:true})).toBeDisabled();release();await expect(page.getByLabel('เหตุผลการดำเนินการ')).toBeEnabled();await page.getByLabel('เหตุผลการดำเนินการ').fill('QA review');await page.getByRole('button',{name:'ตรวจสอบและส่งอนุมัติ',exact:true}).click();await expect(page.getByRole('button',{name:'ตรวจสอบและส่งอนุมัติ',exact:true})).toHaveCount(0);await expect(page.getByText(/รุ่น 2/)).toBeVisible();
 });

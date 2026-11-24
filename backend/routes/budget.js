@@ -2,7 +2,8 @@ const router = require('express').Router();
 const { sql, wfQuery } = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const budget = require('../services/promotion-budget');
-const {hasPermission,hasRole}=require('../services/role-capabilities');
+const access=require('../services/secondary-budget-report-access');
+const {hasPermission,hasRole}=access;
 
 router.use(requireAuth);
 
@@ -18,6 +19,7 @@ const camelizeRows = (rows) => (rows || []).map(camelizeRow);
 // GET /api/budget/expenditure
 router.get('/expenditure', requireRole('ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), async (req, res) => {
   try {
+    if(!access.perspectives(req.user,true).every(p=>require('../services/role-capabilities').hasRole(p.user,'ADMIN','MANAGER','C_LEVEL','ACCOUNTING')))return res.status(403).json({message:'ไม่มีสิทธิ์ดูค่าใช้จ่ายรวม'});
     const { year, channel } = req.query;
     const start = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
     // Annual plans can use BE years; older giveaway budgets can use CE years.
@@ -53,9 +55,9 @@ router.get('/expenditure', requireRole('ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTIN
 // GET /api/budget/plans
 router.get('/plans', async (req, res) => {
   try {
-    if(!hasPermission(req.user,'budget.plan.create')&&!hasPermission(req.user,'budget.plan.review')&&!hasPermission(req.user,'budget.plan.approve')&&!hasRole(req.user,'ACCOUNTING'))return res.status(403).json({message:'ไม่มีสิทธิ์ดูแผนงบประมาณ'});
+    if(!access.mayUseBudget(req.user))return res.status(403).json({message:'ไม่มีสิทธิ์ดูแผนงบประมาณ'});
     const ids=require('../services/business-identity').businessIds(req.user);
-    const all=hasPermission(req.user,'budget.plan.review')||hasPermission(req.user,'budget.plan.approve')||hasRole(req.user,'ACCOUNTING');
+    const all=access.canReadAllBudget(req.user);
     const start = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
     const result = await wfQuery(`
       SELECT p.*,
@@ -70,7 +72,7 @@ router.get('/plans', async (req, res) => {
         AND (@all=1 OR p.PreparedBy=@uid OR p.PreparedActorId=@uid OR p.AssignedReviewerId=@uid OR p.AssignedApproverId=@uid)
       ORDER BY p.PeriodYear DESC, p.Channel
     `, { startYear: { type: sql.Int, value: Number(start.slice(0, 4)) },all:{type:sql.Bit,value:all},uid:{type:sql.Int,value:ids.effective},includeDeleted:{type:sql.Bit,value:req.query.includeDeleted==='true'} });
-    res.json({ data: camelizeRows((result.recordset || []).filter(p=>budget.canRead(req.user,p))) });
+    res.json({ data: camelizeRows((result.recordset || []).filter(p=>budget.canRead(req.user,p))),context:access.context(req.user,require('../db').getDbName?.()||require('../services/active-database').primaryDatabase()||'') });
   } catch (error) {
     console.error('[budget]', error);
     res.status(500).json({ message: error.message });
@@ -81,12 +83,21 @@ router.get('/staff',async(req,res)=>{
  try{
   const {actorPerspective}=require('../services/business-identity'),{getVisibleScope,scopeFilter}=require('../services/visible-scope');
   const actor=actorPerspective(req.user);for(const u of [req.user,actor])if(!hasPermission(u,'budget.plan.create'))return res.status(403).json({message:'ไม่มีสิทธิ์ค้นผู้ร่วมงาน'});
-  const effective=await getVisibleScope(req.user),actual=actor===req.user?null:await getVisibleScope(actor);
-  const filter=require('../services/secondary-read-scope').withActorScope(scopeFilter(effective,{userCol:'u.Id',empCol:'u.EmpId',prefix:'bp'}),actual,{userCol:'u.Id',empCol:'u.EmpId'},'bpa');
+  const scopes=await access.businessScopes(req.user),filters=scopes.map((s,i)=>scopeFilter(s,{userCol:'u.Id',empCol:'u.EmpId',prefix:i===0?'bp':'bpa'+i}));
+  const filter={sql:filters.map(f=>'('+f.sql+')').join(' AND '),inputs:Object.assign({},...filters.map(f=>f.inputs))};
   const q=String(req.query.q||'').trim();if(q.length>100)return res.status(400).json({message:'คำค้นยาวเกินไป'});
   const r=await wfQuery(`SELECT TOP 50 u.Id,u.DisplayName,u.Role,u.PositionCode FROM wf.AppUser u WHERE u.IsActive=1 AND ${filter.sql} AND (@q=N'' OR u.DisplayName LIKE @search OR u.PositionCode LIKE @search) ORDER BY u.DisplayName,u.Id`,{...filter.inputs,q:{type:sql.NVarChar(100),value:q},search:{type:sql.NVarChar(202),value:'%'+q+'%'}});
   res.json({data:r.recordset||[]});
  }catch(e){res.status(e.status||500).json({message:e.message});}
+});
+router.get('/customers',async(req,res)=>{
+ try{
+  for(const p of access.perspectives(req.user,true))if(!require('../services/role-capabilities').hasPermission(p.user,'budget.plan.create'))return res.status(403).json({message:'ไม่มีสิทธิ์ค้นลูกค้าผู้ร่วมงาน'});
+  const q=String(req.query.q||'').trim();if(q.length>100)return res.status(400).json({message:'คำค้นยาวเกินไป'});
+  const scopes=await access.businessScopes(req.user),filter=await require('../services/secondary-customer-scope').customerPredicate(req.user,{scopes});
+  const r=await wfQuery(`SELECT TOP 50 c.CustID,RTRIM(c.CustCode) AS CustCode,c.CustName FROM dbo.EMCust c LEFT JOIN wf.CustomerExt cx ON cx.CustId=c.CustID WHERE ${filter.sql} AND (@q=N'' OR c.CustName LIKE @search OR c.CustCode LIKE @search) ORDER BY c.CustCode,c.CustID`,{...filter.inputs,q:{type:sql.NVarChar(100),value:q},search:{type:sql.NVarChar(202),value:'%'+q+'%'}});
+  res.json(r.recordset||[]);
+ }catch(e){res.status(e.status||500).json({message:e.message,code:e.code});}
 });
 router.get('/approvers',async(req,res)=>{
  try{
@@ -115,7 +126,7 @@ async function report(req,key,id){
  const reports=require('./reports');
  const config=await require('../services/report-catalog').createReportCatalog(require('../db'),[key]).get();
  if(config.visibility[key]===false)throw Object.assign(Error('รายงานนี้ยังไม่เผยแพร่'),{status:403});
- if(!id){const actor=require('../services/business-identity').actorPerspective(req.user);for(const u of [req.user,actor])if(!hasPermission(u,'budget.plan.review')&&!hasPermission(u,'budget.plan.approve')&&!hasRole(u,'ACCOUNTING'))throw Object.assign(Error('ไม่มีสิทธิ์ดูรายงานรวมทุกแผน'),{status:403});}
+ if(!id){const actor=require('../services/business-identity').actorPerspective(req.user);for(const u of [req.user,actor])if(!access.canReadAllBudget(u))throw Object.assign(Error('ไม่มีสิทธิ์ดูรายงานรวมทุกแผน'),{status:403});}
  const data=await require('../db').wfTransaction(async tx=>{
   const q=budget.query(tx,sql);let p;
   if(id){p=await budget.load(q,id,true);if(!budget.canRead(req.user,p))throw Object.assign(Error('ไม่มีสิทธิ์ในแผนนี้'),{status:403});const start=(await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;if(budget.year(p.PeriodYear)<Number(start.slice(0,4)))throw Object.assign(Error('แผนอยู่ก่อนวันเริ่มข้อมูล'),{status:404});}

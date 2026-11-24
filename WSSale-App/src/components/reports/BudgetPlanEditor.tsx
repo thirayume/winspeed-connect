@@ -1,4 +1,4 @@
-import {req,fetchCustomers} from '../../services/api';
+import {req} from '../../services/api';
 import {useEffect,useRef,useState} from 'react';
 import type {ReactNode} from 'react';
 import {X,Trash2,Save} from 'lucide-react';
@@ -14,7 +14,7 @@ export function BudgetPlanEditor({initial,approvers,editable,onClose,onSave}:{in
  useEffect(()=>{dialog.current?.querySelector<HTMLElement>('button:not(:disabled),input:not(:disabled)')?.focus();},[]);
  const dirty=editable&&JSON.stringify(form)!==baseline;useUnsavedChanges(dirty);
  const [directoryQuery,setDirectoryQuery]=useState(''),[staff,setStaff]=useState<any[]>([]),[customers,setCustomers]=useState<any[]>([]),[staffChoice,setStaffChoice]=useState(''),[customerChoice,setCustomerChoice]=useState(''),[directoryError,setDirectoryError]=useState('');
- useEffect(()=>{if(tab!=='participants'||!editable)return;let active=true;const timer=setTimeout(()=>{setDirectoryError('');Promise.allSettled([req<{data:any[]}>('/budget/staff?q='+encodeURIComponent(directoryQuery)),fetchCustomers({q:directoryQuery,limit:50})]).then(([a,b])=>{if(!active)return;setStaff(a.status==='fulfilled'?a.value.data||[]:[]);setCustomers(b.status==='fulfilled'?(Array.isArray(b.value)?b.value:[]):[]);if(a.status==='rejected'||b.status==='rejected')setDirectoryError('ค้นข้อมูลบางส่วนไม่สำเร็จ สามารถกรอกผู้ร่วมงานด้วยตนเองได้');});},200);return()=>{active=false;clearTimeout(timer);};},[directoryQuery,tab,editable]);
+ useEffect(()=>{if(tab!=='participants'||!editable)return;let active=true;const timer=setTimeout(()=>{setDirectoryError('');Promise.allSettled([req<{data:any[]}>('/budget/staff?q='+encodeURIComponent(directoryQuery)),req<any[]>('/budget/customers?q='+encodeURIComponent(directoryQuery))]).then(([a,b])=>{if(!active)return;setStaff(a.status==='fulfilled'?a.value.data||[]:[]);setCustomers(b.status==='fulfilled'?(Array.isArray(b.value)?b.value:[]):[]);if(a.status==='rejected'||b.status==='rejected')setDirectoryError('ค้นข้อมูลบางส่วนไม่สำเร็จ สามารถกรอกผู้ร่วมงานด้วยตนเองได้');});},200);return()=>{active=false;clearTimeout(timer);};},[directoryQuery,tab,editable]);
  const project=form.document.projects.find(p=>p.key===selected);
  const set=<K extends keyof BudgetForm>(key:K,value:BudgetForm[K])=>setForm(f=>({...f,[key]:value}));
  const editProject=(key:keyof BudgetProject,value:any)=>setForm(f=>({...f,document:{...f.document,projects:f.document.projects.map(p=>p.key===selected?{...p,[key]:value}:p)}}));

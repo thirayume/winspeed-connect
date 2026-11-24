@@ -36,10 +36,10 @@ async function load(q,id,lock=false,includeDeleted=false){
  const allocations=(await q('SELECT Region,Amount FROM wf.PromotionBudgetAllocation WHERE PlanId=@id ORDER BY Region',{id:{type:require('../db').sql.Int,value:id}})).recordset||[];
  return {...p,document:require('./promotion-budget-document').parse(p.DocumentJson),lines,allocations};
 }
-function canRead(user,p){const {hasPermission,hasRole}=require('./role-capabilities'),ids=actor(user);
+function canRead(user,p){const ids=actor(user);
  const allowed=id=>[p.PreparedBy,p.PreparedActorId,p.AssignedReviewerId,p.AssignedApproverId].map(Number).includes(id);
- return (hasPermission(user,'budget.plan.review')||hasPermission(user,'budget.plan.approve')||hasRole(user,'ACCOUNTING')||allowed(ids.effective))&&
- (!user.isImpersonating||hasRole(require('./business-identity').actorPerspective(user),'ADMIN')||allowed(ids.actor));
+ return (require('./secondary-budget-report-access').canReadAllBudget(user)||allowed(ids.effective))&&
+ (!user.isImpersonating||require('./secondary-budget-report-access').canReadAllBudget(require('./business-identity').actorPerspective(user))||allowed(ids.actor));
 }
 async function write(db,user,input,id,action,reason,ip){
  if(id!=null&&!positive(id))throw bad('เลขแผนไม่ถูกต้อง');
@@ -47,6 +47,7 @@ async function write(db,user,input,id,action,reason,ip){
  if(ids.actor!==ids.effective){const context=require('./request-context');if(context.currentActorId()!==ids.actor||!await context.hasColumn(db.wfQuery,'wf.ChangeEvent','ActorUserId'))throw bad('ไม่สามารถบันทึกตัวตนผู้ทำแทนได้',503);}
  reason=text(reason,500,true);
  const body=action==='save'?validate(input):null;
+ if(input.expectedDatabase!=null&&String(input.expectedDatabase).toLowerCase()!==String(db.getDbName?.()||require('./active-database').primaryDatabase()||'').toLowerCase())throw Object.assign(bad('ฐานข้อมูลเปลี่ยน กรุณาโหลดแผนใหม่',409),{code:'BUDGET_DATABASE_CHANGED'});
  const {businessDate}=await require('./global-data-window-store').readGlobalDataWindow();
  if(body&&year(body.periodYear)<Number(businessDate.slice(0,4)))throw bad('ปีอยู่ก่อนวันเริ่มข้อมูล');
  return db.wfTransaction(async tx=>{
@@ -54,7 +55,7 @@ async function write(db,user,input,id,action,reason,ip){
   if(before&&year(before.PeriodYear)<Number(businessDate.slice(0,4)))throw bad('แผนอยู่ก่อนวันเริ่มข้อมูล',404);
   if(before&&!canRead(user,before))throw bad('ไม่มีสิทธิ์ในแผนนี้',403);
   if(before&&Number(input.expectedVersion)!==Number(before.EditVersion))throw bad('แผนเปลี่ยนแล้ว กรุณาโหลดใหม่',409);
-  const {hasPermission}=require('./role-capabilities'),perspective=require('./business-identity').actorPerspective;
+  const {hasPermission}=require('./secondary-budget-report-access'),perspective=require('./business-identity').actorPerspective;
   const requirePermission=key=>{if(!hasPermission(user,key)||user.isImpersonating&&!hasPermission(perspective(user),key))throw bad('ไม่มีสิทธิ์ดำเนินการขั้นนี้',403);};
   if(action==='save'){
    requirePermission('budget.plan.create');

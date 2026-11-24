@@ -5,14 +5,15 @@
 // the eventual HTTP result.
 const { businessIds } = require('./business-identity');
 
-async function recordReviewedReadAttempt(req, primaryDatabase, businessDatabase, db = require('../db')) {
+async function recordAttempt(req, primaryDatabase, businessDatabase, db, budgetWrite=false) {
   const mapping = req.user?.identityMapping;
   const ids = businessIds(req.user);
   const actor = Number(req.user?.actorSub);
   const effective = Number(req.user?.sub);
   const route = String(req.originalUrl || '').split('?')[0];
   const readOnlyRequest = req.method === 'GET' || (req.method === 'POST' && route === '/api/so/price-indicator');
-  if (!readOnlyRequest || !route.startsWith('/api/') || !primaryDatabase || !businessDatabase ||
+  const approvedWrite=budgetWrite&&require('./secondary-budget-report-access').classify(req)==='budget-write';
+  if ((!readOnlyRequest&&!approvedWrite) || !route.startsWith('/api/') || !primaryDatabase || !businessDatabase ||
       !mapping || !mapping.identityServer || !mapping.businessServer ||
       !Number.isSafeInteger(actor) || actor < 1 || !Number.isSafeInteger(effective) || effective < 1 ||
       !ids.actor || !ids.effective) {
@@ -33,4 +34,6 @@ async function recordReviewedReadAttempt(req, primaryDatabase, businessDatabase,
     businessServer: { type: sql.NVarChar(128), value: String(mapping.businessServer) },
   }), primaryDatabase);
 }
-module.exports = { recordReviewedReadAttempt };
+const recordReviewedReadAttempt=(req,primary,business,db=require('../db'))=>recordAttempt(req,primary,business,db);
+const recordReviewedBudgetWriteAttempt=(req,primary,business,db=require('../db'))=>recordAttempt(req,primary,business,db,true);
+module.exports = { recordReviewedReadAttempt, recordReviewedBudgetWriteAttempt };

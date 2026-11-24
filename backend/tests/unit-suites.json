@@ -242,7 +242,8 @@
     "tests/native-finance-reports.test.js",
     "tests/sales-target-report.test.js",
     "tests/native-finance-export.test.js",
-    "tests/price-report-history.test.js"
+    "tests/price-report-history.test.js",
+    "tests/secondary-budget-report-access.test.js"
   ],
   "test:unit": [
     "tests/policy-contract.test.js",

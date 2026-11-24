@@ -153,6 +153,7 @@ function requireAuth(req, res, next) {
       // A verified token is still an identity claim, not proof of a reviewed
       // cross-database binding. Only middleware may attach a fresh mapping.
       identityMapping: undefined,
+      secondaryModuleAccess: undefined,
       isImpersonating: Boolean(payload.impersonating || Number(actorId) !== Number(effectiveId)),
     };
     if (blockWriteWhenPasswordStale(req, res)) return;
@@ -267,7 +268,9 @@ function requireAuth(req, res, next) {
             // The handler checks customer scope and fails closed on price errors.
             const priceIndicatorRead = req.method === 'POST' && req.baseUrl === '/api/so' &&
               req.path === '/price-indicator' && hasPermission(req.user, 'so.create') && hasPermission(actor, 'so.create');
-            const reviewedRead = (req.method === 'GET' && (privilegedRead || availabilityRead || tripRead || scopedSalesRead)) || priceIndicatorRead;
+            const moduleAccess = require('../services/secondary-budget-report-access');
+            const reviewedModule = moduleAccess.classify(req);
+            const reviewedRead = (req.method === 'GET' && (privilegedRead || availabilityRead || tripRead || scopedSalesRead)) || priceIndicatorRead || reviewedModule;
             if (!reviewedRead) return res.status(409).json({ code: 'IDENTITY_MAPPING_REQUIRED', message: 'กรุณากลับฐานหลัก หรือตรวจสอบการจับคู่บัญชีระหว่างฐานก่อนใช้งานฐานนี้' });
             if (!activeDb.canAccessDatabase(database, actor, themes)) return res.status(403).json({ code: 'DB_RESTRICTED' });
             const identity = require('../services/database-identity-resolver');
@@ -283,10 +286,15 @@ function requireAuth(req, res, next) {
             }
             req.user.identityMapping = mapping;
             req.identityMappingAudit = mapping;
+            if (reviewedModule) {
+              try { await moduleAccess.attach(req, primary, database); }
+              catch (e) { return res.status(e.status || 503).json({code:e.code || 'SECONDARY_PROFILE_UNAVAILABLE',message:'สิทธิ์ บัญชี หรือฐานข้อมูลของรายการนี้ไม่ตรง กรุณาโหลดข้อมูลใหม่'}); }
+            }
             // A reviewed secondary read may disclose business data. Record
             // both identities on the primary database before exposing it.
             try {
-              await require('../services/reviewed-database-audit').recordReviewedReadAttempt(req, primary, database);
+              const audit = require('../services/reviewed-database-audit');
+              await (reviewedModule === 'budget-write' ? audit.recordReviewedBudgetWriteAttempt : audit.recordReviewedReadAttempt)(req, primary, database);
             } catch {
               console.error('[api-audit] REVIEWED_READ_AUDIT_FAILED');
               return res.status(503).json({ code: 'AUDIT_UNAVAILABLE', message: 'ไม่สามารถบันทึกการเข้าถึงฐานข้อมูลได้' });

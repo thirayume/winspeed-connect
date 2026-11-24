@@ -7,9 +7,9 @@ const { getVisibleScope, scopeFilter } = require('./visible-scope');
 const { actorPerspective } = require('./business-identity');
 const { readGlobalDataWindow } = require('./global-data-window-store');
 
-async function customerPredicate(user) {
+async function customerPredicate(user,options={}) {
   const actor = actorPerspective(user);
-  const scopes = [await getVisibleScope(user), ...(actor === user ? [] : [await getVisibleScope(actor)])];
+  const scopes = options.scopes || [await getVisibleScope(user), ...(actor === user ? [] : [await getVisibleScope(actor)])];
   const window = await readGlobalDataWindow();
   const inputs = { customerStartDate: { type: sql.Date, value: window.businessDate } };
   const conditions = [];
