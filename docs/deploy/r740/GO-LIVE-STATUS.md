@@ -5,6 +5,49 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**24 November — UAT 7b818c7 passed API/download acceptance; PROD is held for print configuration UI.**
+Owner approved publication and staged deployment of `7b818c7`. Hosted UAT promotion
+[45331942701](https://github.com/thirayume/winspeed-connect/actions/runs/45331942701)
+passed on that exact merged tree. Official receipt:
+`D:\SaleApp\uat\deploy-logs\20261124-122745-uat-apply-7b818c7.txt`.
+UAT plan/apply unchanged 274 / pending 0 / drift 0; health HTTP 200 / SQL up.
+Actual server SHA, six backend file hashes and public assets matched. Native
+writer/bridge audit renewed through the official plan/apply: 49 fingerprints,
+all unfinished-work counts zero and active app writes zero; backend restarted
+in finally. Rebate switches and participant fences are unchanged; company 2
+remains outside writer/bridge scope.
+
+Actual public UAT password-login acceptance loaded **37/37 reports** and retrieved
+**nine XLSX files**, checking values/types and hashes after copying to the owner
+PC. Receipts: 348 native headers, difference 0 cents; net sales/adjustment actuals:
+difference 0 cents. All five synthetic export logins are disabled/revoked with
+create/close audits. Renewed owner ADMIN session verified receipt 18 columns,
+cheque 17 columns including three opening groups, and target seven columns with
+13 explicit missing-target employee rows. PROD reader TOP 0 queries proved all
+12 required native tables readable; native periods/targets are empty there too.
+
+Live print review found a release gate: the default A4 portrait splits long
+currency values in these wide registers. Existing finance A4 landscape also
+reserves approval signatures and produces excessive pages. Only the two new
+UAT register assignments were temporarily bound to the existing finance template
+through the real ADMIN UI/audit; no new template or PROD setting was created.
+The Admin template editor omitted PaperSize even though its existing API and
+renderer support A3. The follow-up source adds the paper selector (A3/A4/A5/
+Letter/Legal), keeps the existing reason/versioned save contract, and removes
+incorrect hardcoded A4 from orientation captions. Frontend build and **15/15**
+report browser cases pass, including create/edit paper round-trip and unbroken
+large amounts in physical multipage A3 PDF. Backend report code is unchanged
+from tested `7b818c7` (1,385 tests and deployed SQL proof remain applicable).
+
+**PROD remains 422818d.** No PROD promotion/deploy has started. Publish the reviewed
+follow-up only after exact-commit public approval, pass hosted CI, deploy UAT,
+then create/assign a dedicated A3 landscape register template without approval
+signatures through the normal audited ADMIN UI and recheck actual printing.
+Only after that gate passes may PROD advance. No migration, Reset, Rebate switch
+change, native business document or secondary write is part of this follow-up.
+Private evidence remains in `scratch/report-completion-20261124/`, including
+`deployed-downloads`, final UAT integrity/native audit and paper-selector tests.
+
 **24 November — the remaining three reports are implemented and rehearsed; release not yet deployed.**
 The running UAT/PROD release remains `422818d`. This candidate makes all 37 report
 implementations available, retaining the existing role, visible-scope and ADMIN

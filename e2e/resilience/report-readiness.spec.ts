@@ -150,11 +150,30 @@ for(const key of ['ar-receipt-history','cq-cheque-register','sales-target-compar
 
 for(const key of ['ar-receipt-history','cq-cheque-register'])test(key+' multipage PDF retains references and stays inside paper bounds',async({page})=>{
  const native=createRequire(__filename)('../../backend/services/native-finance-reports.js');
- const payload={type:key,title:'QA financial multipage',columns:key==='ar-receipt-history'?native.receiptColumns:native.chequeColumns,rows:Array.from({length:35},(_,i)=>key==='ar-receipt-history'?{ReceiptNo:'RC-QA-'+i,Amount:100.25,CustCode:'0001',CustName:'QA',RefDocNo:'QA-INVOICE (2026-10-01), QA-SECOND (2026-10-02)',ChequeRefs:'0007, 0008',ReceiptKind:'รับชำระหนี้ (206)',PostedGL:'Y'}:{RowKind:'รายการในช่วง',ChequeNo:'0007-'+i,ChequeAmount:100.25,UnreplacedAmount:100.25,OpenAmount:100.25,Status:'เช็คฝาก',ChequeCount:1,LastMoveNo:'QA-MOVE-'+i,LastMoveDate:'2026-10-31'}),isoStamp:stamp,meta:{notes:['QA as-of context']}};
+ const payload={type:key,title:'QA financial multipage',columns:key==='ar-receipt-history'?native.receiptColumns:native.chequeColumns,rows:Array.from({length:35},(_,i)=>key==='ar-receipt-history'?{ReceiptNo:'RC-QA-'+i,Amount:10000000.25,CustCode:'0001',CustName:'QA',RefDocNo:'QA-INVOICE (2026-10-01), QA-SECOND (2026-10-02)',ChequeRefs:'0007, 0008',ReceiptKind:'รับชำระหนี้ (206)',PostedGL:'Y'}:{RowKind:'รายการในช่วง',ChequeNo:'0007-'+i,ChequeAmount:10000000.25,UnreplacedAmount:10000000.25,OpenAmount:10000000.25,Status:'เช็คฝาก',ChequeCount:1,LastMoveNo:'QA-MOVE-'+i,LastMoveDate:'2026-10-31'}),isoStamp:stamp,meta:{notes:['QA as-of context']}};
  await page.route('**/api/**',async route=>{const url=new URL(route.request().url());if(route.request().method()==='OPTIONS')return route.fulfill({status:204});if(url.pathname.endsWith('/reports/types'))return route.fulfill({json:[{key,title:payload.title,category:'finance',available:true}]});if(url.pathname.endsWith('/template'))return route.fulfill({json:{reportKey:key,template}});if(url.pathname.endsWith('/reports/'+key))return route.fulfill({json:payload});return route.fulfill({json:{}});});
  await page.goto('/tests/report-readiness.html?page=reports');await page.getByRole('button',{name:'พิมพ์ / Export PDF',exact:true}).click();await page.evaluate(()=>document.fonts.ready);await page.emulateMedia({media:'print'});
  await expect.poll(async()=>page.locator('.report-page').evaluateAll(pages=>pages.every(p=>p.getBoundingClientRect().height<=1064))).toBe(true);
  const pages=await page.locator('.report-page').count();expect(pages).toBeGreaterThan(1);await expect(page.getByTestId('report-iso-stamp')).toHaveCount(pages);
  await expect(page.locator('.report-print-area')).toContainText(key==='ar-receipt-history'?'RC-QA-34':'QA-MOVE-34');
+ const moneyCells=page.locator('.report-print-area td').filter({hasText:'10,000,000.25'});expect(await moneyCells.count()).toBeGreaterThan(0);expect(await moneyCells.evaluateAll(cells=>cells.every(cell=>{const range=document.createRange();range.selectNodeContents(cell);return range.getClientRects().length===1;}))).toBe(true);
  const pdf=await page.pdf({path:'test-results/report-readiness/'+key+'-multipage.pdf',preferCSSPageSize:true,printBackground:true});expect((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g)||[]).length).toBe(pages);
+});
+
+test('Admin creates and edits paper size with the existing audit and version contract',async({page})=>{
+ const templates:any[]=[];const writes:any[]=[];
+ await page.route('**/api/**',async route=>{const url=new URL(route.request().url()),method=route.request().method();if(method==='OPTIONS')return route.fulfill({status:204});
+  if(url.pathname.endsWith('/reports/headers'))return route.fulfill({json:[{HeaderId:1,HeaderCode:'QA',HeaderName:'QA company',IsActive:true,Version:1}]});
+  if(url.pathname.endsWith('/catalog-config'))return route.fulfill({json:{reports:[]}});
+  if(url.pathname.endsWith('/reports/templates')&&method==='GET')return route.fulfill({json:templates});
+  if(url.pathname.endsWith('/reports/templates')&&method==='POST'){const body=route.request().postDataJSON();writes.push(body);templates.push({...body,TemplateId:4,Version:1});return route.fulfill({status:201,json:templates[0]});}
+  if(url.pathname.endsWith('/reports/templates/4')&&method==='PUT'){const body=route.request().postDataJSON();writes.push(body);expect(body.expectedVersion).toBe(1);templates[0]={...templates[0],...body,Version:2};return route.fulfill({json:templates[0]});}
+  return route.fulfill({json:[]});
+ });
+ await page.goto('/tests/report-readiness.html?page=templates');await page.getByRole('button',{name:'แม่แบบรายงาน (0)',exact:true}).click();await page.getByRole('button',{name:'เพิ่มแม่แบบใหม่',exact:true}).click();
+ await page.getByPlaceholder('เช่น TPL_LOGISTICS_DISPATCH',{exact:true}).fill('TPL_QA_A3');await page.locator('form input[type="text"]').nth(1).fill('QA financial register');
+ await page.getByLabel('ขนาดกระดาษรายงาน',{exact:true}).selectOption('A3');await page.getByLabel('ทิศทางกระดาษรายงาน',{exact:true}).selectOption('landscape');await page.getByLabel('แสดงกล่องลายมือชื่อ',{exact:true}).uncheck();
+ await page.getByPlaceholder('ระบุเหตุผลเพื่อบันทึกประวัติการเปลี่ยนแปลง',{exact:true}).fill('QA audited A3 financial register');await page.getByRole('button',{name:'บันทึกการเปลี่ยนแปลง',exact:true}).click();await expect.poll(()=>writes.length).toBe(1);expect(writes[0].PaperSize).toBe('A3');expect(writes[0].Orientation).toBe('landscape');expect(writes[0].ShowSignatures).toBe(false);
+ await page.getByRole('button',{name:'แก้ไขแม่แบบ',exact:true}).click();await expect(page.getByLabel('ขนาดกระดาษรายงาน',{exact:true})).toHaveValue('A3');await page.getByLabel('ขนาดกระดาษรายงาน',{exact:true}).selectOption('Legal');
+ await page.getByPlaceholder('ระบุเหตุผลเพื่อบันทึกประวัติการเปลี่ยนแปลง',{exact:true}).fill('QA paper update');await page.getByRole('button',{name:'บันทึกการเปลี่ยนแปลง',exact:true}).click();await expect.poll(()=>writes.length).toBe(2);expect(writes[1].PaperSize).toBe('Legal');expect(writes[1].reason).toBe('QA paper update');
 });

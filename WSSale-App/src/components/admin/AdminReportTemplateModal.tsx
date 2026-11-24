@@ -612,12 +612,24 @@ export function AdminReportTemplateModal({ isOpen, onClose, onTemplateUpdated, e
                     <div>
                       <label className="block font-semibold text-gray-700 mb-1">ทิศทางกระดาษ (Orientation)</label>
                       <select
+                        aria-label="ทิศทางกระดาษรายงาน"
                         value={editingTemplate.Orientation || 'portrait'}
                         onChange={e => setEditingTemplate({ ...editingTemplate, Orientation: e.target.value as any })}
                         className="w-full px-3 py-2 border rounded-lg bg-white"
                       >
-                        <option value="portrait">แนวตั้ง (Portrait · A4)</option>
-                        <option value="landscape">แนวนอน (Landscape · A4)</option>
+                        <option value="portrait">แนวตั้ง (Portrait)</option>
+                        <option value="landscape">แนวนอน (Landscape)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-gray-700 mb-1">ขนาดกระดาษ (Paper Size)</label>
+                      <select
+                        aria-label="ขนาดกระดาษรายงาน"
+                        value={editingTemplate.PaperSize || 'A4'}
+                        onChange={e => setEditingTemplate({ ...editingTemplate, PaperSize: e.target.value })}
+                        className="w-full px-3 py-2 border rounded-lg bg-white"
+                      >
+                        {['A4', 'A3', 'A5', 'Letter', 'Legal'].map(size => <option key={size} value={size}>{size}</option>)}
                       </select>
                     </div>
                     <div>
