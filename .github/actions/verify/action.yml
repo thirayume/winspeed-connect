@@ -76,6 +76,10 @@ runs:
       shell: bash
       run: npx playwright test --config e2e/playwright.report-readiness.config.ts
 
+    - name: Unified ticket balances, expiry and menu browser regressions
+      shell: bash
+      run: npx playwright test --config e2e/playwright.ticket-readiness.config.ts
+
     - name: Batch files are ASCII only
       shell: bash
       run: |

@@ -5,9 +5,9 @@ import { AdminReportCatalogModal } from './AdminReportCatalogModal';
 
 /** Owner, 20 Nov 2026: ADMIN switches any menu (and, through the report catalog, any report) on or off. */
 const MENU_LABELS: Record<string, string> = {
-  sales: 'ขาย', voucher: 'Voucher คงค้าง', 'edit-requests': 'คำขอแก้ไขและอนุมัติ', quotation: 'เสนอราคา',
-  store: 'คลัง', stock: 'สต๊อกปฏิบัติการ', papertrail: 'Paper Trail', 'control-ticket': 'ชุดตั๋วคุม',
-  'scale-reports': 'สถานะการชั่งรถ', aging: 'ตั๋วคงค้าง', rebate: 'รีเบท (App)', 'rebate-plan': 'Rebate Plan',
+  sales: 'ขาย', voucher: 'ชุดตั๋วคุม — รายชื่อตามสังกัด', 'edit-requests': 'คำขอแก้ไขและอนุมัติ', quotation: 'เสนอราคา',
+  store: 'คลัง', stock: 'สต๊อกปฏิบัติการ', papertrail: 'Paper Trail', 'control-ticket': 'ชุดตั๋วคุม — รายการและเตือนอายุ',
+  'scale-reports': 'สถานะการชั่งรถ', aging: 'บิลค้างส่ง', rebate: 'รีเบท (App)', 'rebate-plan': 'Rebate Plan',
   giveaway: 'ของแถม', accounting: 'บัญชี', recon: 'กระทบยอด', incidents: 'เหตุการณ์ผิดกฎ', reports: 'รายงาน',
   master: 'ข้อมูลหลัก', policy: 'นโยบายอนุมัติ', ops: 'สถานะระบบ', org: 'ผังองค์กร', beneficiaries: 'จัดการสิทธิ์ตั๋วร่วม',
 };

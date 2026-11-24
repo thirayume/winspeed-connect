@@ -18,8 +18,6 @@ const READS_ACROSS_THE_START_DATE = {
   'rebate.js GET /next-rb-no': 'next document number must see every number ever issued',
   'rebate.js GET /voucher-summary': 'open tickets (RemaQty > 0) are a carried-forward balance and stay usable',
   'rebate.js GET /coupons': 'open tickets (RemaQty > 0) are a carried-forward balance and stay usable',
-  'rebate.js GET /coupons-worklist': 'open tickets are a carried-forward balance and stay usable',
-  'rebate.js GET /coupons/:custId': 'open tickets of one customer are a carried-forward balance',
   'recon.js GET /active-books': 'live WinSpeed number series and the cuts still waiting for an invoice',
 };
 

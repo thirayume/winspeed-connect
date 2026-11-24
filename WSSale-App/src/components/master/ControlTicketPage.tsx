@@ -5,24 +5,26 @@ import {
   fetchControlTicketDetails,
   fetchControlTicketDraws,
   fetchControlTicketTrace,
-  fetchControlTicketAlerts,
   updateControlTicketExpiry,
 } from '../../services/api';
 import type { ControlTicketDraw } from '../../types';
 import { NativeTraceFinance } from './NativeTraceFinance';
+import { VoucherPage } from '../voucher/VoucherPage';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
 
 import { Pagination, usePageSize } from '../ui/Pagination';
 type Line = { ListNo: number; GoodCode: string; GoodName: string; QtyTon: number; PricePerTon: number };
 
-export function ControlTicketPage() {
+export function ControlTicketPage({warningsOnly=false,allowHierarchy=true,initialHierarchy=false}:{warningsOnly?:boolean;allowHierarchy?:boolean;initialHierarchy?:boolean}={}) {
   const [tickets, setTickets] = useState<any[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const loadRequest = useRef(0);
   const [q, setQ] = useState('');
-  const [tab, setTab] = useState<'ACTIVE' | 'RESERVED_FULL' | 'HISTORY' | 'PENDING' | 'ALERTS' | 'UNKNOWN'>('ACTIVE');
+  const [tab, setTab] = useState<'ACTIVE' | 'RESERVED_FULL' | 'HISTORY' | 'PENDING' | 'ALERTS' | 'UNKNOWN' | 'CUSTOMERS'>(initialHierarchy&&allowHierarchy?'CUSTOMERS':warningsOnly?'ALERTS':'ACTIVE');
+  const [expiryFilter,setExpiryFilter]=useState('ALL');
+  const [expiryPolicy,setExpiryPolicy]=useState({lifeDays:90,warningDays:30});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = usePageSize('control-tickets', 25);
   const [totalCount, setTotalCount] = useState(0);
@@ -65,30 +67,30 @@ export function ControlTicketPage() {
 
   const load = useCallback(async () => {
     const request = ++loadRequest.current;
+    if(tab==='CUSTOMERS'){setLoading(false);return;}
     setLoading(true);
     setLoadError('');
     try {
-      const [ticketResp, alertData] = await Promise.all([
-        fetchControlTickets({
+      const ticketResp = await fetchControlTickets({
           tab,
+          expiry:tab==='ALERTS'?expiryFilter:undefined,
           q: q.trim() || undefined,
           page,
           pageSize,
           paginated: true,
-        }),
-        fetchControlTicketAlerts().catch(() => []),
-      ]);
+        });
       if (request !== loadRequest.current) return;
       if (ticketResp && ticketResp.data) {
         setTickets(ticketResp.data);
         setTotalCount(ticketResp.total);
         setTotalPages(ticketResp.totalPages);
+        if(ticketResp.expiryPolicy)setExpiryPolicy(ticketResp.expiryPolicy);
       } else if (Array.isArray(ticketResp)) {
         setTickets(ticketResp);
         setTotalCount(ticketResp.length);
         setTotalPages(1);
       }
-      setAlerts(alertData || []);
+
     } catch (e) {
       if (request !== loadRequest.current) return;
       const code = (e as { data?: { code?: string } })?.data?.code;
@@ -101,7 +103,7 @@ export function ControlTicketPage() {
     } finally {
       if (request === loadRequest.current) setLoading(false);
     }
-  }, [tab, q, page, pageSize]);
+  }, [tab, q, page, pageSize,expiryFilter,warningsOnly]);
 
   useEffect(() => {
     load();
@@ -178,14 +180,13 @@ export function ControlTicketPage() {
     return Math.max(0, Number(t.TotalQtyTon || 0) - Number(t.DrawnQtyTon || 0));
   };
 
-  const activeAlertCount = alerts.filter(a => a.Status === 'ACTIVE').length;
 
   return (
-    <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
+    <div className="h-full min-w-0 flex flex-col overflow-hidden" style={{ background: '#F1EFE8' }}>
       {expiryNotice && <div role="status" className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">{expiryNotice}</div>}
       {/* Header */}
       <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           {sel && (
             <button
               onClick={() => setSel(null)}
@@ -194,10 +195,10 @@ export function ControlTicketPage() {
               <ChevronLeft size={16} />
             </button>
           )}
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
               <Ticket className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-              {sel ? `ตั๋วคุม ${sel.DocuNo}` : 'ชุดตั๋วคุม (Control Ticket Management)'}
+              {sel ? `ตั๋วคุม ${sel.DocuNo}` : 'ชุดตั๋วคุม'}
             </h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
               {sel
@@ -217,26 +218,11 @@ export function ControlTicketPage() {
         </div>
       </div>
 
-      {/* Alert Notification Banner */}
-      {activeAlertCount > 0 && !sel && (
-        <div className="mx-4 mt-4 sm:mx-6 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-2 text-xs sm:text-sm font-semibold">
-            <AlertTriangle className="text-amber-600 shrink-0" size={18} />
-            <span>
-              พบตั๋วคุมที่มีการแจ้งเตือนใกล้หมดอายุหรือหมดอายุแล้วจำนวน <strong>{activeAlertCount}</strong> รายการ
-            </span>
-          </div>
-          <span className="text-[11px] bg-amber-200/80 px-2 py-0.5 rounded-md font-mono font-bold text-amber-800">
-            Deduplicated Alert
-          </span>
-        </div>
-      )}
-
-      {/* Body Area */}
       <div className="flex-1 overflow-auto p-0 sm:p-6">
         {!sel ? (
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden flex flex-col">
             <div className="flex border-b border-gray-100 px-2 pt-2 bg-gray-50/50 overflow-x-auto">
+              {!warningsOnly&&<>
               <button
                 onClick={() => { setTab('ACTIVE'); setPage(1); }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
@@ -277,6 +263,7 @@ export function ControlTicketPage() {
               >
                 รอยืนยัน / รอออกตั๋ว
               </button>
+              </>}
               <button
                 onClick={() => { setTab('ALERTS'); setPage(1); }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
@@ -285,9 +272,9 @@ export function ControlTicketPage() {
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
-                เตือนหมดอายุ
+                เตือนอายุตั๋ว
               </button>
-              <button
+              {!warningsOnly&&<button
                 onClick={() => { setTab('UNKNOWN'); setPage(1); }}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   tab === 'UNKNOWN'
@@ -296,8 +283,15 @@ export function ControlTicketPage() {
                 }`}
               >
                 รอตรวจสอบ (Review)
-              </button>
+              </button>}
+              {allowHierarchy&&<button className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 ${tab==='CUSTOMERS'?'border-[#0C447C] text-[#0C447C]':'border-transparent text-gray-500'}`} onClick={()=>{setTab('CUSTOMERS');setPage(1);}}>รายชื่อตามสังกัด</button>}
             </div>
+            {tab==='CUSTOMERS'?<VoucherPage/>:<>
+            {tab==='ALERTS'&&<div className="px-5 py-3 bg-amber-50 text-sm space-y-2">
+              <p>อายุมาตรฐาน {expiryPolicy.lifeDays} วัน · เตือนล่วงหน้า {expiryPolicy.warningDays} วัน · หมดอายุแล้วยังใช้ได้ พร้อมบันทึก audit เมื่อใช้</p>
+              <p className="text-xs">คงเหลือจริง − จองค้าง = พร้อมใช้ · รวมตั๋วที่ถูกจองเต็ม · เรียงวันหมดอายุเก่าก่อน</p>
+              <div className="flex gap-2 flex-wrap" aria-label="กรองอายุตั๋ว">{[['ALL','ทั้งหมดในช่วงเตือน'],['EXPIRED','หมดอายุแล้ว'],['TODAY','หมดอายุวันนี้'],['NEAR_EXPIRY','ใกล้หมดอายุ']].map(([key,label])=><button key={key} aria-pressed={expiryFilter===key} onClick={()=>{setExpiryFilter(key);setPage(1);}} className={`px-3 py-1 rounded-lg border ${expiryFilter===key?'bg-[#0C447C] text-white':'bg-white'}`}>{label}</button>)}</div>
+            </div>}
             <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-4">
               <div className="flex-1 flex items-center gap-2">
                 <Search size={14} className="text-gray-400" />
@@ -347,7 +341,7 @@ export function ControlTicketPage() {
                       return (
                         <tr
                           key={stableKey}
-                          onClick={() => open(t)}
+                          onClick={() => {if(!warningsOnly)open(t);}}
                           className="hover:bg-blue-50/40 cursor-pointer transition-colors"
                         >
                           <td className="px-4 py-2.5 whitespace-nowrap">
@@ -374,6 +368,7 @@ export function ControlTicketPage() {
                           </td>
                           <td className="px-4 py-2.5 text-center whitespace-nowrap">
                             <ExpiryBadge status={expStatus} daysRemaining={t.daysRemaining} expiryDate={t.expiryDate} />
+                            <div className="text-[10px] text-gray-500 mt-1">{t.expirySource==='DEFAULT'?`อายุมาตรฐาน ${t.ticketLifeDays} วัน`:t.expirySource==='CONTROL_TICKET'?'วันที่กำหนดบนตั๋วคุม':t.expirySource==='TICKET'?'วันที่กำหนดบนตั๋ว':''}</div>
                           </td>
                           <td className="px-4 py-2.5 text-right text-gray-600 whitespace-nowrap font-medium">
                             {total.toFixed(2)} <span className="text-[10px] text-gray-400">{unit}</span>
@@ -396,7 +391,7 @@ export function ControlTicketPage() {
                             )}
                           </td>
                           <td className="px-4 py-2.5 text-center whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center justify-center gap-1.5">
+                            {!warningsOnly&&<div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={e => handleOpenTrace(t.CouponNo || t.DocuNo, e, t.exactId || t.CouponID || t.SOID, t.entityType)}
                                 title="สืบย้อนเส้นทาง Universal Native Chain (R1-03)"
@@ -411,7 +406,7 @@ export function ControlTicketPage() {
                               >
                                 <Edit3 size={12} /> อายุ
                               </button>
-                            </div>
+                            </div>}
                           </td>
                         </tr>
                       );
@@ -433,6 +428,7 @@ export function ControlTicketPage() {
                 disabled={loading}
               />
             </div>
+            </>}
           </div>
         ) : (
           /* Detail View for Selected Ticket */
@@ -853,6 +849,8 @@ function ExpiryBadge({
           หมดอายุแล้ว {expiryDate ? `(${expiryDate})` : ''}
         </span>
       );
+    case 'TODAY':
+      return <span className="inline-flex px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">หมดอายุวันนี้ (ยังใช้ได้)</span>;
     case 'NEAR_EXPIRY':
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">

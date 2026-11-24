@@ -5,6 +5,44 @@ current source and the latest successful server receipts determine the running r
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 
+**24 November — unified ticket workspace candidate (not deployed).**
+The owner approved merging expiry follow-up into Control Ticket Management and
+renaming Aging to bills waiting to ship. Current live/public release remains
+4ef1311; this candidate still needs exact-commit public publication approval,
+CI, official UAT deployment and authenticated UI/API acceptance before PROD.
+
+- One ticket reader now serves Control Tickets and the legacy worklist/customer
+  coupon endpoints: effective/actor scope, opening balances, held reservations,
+  recovery/source conflict checks and expiry use the same projection. Internal
+  source dates used to calculate opening-ticket expiry are removed from responses.
+- Expiry uses the exact coupon overlay, then CouponExpiry, then 104 date plus the
+  configured life (default90); warning lead uses the existing ticket setting
+  (default30). Bangkok past/today/near categories are disjoint. Expired tickets
+  remain usable with the existing transactional warning/incident audit. Pending
+  bookings and drafts receive no invented issue date. No business dates are changed.
+- The single Control Tickets menu includes expiry warnings and a salesperson /
+  customer / beneficiary drill-down. Existing menu grants remain separate: a
+  hierarchy-only user gets a read-only warning view, without operational detail,
+  Trace/edit actions or other control tabs. Legacy voucher links remain supported.
+  Menu switches keep both grant keys; their labels describe the separate views.
+- Aging is now **บิลค้างส่ง**, with the current-page card count explicitly distinct
+  from the total bills, product lines and quantities. Its underlying queries stay
+  unchanged. Native remaining, held quantity and available quantity stay distinct.
+
+Validation: backend **1412/1412**, ticket browser **7/7** (real React application,
+synthetic data; desktop/mobile, permissions, legacy links, beneficiaries, recovery
+errors and stale responses), frontend typecheck/build. Ten exact candidate SQL
+views passed aggregate-only reads on actual UAT: ACTIVE/OUTSTANDING222 each,
+8015.400tons available, warning34 = past19 + today1 + near14; pending0, review0,
+history15763. These are observations, not fixed assertions for future dates.
+A test-only COUNT of untyped pending NULL initially failed, corrected by casting
+its aggregate; no app/DB data change was needed. Large SSH stdin checks stalled;
+short-file retry passed and its owned server script was removed.
+No migration, runtime flag, Rebate reset, business document, balance adjustment or
+secondary business write. No production promotion is claimed by these local tests.
+Private aggregate/hash evidence: scratch/ticket-unification-20261124/.
+
+
 **24 November — handover readiness and required business setup reviewed at 18:45 ICT.**
 The timestamp/legacy-backup observations in this subsection describe the 18:45
 baseline. A follow-up candidate below is being rehearsed; it is not yet deployed.

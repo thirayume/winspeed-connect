@@ -30,6 +30,8 @@
     "tests/coupon-beneficiary-audit-atomic.test.js",
     "tests/coupon-expiry-audit-atomic.test.js",
     "tests/coupon-opening-window.test.js",
+    "tests/coupon-unified-list.test.js",
+    "tests/coupon-control-expiry-enforcement.test.js",
     "tests/coupon-reconcile-data-window.test.js",
     "tests/weighing-data-window.test.js",
     "tests/coupon-reservation-audit-atomic.test.js",

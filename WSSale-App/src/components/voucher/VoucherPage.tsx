@@ -1,57 +1,34 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Ticket, RefreshCw, ChevronRight, ChevronLeft, Users, Package, Clock } from 'lucide-react';
-import { fetchVoucherSummary, fetchCouponCustomers, fetchCouponDetail, fetchCouponWorklist } from '../../services/api';
+import { RefreshCw, ChevronRight, ChevronLeft, Users, Package } from 'lucide-react';
+import { fetchVoucherSummary, fetchCouponCustomers, fetchCouponDetail } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
-import type { VoucherSummary, CouponCustomer, CouponRow, CouponWorklistRow } from '../../types';
+import type { VoucherSummary, CouponCustomer, CouponRow } from '../../types';
 
-function getCouponExpiry(c: { DocuDate?: string; ExpireDate?: string; expiryDate?: string; daysLeft?: number }) {
-  if (c.expiryDate) {
-    const days = typeof c.daysLeft === 'number'
-      ? c.daysLeft
-      : Math.ceil((new Date(c.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return { expiryDate: c.expiryDate, daysLeft: days };
-  }
-  if (c.ExpireDate) {
-    const exp = new Date(c.ExpireDate);
-    const days = Math.ceil((exp.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return { expiryDate: exp.toISOString().slice(0, 10), daysLeft: days };
-  }
-  if (c.DocuDate) {
-    const docDate = new Date(c.DocuDate);
-    const exp = new Date(docDate.getTime() + 180 * 24 * 60 * 60 * 1000);
-    const days = Math.ceil((exp.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return { expiryDate: exp.toISOString().slice(0, 10), daysLeft: days };
-  }
-  return { expiryDate: '-', daysLeft: 999 };
+function getCouponExpiry(c: { expiryDate?: string; daysLeft?: number | null }) {
+  return {expiryDate:c.expiryDate||'ไม่ระบุ',daysLeft:typeof c.daysLeft==='number'?c.daysLeft:null};
 }
 
-type MainTab = 'worklist' | 'hierarchy';
 type HierarchyView = 'summary' | 'customer' | 'coupon';
 
 export function VoucherPage() {
   const { user } = useAuthStore();
   const isSales = user?.role === 'SALES';
 
-  const [activeTab, setActiveTab]       = useState<MainTab>('worklist');
-  const [worklist, setWorklist]         = useState<CouponWorklistRow[]>([]);
   const [summary, setSummary]           = useState<VoucherSummary[]>([]);
   const [customers, setCustomers]       = useState<CouponCustomer[]>([]);
   const [coupons, setCoupons]           = useState<CouponRow[]>([]);
   const [loading, setLoading]           = useState(true);
-  const [hierarchyView, setHierarchyView] = useState<HierarchyView>('summary');
+  const [hierarchyView, setHierarchyView] = useState<HierarchyView>(isSales?'customer':'summary');
   const [selEmp, setSelEmp]             = useState<VoucherSummary | null>(null);
   const [selCust, setSelCust]           = useState<CouponCustomer | null>(null);
-  const [expiryFilter, setExpiryFilter] = useState<'ALL' | 'EXPIRING' | 'EXPIRED'>('ALL');
-  const [searchFilter, setSearchFilter] = useState('');
+  const [expiryFilter, setExpiryFilter] = useState<'ALL' | 'EXPIRING' | 'EXPIRED' | 'TODAY'>('ALL');
+  const [loadError,setLoadError]=useState('');
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
-      const [wlData, sumData] = await Promise.all([
-        fetchCouponWorklist().catch(err => { console.error('fetchCouponWorklist error', err); return []; }),
-        fetchVoucherSummary().catch(err => { console.error('fetchVoucherSummary error', err); return []; })
-      ]);
-      setWorklist(wlData);
+      setLoadError('');
+      const sumData=await fetchVoucherSummary();
       setSummary(sumData);
 
       if (isSales && user?.empId) {
@@ -63,11 +40,11 @@ export function VoucherPage() {
           CustCount: 0
         };
         setSelEmp(myEmp);
-        const myCustomers = await fetchCouponCustomers({ empId: Number(user.empId) }).catch(() => []);
+        const myCustomers = await fetchCouponCustomers({ empId: Number(user.empId) });
         setCustomers(myCustomers);
       }
     } catch (e) {
-      console.error(e);
+      console.error(e);setLoadError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่');
     }
     setLoading(false);
   }, [isSales, user]);
@@ -76,22 +53,21 @@ export function VoucherPage() {
 
   async function drillEmp(emp: VoucherSummary) {
     setSelEmp(emp);
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
       setCustomers(await fetchCouponCustomers({ empId: Number(emp.EmpID) }));
       setHierarchyView('customer');
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e);setLoadError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่');setCustomers([]);setCoupons([]); }
     setLoading(false);
   }
 
   async function drillCust(cust: CouponCustomer) {
     setSelCust(cust);
-    setLoading(true);
+    setLoading(true);setLoadError('');
     try {
       setCoupons(await fetchCouponDetail(cust.CustID));
-      setActiveTab('hierarchy');
       setHierarchyView('coupon');
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e);setLoadError('โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่');setCustomers([]);setCoupons([]); }
     setLoading(false);
   }
 
@@ -106,217 +82,24 @@ export function VoucherPage() {
     }
   }
 
+  const visibleCoupons=coupons.filter(c=>expiryFilter==='EXPIRED'?c.daysLeft!=null&&c.daysLeft<0:expiryFilter==='TODAY'?c.daysLeft===0:expiryFilter==='EXPIRING'?c.isExpiringSoon===true:true);
   const totalTon  = summary.reduce((s, r) => s + Number(r.OutstandingTon || 0), 0);
   const totalCust = summary.reduce((s, r) => s + Number(r.CustCount || 0), 0);
 
-  const filteredWorklist = worklist.filter(w => {
-    if (expiryFilter === 'EXPIRED') {
-      if (!w.isExpired && w.daysLeft > 0) return false;
-    } else if (expiryFilter === 'EXPIRING') {
-      if (!w.isExpiringSoon && (w.daysLeft <= 0 || w.daysLeft > 30)) return false;
-    }
-    if (searchFilter) {
-      const q = searchFilter.toLowerCase();
-      const matchNo = (w.couponNo || '').toLowerCase().includes(q);
-      const matchCust = (w.custName || '').toLowerCase().includes(q) || (w.ownerCustCode || '').toLowerCase().includes(q);
-      const matchGood = (w.goodName || '').toLowerCase().includes(q);
-      const matchBen = (w.beneficiaries || []).some(b => (b.beneficiaryCustName || '').toLowerCase().includes(q) || (b.beneficiaryCustCode || '').toLowerCase().includes(q));
-      return matchNo || matchCust || matchGood || matchBen;
-    }
-    return true;
-  });
-
   return (
     <div className="h-full flex flex-col" style={{ background: '#F1EFE8' }}>
-      {/* Header */}
-      <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-200 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="p-4 bg-white border-b flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          {activeTab === 'hierarchy' && hierarchyView !== 'summary' && (
-            <button onClick={goBackHierarchy} className="h-8 w-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-gray-50">
-              <ChevronLeft size={16} />
-            </button>
-          )}
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black flex items-center gap-2 leading-tight" style={{ color: '#0C447C' }}>
-              <Ticket className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-              {activeTab === 'worklist' && 'ตั๋วปุ๋ยคงค้าง (Near-Expiry Worklist)'}
-              {activeTab === 'hierarchy' && hierarchyView === 'summary' && 'Voucher คงค้าง (แยกตามพนักงาน)'}
-              {activeTab === 'hierarchy' && hierarchyView === 'customer' && `ลูกค้าของ ${selEmp?.EmpName}`}
-              {activeTab === 'hierarchy' && hierarchyView === 'coupon'   && `Voucher ของ ${selCust?.CustName}`}
-            </h1>
-            <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">
-              {activeTab === 'worklist' && `พบตั๋วใกล้หมดอายุ/หมดอายุ ${worklist.length} รายการ (อายุมาตรฐาน 90 วัน · หมดอายุแล้วยังใช้ได้ แต่ระบบบันทึกเหตุการณ์ผิดปกติ)`}
-              {activeTab === 'hierarchy' && hierarchyView === 'summary' && 'ยอด Voucher คงค้างจาก Winspeed (WFCoupon) · แยกตามพนักงานขาย'}
-              {activeTab === 'hierarchy' && hierarchyView === 'customer' && `${customers.length} ลูกค้า · คลิกเพื่อดูรายการ voucher`}
-              {activeTab === 'hierarchy' && hierarchyView === 'coupon' && `${coupons.length} ใบคงค้าง`}
-            </p>
-          </div>
+          {hierarchyView!=='summary'&&<button aria-label="ย้อนกลับรายชื่อตามสังกัด" onClick={goBackHierarchy}><ChevronLeft size={18}/></button>}
+          <div><h2 className="font-bold text-[#0C447C]">รายชื่อตามสังกัด</h2><p className="text-xs text-gray-500">ยอดคงเหลือจริงใน WinSpeed ก่อนหักยอดจอง · ดูยอดพร้อมใช้ที่แท็บรายการตั๋ว</p></div>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* Main navigation switch */}
-          <div className="bg-gray-100 p-1 rounded-xl flex items-center gap-1 text-xs font-bold">
-            <button
-              onClick={() => setActiveTab('worklist')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${activeTab === 'worklist' ? 'bg-[#0C447C] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-            >
-              <Clock size={14} /> ตั๋วใกล้หมดอายุ ({worklist.filter(w => w.isExpiringSoon || (w.daysLeft > 0 && w.daysLeft <= 30)).length})
-            </button>
-            <button
-              onClick={() => { setActiveTab('hierarchy'); if (isSales) setHierarchyView('customer'); }}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors ${activeTab === 'hierarchy' ? 'bg-[#0C447C] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-            >
-              <Users size={14} /> รายชื่อตามสังกัด
-            </button>
-          </div>
-
-          <button onClick={load} className="h-9 w-9 flex items-center justify-center rounded-xl border border-gray-200 bg-white hover:bg-gray-50">
-            <RefreshCw size={15} className={loading ? 'animate-spin text-gray-400' : 'text-gray-500'} />
-          </button>
-        </div>
+        <button aria-label="โหลดรายชื่อตามสังกัดใหม่" onClick={()=>{setHierarchyView(isSales?'customer':'summary');setSelCust(null);load();}}><RefreshCw size={18}/></button>
       </div>
-
+      {loadError&&<p role="alert" className="p-4 text-red-700">{loadError}</p>}
       <div className="flex-1 overflow-y-auto p-2 sm:p-6 space-y-3 sm:space-y-5">
 
-        {/* ── WORKLIST TAB (R9-6: FIRST VIEW) ── */}
-        {activeTab === 'worklist' && (
-          <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50/50">
-              <div className="flex items-center gap-2 flex-1">
-                <input
-                  type="text"
-                  placeholder="ค้นหาเลขตั๋ว, เจ้าของ, สมาชิก, สินค้า..."
-                  value={searchFilter}
-                  onChange={e => setSearchFilter(e.target.value)}
-                  className="w-full sm:w-80 px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-1 focus:ring-[#0C447C]"
-                />
-              </div>
-
-              <div className="flex items-center gap-1.5 text-xs">
-                <button
-                  type="button"
-                  onClick={() => setExpiryFilter('ALL')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${expiryFilter === 'ALL' ? 'bg-[#0C447C] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                >
-                  ทั้งหมด ({worklist.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExpiryFilter('EXPIRING')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${expiryFilter === 'EXPIRING' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'}`}
-                >
-                  ใกล้หมดอายุ ({worklist.filter(w => w.isExpiringSoon || (w.daysLeft > 0 && w.daysLeft <= 30)).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExpiryFilter('EXPIRED')}
-                  className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${expiryFilter === 'EXPIRED' ? 'bg-red-600 text-white' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}
-                >
-                  หมดอายุแล้ว ({worklist.filter(w => w.isExpired || w.daysLeft <= 0).length})
-                </button>
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="py-12 flex justify-center"><RefreshCw size={24} className="animate-spin text-gray-300" /></div>
-            ) : filteredWorklist.length === 0 ? (
-              <div className="p-8 text-center text-xs text-gray-400">ไม่พบตั๋วปุ๋ยคงค้างที่ตรงตามเงื่อนไข</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-full">
-                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase whitespace-nowrap">
-                    <tr>
-                      <th className="px-4 py-3 text-left whitespace-nowrap">เลข Voucher</th>
-                      <th className="px-4 py-3 text-left whitespace-nowrap">เจ้าของตั๋ว</th>
-                      <th className="px-4 py-3 text-left whitespace-nowrap">สมาชิกที่ได้รับสิทธิ์</th>
-                      <th className="px-4 py-3 text-left whitespace-nowrap">สินค้า</th>
-                      <th className="px-4 py-3 text-right whitespace-nowrap">คงเหลือ</th>
-                      <th className="px-4 py-3 text-center whitespace-nowrap">วันหมดอายุ</th>
-                      <th className="px-4 py-3 text-center whitespace-nowrap">สถานะอายุ</th>
-                      <th className="px-4 py-3 text-center whitespace-nowrap"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {filteredWorklist.map(w => (
-                      <tr key={w.couponId} className="hover:bg-gray-50/50">
-                        <td className="px-4 py-2.5 font-mono text-xs font-semibold text-[#0C447C] whitespace-nowrap">
-                          {w.couponNo}
-                        </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <div className="font-medium text-gray-800 text-xs">{w.custName}</div>
-                          <div className="text-[10px] text-gray-400 font-mono">
-                            รหัส: {w.ownerCustCode || w.custCode || w.custId}
-                          </div>
-                        </td>
-                        <td className="px-4 py-2.5 max-w-[200px]">
-                          {w.beneficiaries && w.beneficiaries.length > 0 ? (
-                            <div className="space-y-0.5">
-                              {w.beneficiaries.map((b, idx) => {
-                                const benName = b.beneficiaryCustName || (b as any).BeneficiaryCustName || b.beneficiaryCustCode || (b as any).BeneficiaryCustCode || b.beneficiaryCustId || (b as any).BeneficiaryCustId;
-                                const benCode = b.beneficiaryCustCode || (b as any).BeneficiaryCustCode;
-                                return (
-                                  <span key={idx} className="inline-block bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded text-[10px] mr-1 mb-1 font-medium">
-                                    {benName}{benCode && benCode !== benName ? ` (${benCode})` : ''}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-xs">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-gray-700 max-w-[180px] truncate text-xs" title={w.goodName}>
-                          {w.goodName}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-bold text-emerald-700 whitespace-nowrap text-xs">
-                          {Number(w.remaQty).toFixed(2)} ตัน
-                        </td>
-                        <td className="px-4 py-2.5 text-center text-xs text-gray-500 whitespace-nowrap font-mono">
-                          {w.expiryDate}
-                        </td>
-                        <td className="px-4 py-2.5 text-center whitespace-nowrap">
-                          {w.daysLeft <= 0 ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
-                              ⚠️ หมดอายุแล้ว (ยังใช้ได้)
-                            </span>
-                          ) : w.daysLeft <= 30 ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                              ⏳ เหลือ {w.daysLeft} วัน
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
-                              เหลือ {w.daysLeft} วัน
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={() => drillCust({
-                              CustID: String(w.custId),
-                              CustName: w.custName,
-                              EmpID: '',
-                              EmpName: '',
-                              CouponCount: 0,
-                              OutstandingTon: w.remaQty,
-                              OldestDate: w.docuDate
-                            })}
-                            className="px-2 py-1 text-[11px] font-bold text-[#0C447C] bg-blue-50 hover:bg-blue-100 rounded-md border border-blue-200"
-                          >
-                            ดูตั๋วทั้งหมด
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* ── HIERARCHY TAB ── */}
-        {activeTab === 'hierarchy' && hierarchyView === 'summary' && (
+        {hierarchyView === 'summary' && (
           <>
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm p-4 flex items-center gap-3">
@@ -385,7 +168,7 @@ export function VoucherPage() {
         )}
 
         {/* ── CUSTOMER LIST ── */}
-        {activeTab === 'hierarchy' && hierarchyView === 'customer' && (
+        {hierarchyView === 'customer' && (
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100">
               <h2 className="text-sm font-bold text-gray-700">ลูกค้าในสังกัด {selEmp?.EmpName}</h2>
@@ -427,7 +210,7 @@ export function VoucherPage() {
         )}
 
         {/* ── COUPON DETAIL (WITH MEMBERS / BENEFICIARIES R9-6) ── */}
-        {activeTab === 'hierarchy' && hierarchyView === 'coupon' && (
+        {hierarchyView === 'coupon' && (
           <div className="bg-white rounded-none sm:rounded-2xl border-y sm:border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
@@ -456,6 +239,7 @@ export function VoucherPage() {
                 >
                   หมดอายุแล้ว
                 </button>
+                <button type="button" onClick={()=>setExpiryFilter('TODAY')} className={`px-2.5 py-1 rounded-lg font-medium ${expiryFilter==='TODAY'?'bg-amber-600 text-white':'bg-amber-50 text-amber-800'}`}>หมดอายุวันนี้</button>
               </div>
             </div>
             {loading ? (
@@ -477,18 +261,13 @@ export function VoucherPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {coupons.filter(c => {
-                      const { daysLeft } = getCouponExpiry(c);
-                      if (expiryFilter === 'EXPIRED') return daysLeft <= 0;
-                      if (expiryFilter === 'EXPIRING') return daysLeft > 0 && daysLeft <= 30;
-                      return true;
-                    }).map(c => {
+                    {visibleCoupons.map(c => {
                       const { expiryDate, daysLeft } = getCouponExpiry(c);
                       return (
                         <tr key={c.CouponID} className="hover:bg-gray-50/50">
                           <td className="px-4 py-2.5 font-mono text-xs font-semibold text-[#0C447C] whitespace-nowrap">{c.CouponNo}</td>
-                          <td className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">{c.SONo}</td>
-                          <td className="px-4 py-2.5 text-center text-xs text-gray-400 whitespace-nowrap">{c.DocuDate}</td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-gray-500 whitespace-nowrap">{c.SONo||'ยอดยกมา'}</td>
+                          <td className="px-4 py-2.5 text-center text-xs text-gray-400 whitespace-nowrap">{c.DocuDate||'ยอดยกมา'}</td>
                           <td className="px-4 py-2.5 text-gray-700 max-w-[220px]">
                             <div className="font-medium truncate" title={c.GoodName}>{c.GoodName}</div>
                             {c.beneficiaries && c.beneficiaries.length > 0 && (
@@ -504,9 +283,9 @@ export function VoucherPage() {
                           </td>
                           <td className="px-4 py-2.5 text-center text-xs text-gray-500 whitespace-nowrap font-mono">{expiryDate}</td>
                           <td className="px-4 py-2.5 text-center whitespace-nowrap">
-                            {daysLeft <= 0 ? (
+                            {daysLeft === null ? <span>ไม่ระบุวันหมดอายุ</span> : daysLeft === 0 ? <span className="text-amber-700">หมดอายุวันนี้ (ยังใช้ได้)</span> : daysLeft < 0 ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">หมดอายุแล้ว</span>
-                            ) : daysLeft <= 30 ? (
+                            ) : c.isExpiringSoon ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">ใกล้หมด ({daysLeft} วัน)</span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">เหลือ {daysLeft} วัน</span>
@@ -520,7 +299,7 @@ export function VoucherPage() {
                     <tr>
                       <td colSpan={4} className="px-4 py-2.5 text-right text-xs font-bold text-gray-500 whitespace-nowrap">รวม</td>
                       <td className="px-4 py-2.5 text-right font-bold text-gray-600 whitespace-nowrap">
-                        {coupons.reduce((s,c)=>s+Number(c.GoodQty),0).toLocaleString(undefined,{maximumFractionDigits:2})}
+                        {visibleCoupons.reduce((s,c)=>s+Number(c.GoodQty),0).toLocaleString(undefined,{maximumFractionDigits:2})}
                       </td>
                       <td className="px-4 py-2.5 text-right font-bold text-gray-400 whitespace-nowrap">
                         {coupons.reduce((s,c)=>s+Number(c.RedeemedQty),0).toLocaleString(undefined,{maximumFractionDigits:2})}

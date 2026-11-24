@@ -449,6 +449,7 @@ export const fetchControlTickets = (
     custId?: string;
     includeCompleted?: boolean;
     tab?: string;
+    expiry?: string;
     q?: string;
     page?: number;
     pageSize?: number;
@@ -461,6 +462,7 @@ export const fetchControlTickets = (
     if (params.custId) qs.set('custId', params.custId);
     if (params.includeCompleted) qs.set('includeCompleted', 'true');
     if (params.tab) qs.set('tab', params.tab);
+    if (params.expiry) qs.set('expiry', params.expiry);
     if (params.q) qs.set('q', params.q);
     if (params.page !== undefined) qs.set('page', String(params.page));
     if (params.pageSize !== undefined) qs.set('pageSize', String(params.pageSize));

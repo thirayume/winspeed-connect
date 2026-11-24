@@ -137,6 +137,7 @@ export const AgingPage = () => {
 
   return (
     <div className="h-full flex flex-col gap-4 overflow-hidden">
+      <div className="shrink-0"><h1 className="font-bold text-[#0C447C] text-xl">บิลค้างส่ง</h1><p className="text-xs text-gray-500">ติดตามบิลและสินค้าที่ยังจัดส่งไม่ครบ · การ์ดรวมตามลูกค้าและทะเบียนรถเฉพาะหน้านี้ · ไม่ใช่ยอดตั๋วพร้อมใช้</p></div>
       {/* Header summary */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4 shrink-0">
         <DataSummaryCard
@@ -146,7 +147,7 @@ export const AgingPage = () => {
           colorClass="bg-red-100 text-red-500"
         />
         <DataSummaryCard
-          title="แสดงหน้านี้"
+          title="การ์ดลูกค้า/รถในหน้านี้"
           value={groupedData.length.toLocaleString()}
           icon={<Package size={24} />}
           colorClass="bg-blue-100 text-blue-500"

@@ -11,14 +11,14 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-const FILES = ['services/coupon-service.js', 'routes/rebate.js'];
+const FILES = ['services/coupon-service.js', 'services/control-ticket-list.js'];
 const BAD = /Effective(From|To)\s*[<>]=?\s*GETUTCDATE\(\)/;
 
 test('F-01: shared-coupon effective dates are compared with the Bangkok business date', () => {
   for (const f of FILES) {
     const text = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
     assert.ok(!BAD.test(text), `${f} compares an effective date with UTC now`);
-    assert.match(text, /EffectiveFrom <= CAST\(DATEADD\(hour, 7, GETUTCDATE\(\)\) AS DATE\)/);
+    assert.match(text, /EffectiveFrom\s*<=\s*CAST\(DATEADD\(hour,\s*7,\s*GETUTCDATE\(\)\) AS date\)/i);
   }
 });
 

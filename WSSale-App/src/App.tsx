@@ -1,3 +1,4 @@
+import { ticketMenuAccess } from './utils/ticketNavigation';
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { confirmLeaveEditors } from './utils/unsaved-changes';
 import { AlertTriangle, Boxes, ShoppingCart, Warehouse, ChevronLeft, ChevronRight, Bell, LogOut, Users, LayoutDashboard, Coins, FileCheck, Gift, FileText, LayoutGrid, Database, Clock, ClipboardList, ClipboardCheck, Stamp, BarChart3, ShieldCheck, Activity, ScrollText, Menu, ChevronDown, Settings, Network, Wallet, Truck, Unlock, Ticket } from 'lucide-react';
@@ -31,7 +32,6 @@ const RebatePage = lazy(() => import('./components/rebate/RebatePage').then(m =>
 // ปิดที่นี่ด้วยเพื่อไม่ให้ vite สร้าง chunk ที่ไม่มีใครเรียก
 // ไฟล์ทั้งหมดยังอยู่ครบ · เปิดกลับได้ด้วยการเอาคอมเมนต์ออกทั้งบรรทัดนี้และในเมนู/render
 const RebatePlanPage = lazy(() => import('./components/rebate/RebatePlanPage').then(m => ({ default: m.RebatePlanPage })));
-const VoucherPage = lazy(() => import('./components/voucher/VoucherPage').then(m => ({ default: m.VoucherPage })));
 const ControlTicketPage = lazy(() => import('./components/master/ControlTicketPage').then(m => ({ default: m.ControlTicketPage })));
 const ReportsPage = lazy(() => import('./components/reports/ReportsPage').then(m => ({ default: m.ReportsPage })));
 const WeighingReportsPage = lazy(() => import('./components/reports/WeighingReportsPage').then(m => ({ default: m.WeighingReportsPage })));
@@ -75,7 +75,6 @@ const NAV_GROUPS: NavGroup[] = [
     color: 'text-indigo-600',
     items: [
       { key: 'sales',      label: 'ขาย',         sub: 'POS · สั่งขายปุ๋ย',     icon: ShoppingCart, roles: ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'] },
-      { key: 'voucher',    label: 'Voucher คงค้าง', sub: 'ยอดคงค้าง · วันหมดอายุตั๋ว', icon: Ticket, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'SALES', 'COUNTER_SALES'] },
       { key: 'edit-requests', label: 'คำขอแก้ไขและอนุมัติ', sub: 'แก้ไข · ราคา · ทริปหลายลูกค้า', icon: ClipboardCheck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'APPROVER', 'SALES', 'COUNTER_SALES'] },
       { key: 'quotation',  label: 'เสนอราคา',    sub: 'ใบเสนอราคา (102) → บิล',      icon: FileText, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'SALES', 'COUNTER_SALES'] },
     ],
@@ -88,9 +87,9 @@ const NAV_GROUPS: NavGroup[] = [
       { key: 'store',      label: 'คลัง',        sub: 'รับสินค้า · ตรวจจ่าย · จัดโหลด', icon: Warehouse, badge: true, roles: ['C_LEVEL', 'ADMIN', 'WAREHOUSE', 'COUNTER_SALES'] },
       { key: 'stock', label: 'สต๊อกปฏิบัติการ', sub: 'ยอดคงเหลือ · พร้อมจ่าย', icon: Boxes, roles: STOCK_ROLES },
       { key: 'papertrail', label: 'Paper Trail', sub: 'Kanban เอกสาร 4 สี',   icon: LayoutGrid, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE', 'COUNTER_SALES', 'MANAGER'] },
-      { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'คงเหลือ · ตัดจ่ายตั๋วคุม', icon: Stamp, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
+      { key: 'control-ticket', label: 'ชุดตั๋วคุม', sub: 'พร้อมใช้ · เตือนอายุ · ตามสังกัด', icon: Stamp, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
       { key: 'scale-reports', label: 'สถานะการชั่งรถ', sub: 'ชั่งสด WGHD · เข้า-ออก', icon: Truck, roles: ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING', 'WAREHOUSE', 'WEIGHBRIDGE'] },
-      { key: 'aging',      label: 'ตั๋วคงค้าง',   sub: 'บิลคงค้าง · อายุตั๋ว', icon: Clock, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
+      { key: 'aging',      label: 'บิลค้างส่ง',   sub: 'ติดตามจัดส่ง · อายุบิล', icon: Clock, roles: ['C_LEVEL', 'ADMIN', 'ACCOUNTING', 'WAREHOUSE', 'SALES'] },
     ],
   },
   {
@@ -335,8 +334,9 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
   const hasPricingOrCost = capActions
     ? ['pricing.view', 'pricing.manage', 'cost.view', 'cost.manage'].some(a => capActions.includes(a))
     : ['C_LEVEL', 'ADMIN', 'MANAGER', 'ACCOUNTING'].includes(role || '');
+  const ticketMenus=ticketMenuAccess(capMenus,role);
   const getVisibleItems = (items: NavItem[]) =>
-    items.filter(n => capMenus ? capMenus.includes(n.key) : (!n.roles || (role && n.roles.includes(role))));
+    items.filter(n => n.key==='control-ticket' ? ticketMenus.control||ticketMenus.hierarchy : capMenus ? capMenus.includes(n.key) : (!n.roles || (role && n.roles.includes(role))));
   const displayNavLabel = (n: NavItem) => {
     if (n.key === 'master' && !hasMasterGeneral && hasPricingOrCost) {
       return { label: 'ต้นทุน & ราคาขาย', sub: 'Pricelist · Costlist · WinSpeed' };
@@ -345,7 +345,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
     if (user?.capabilities?.disabledMenus?.includes(n.key)) return { label: n.label, sub: 'ปิดอยู่สำหรับผู้ใช้อื่น' };
     return { label: n.label, sub: n.sub };
   };
-  const current = ALL_NAV.find(n => n.key === activePortal);
+  const current = ALL_NAV.find(n => n.key === (activePortal==='voucher'?'control-ticket':activePortal));
   const currentText = current ? displayNavLabel(current) : null;
   const portalLabel = currentText ? `${currentText.label} — ${currentText.sub}` : '';
   const toggleGroup = (groupLabel: string) => {
@@ -598,8 +598,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
                 {activePortal === 'papertrail' && <PaperTrailPage />}
                 {activePortal === 'rebate'     && <RebatePage />}
                 {activePortal === 'rebate-plan' && <RebatePlanPage />}
-                {activePortal === 'control-ticket' && <ControlTicketPage />}
-                {activePortal === 'voucher'    && <VoucherPage />}
+                {(activePortal === 'control-ticket'||activePortal==='voucher') && (ticketMenus.control||ticketMenus.hierarchy) && <ControlTicketPage key={activePortal} warningsOnly={!ticketMenus.control} allowHierarchy={ticketMenus.hierarchy} initialHierarchy={activePortal==='voucher'}/>}
                 {activePortal === 'reports'    && <ReportsPage />}
                 {activePortal === 'scale-reports' && <WeighingReportsPage />}
                 {/* ปิดไว้ 03/09/2569 — IncentiveReport */}

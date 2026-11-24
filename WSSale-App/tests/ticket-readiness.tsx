@@ -1,0 +1,12 @@
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import '../src/index.css';
+import App from '../src/App';
+import {useAuthStore} from '../src/store/auth-store';
+import {useAppStore} from '../src/store/app-store';
+const params=new URLSearchParams(location.search);
+const user={id:1,username:'fixture',displayName:'QA fixture',role:params.get('role')||'ADMIN',isActive:true,capabilities:{menus:(params.get('menus')||'control-ticket,voucher,aging').split(','),actions:[]}};
+useAuthStore.setState({user:user as any,isAuthenticated:true,token:'fixture'});
+useAppStore.setState({activePortal:(params.get('portal')||'control-ticket') as any});
+(window as any).ticketFixtureUser=user;
+createRoot(document.getElementById('root')!).render(<App/>);
