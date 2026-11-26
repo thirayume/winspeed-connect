@@ -7,7 +7,7 @@ const { getVisibleScope, canViewSalesUser } = require('../services/visible-scope
 
 const mapping = { primaryEffectiveUserId: 8, primaryActorUserId: 17,
   businessEffectiveUserId: 34, businessActorUserId: 47 };
-const user = { sub: 8, id: 8, actorSub: 17, role: 'SALES', identityMapping: mapping };
+const user = { sub: 8, id: 8, actorSub: 17, role: 'SALES', actorRole:'ADMIN', identityMapping: mapping };
 
 test('business ID helpers keep normal identity and translate both Access As parties', () => {
   assert.deepEqual(businessIds({ sub: 8, actorSub: 17 }), { effective: 8, actor: 17 });
@@ -38,4 +38,9 @@ test('scope and own-sales checks use the target account, not a colliding primary
   assert.deepEqual(calls, [34]);
   assert.equal(await canViewSalesUser(user, 34, query), true);
   assert.equal(await canViewSalesUser(user, 8, query), false);
+});
+
+test('mapped peers cannot inherit each other organization records under Access As',async()=>{
+ const scope=await getVisibleScope({...user,actorRole:'SALES'},async(_text,inputs)=>({recordset:[{Id:inputs.id.value,EmpId:String(inputs.id.value),PositionCode:null}]}));
+ assert.deepEqual(scope.userIds,[]);assert.deepEqual(scope.empIds,[]);
 });

@@ -11,6 +11,18 @@ const state = { epoch: null, fenceError: null, planError: null, applyError: null
 const shipmentEpoch = { environment: 'uat', generation: 1, resetId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
   lastResetAtUtc: new Date('2026-11-14T02:00:00Z'), manifestDigest: 'a'.repeat(64), uninitialized: false, fenced: true };
 
+// Install before loading scope/fence services: they capture their DB dependency.
+const db = h.installDbStub(({ text }) => {
+  if (/FROM dbo\.EMCust/.test(text)) return [{ CustID: 1078, CustCode: '0330005', CustName: 'ลูกค้า', SaleAreaID: 1 }];
+  if (/SaleAreaCode/.test(text)) return [{ SaleAreaCode: '03300101' }];
+  if (/FROM wf\.PolicySnapshot/.test(text)) return [{ SnapshotId: 1, RevisionNumber: 1, CustomerRatio: 100, CompanyRatio: 0 }];
+  if (/SELECT \* FROM wf\.RebateClaim WITH \(UPDLOCK, HOLDLOCK\) WHERE IdempotencyKey/.test(text)) return state.replay ? [state.replay] : [];
+  if (/COUNT\(\*\) AS TotalLines/.test(text)) return [{ TotalLines: 1, VisibleLines: state.visible }];
+  if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(text)) return [{ Id: 12, EmpId: 12, PositionCode: null }];
+  if (/INSERT INTO wf\.RebateClaim \(/.test(text)) return [{ Id: 77, Status: 'TIER2_PENDING' }];
+  return [];
+}, { activeUserIds: h.TEST_USERS });
+
 const fencePath = require.resolve('../services/rebate-route-fence');
 const realFence = require(fencePath);
 require.cache[fencePath].exports = { ...realFence,
@@ -29,17 +41,6 @@ const realClaim = require(claimPath);
 require.cache[claimPath].exports = { ...realClaim,
   planShipmentClaim: async (_query, epoch, user, input) => { state.planned.push({ epoch, user, input }); if (state.planError) throw state.planError; return plan; },
   applyShipmentClaimPlan: async (_query, epoch, input) => { state.applied.push({ epoch, input }); if (state.applyError) throw state.applyError; return []; } };
-
-const db = h.installDbStub(({ text }) => {
-  if (/FROM dbo\.EMCust/.test(text)) return [{ CustID: 1078, CustCode: '0330005', CustName: 'ลูกค้า', SaleAreaID: 1 }];
-  if (/SaleAreaCode/.test(text)) return [{ SaleAreaCode: '03300101' }];
-  if (/FROM wf\.PolicySnapshot/.test(text)) return [{ SnapshotId: 1, RevisionNumber: 1, CustomerRatio: 100, CompanyRatio: 0 }];
-  if (/SELECT \* FROM wf\.RebateClaim WITH \(UPDLOCK, HOLDLOCK\) WHERE IdempotencyKey/.test(text)) return state.replay ? [state.replay] : [];
-  if (/COUNT\(\*\) AS TotalLines/.test(text)) return [{ TotalLines: 1, VisibleLines: state.visible }];
-  if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(text)) return [{ Id: 12, EmpId: 12, PositionCode: null }];
-  if (/INSERT INTO wf\.RebateClaim \(/.test(text)) return [{ Id: 77, Status: 'TIER2_PENDING' }];
-  return [];
-}, { activeUserIds: h.TEST_USERS });
 
 let app;
 test.before(async () => { app = await h.startApp([['/api/rebate', '../../routes/rebate']]); });

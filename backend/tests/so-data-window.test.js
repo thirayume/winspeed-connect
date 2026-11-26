@@ -298,7 +298,7 @@ test('unlock request list and resolve apply the UTC boundary before any mutation
   assert.equal(calls.some(c => /\bUPDATE\b/.test(c.text)), false);
 });
 
-test('unlock history and suggestions honor cutoff and intersect Access As scopes', async () => {
+test('unlock history and suggestions honor cutoff and deny disjoint Access As scopes', async () => {
   date = '2026-01-01';
   const delegated = { sub:2, role:'MANAGER', actorSub:10, actorRole:'MANAGER' };
   let before = db.calls.length;
@@ -306,16 +306,16 @@ test('unlock history and suggestions honor cutoff and intersect Access As scopes
   assert.equal(reasons.status, 200);
   let statement = db.calls.slice(before).find(c => /SELECT DISTINCT TOP 20 r\.Reason/.test(c.text));
   assert.ok(statement); assert.match(statement.text, /r\.RequestedAt >= @globalStartUtc/);
-  assert.match(statement.text, /r\.RequesterId IN \(@reasonEffectiveU0\)/);
+  assert.match(statement.text, /AND 1=0 AND/);
   assert.match(statement.text, /r\.RequesterId IN \(@reasonActorU0\)/);
   assert.equal(statement.inputs.globalStartUtc.toISOString(), '2025-12-31T17:00:00.000Z');
-  assert.equal(statement.inputs.reasonEffectiveU0, 2); assert.equal(statement.inputs.reasonActorU0, 10);
+  assert.equal(statement.inputs.reasonEffectiveU0, undefined); assert.equal(statement.inputs.reasonActorU0, 10);
   before = db.calls.length;
   const listing = await app.call('GET', '/api/so/unlock-requests', { user: delegated });
   assert.equal(listing.status, 200);
   statement = db.calls.slice(before).find(c => /FROM wf\.UnlockRequest r/.test(c.text));
-  assert.match(statement.text, /r\.RequesterId IN \(@urU0\)/); assert.match(statement.text, /r\.RequesterId IN \(@actorUrU0\)/);
-  assert.equal(statement.inputs.urU0, 2); assert.equal(statement.inputs.actorUrU0, 10);
+  assert.match(statement.text, /AND 1=0/); assert.match(statement.text, /r\.RequesterId IN \(@actorUrU0\)/);
+  assert.equal(statement.inputs.urU0, undefined); assert.equal(statement.inputs.actorUrU0, 10);
   unavailable = true;
   try { assert.equal((await app.call('GET', '/api/so/unlock-reasons?type=EDIT', {user:admin})).status, 500); }
   finally { unavailable = false; }

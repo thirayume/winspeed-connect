@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const h = require('./helpers/route-harness.cjs');
 let currentRequest = false;
 const db = h.installDbStub(({ text }) => {
+  if(/HasBorrow/.test(text)&&/FROM wf.AppUser u WITH/.test(text))return [{Id:12,IsActive:1,MustChangePassword:0,HasBorrow:1,HasAdmin:1,CanManage:1}];
   if (/SELECT RequesterId, LenderId, Status FROM wf\.GiveawayBorrowRequest/.test(text)) {
     return currentRequest ? [{ RequesterId: 19, LenderId: 12, Status: 'PENDING' }] : [];
   }
