@@ -91,6 +91,7 @@ export function UserEditor({
       if (user.Id)
         await updateUser(user.Id, {
           ...shared,
+          expectedEmpId:user.EmpId||null,
           ...(canRoles && changed
             ? { roleCodes: codes, expectedRoleCodes: original }
             : {}),

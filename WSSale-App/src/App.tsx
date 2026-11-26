@@ -11,6 +11,8 @@ import type { AdminUser, UserRole } from './types';
 import LoginPage from './pages/LoginPage';
 import ForcePasswordChange from './components/auth/ForcePasswordChange';
 import { DatabaseSwitcher } from './components/common/DatabaseSwitcher';
+import {OrganizationScopeSelector} from './components/common/OrganizationScopeSelector';
+import {useOrgScopeStore} from './store/org-scope-store';
 import { useAppStore } from './store/app-store';
 import { GlobalLoader } from './components/common/GlobalLoader';
 import { MobileDrawer } from './components/common/MobileDrawer';
@@ -204,6 +206,7 @@ function App() {
 }
 
 function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAuthStore.getState>['user']>; logout: () => void }) {
+  const orgBranch=useOrgScopeStore(s=>s.branch);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     'ภาพรวม': true,
@@ -264,7 +267,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
       } catch (e) { console.error('Fetch approvals failed', e); }
     };
     fetchReqs();
-  }, [canReviewUnlocks, canApproveGiveaways, setUnlockRequests, setPendingGiveaways]);
+  }, [canReviewUnlocks, canApproveGiveaways, setUnlockRequests, setPendingGiveaways,orgBranch]);
 
   useSocketEvent('so_updated', async () => {
     if (!canReviewUnlocks) return;
@@ -479,6 +482,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
           <div className="hidden text-sm text-muted-foreground md:block">{portalLabel}</div>
           <div className="flex items-center gap-3">
             <DatabaseSwitcher />
+            <OrganizationScopeSelector />
             <button className="relative rounded-lg p-2 text-muted-foreground hover:bg-accent transition-colors" onClick={() => navigate('store')} title="แจ้งเตือน">
               <Bell className="h-5 w-5" />
             </button>
@@ -580,7 +584,7 @@ function AppShell({ user, logout }: { user: NonNullable<ReturnType<typeof useAut
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-hidden min-w-0 max-w-full flex flex-col">
+        <main key={orgBranch} className="flex-1 overflow-hidden min-w-0 max-w-full flex flex-col">
           {/* แถบเตือนรหัสผ่านถูกถอดออก — ผู้ใช้ที่ต้องเปลี่ยนรหัสไม่ได้เข้ามาถึงหน้านี้แล้ว
               เพราะถูกพาไปหน้าบังคับเปลี่ยนรหัส (components/auth/ForcePasswordChange.tsx) ตั้งแต่ล็อกอิน */}
           <Suspense fallback={<PageFallback />}>

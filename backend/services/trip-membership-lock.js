@@ -22,13 +22,19 @@ async function lockTripRow(tx, tripId) {
 }
 
 /** Call before a bill is written with this trip. Refuses a missing or deleted trip. */
-async function lockTripForMembership(tx, tripId) {
+async function lockTripForMembership(tx, tripId,user=null) {
   if (tripId == null || tripId === '') return null;
   if (!tripIdOf(tripId)) throw conflict('TRIP_NOT_FOUND', 'ไม่พบเที่ยวรถที่เลือก กรุณาเลือกเที่ยวรถใหม่');
   const row = await lockTripRow(tx, tripId);
   if (!row) throw conflict('TRIP_NOT_FOUND', 'ไม่พบเที่ยวรถที่เลือก กรุณาเลือกเที่ยวรถใหม่');
   if (String(row.Status || '').trim().toUpperCase() === 'DELETED')
     throw conflict('TRIP_DELETED', 'เที่ยวรถนี้ถูกลบแล้ว กรุณาโหลดข้อมูลใหม่แล้วเลือกเที่ยวรถอีกครั้ง');
+  if(user){
+    const q=async(text,inputs={})=>{const request=tx.request();for(const [k,v]of Object.entries(inputs))request.input(k,v.type,v.value);return request.query(text);};
+    const scope=await require('./trip-record-scope').tripScopeSql(user,'t',q);
+    const visible=(await q(`SELECT 1 AS ok FROM wf.SalesTrip t WHERE t.TripId=@membershipTripId AND ${scope.sql}`,{membershipTripId:{type:sql.Int,value:tripIdOf(tripId)},...scope.inputs})).recordset?.[0];
+    if(!visible)throw Object.assign(Error('ไม่พบเที่ยวรถในสายงานที่มีสิทธิ์'),{status:404,code:'TRIP_NOT_FOUND'});
+  }
   return row;
 }
 
@@ -52,9 +58,10 @@ async function countActiveTripBills(tx, tripId) {
  * Marks the trip deleted only if no bill is attached, under the membership lock.
  * Returns { deleted, found, activeBills }.
  */
-async function deleteTripIfEmpty(tx, tripId) {
+async function deleteTripIfEmpty(tx, tripId,user=null) {
   const row = await lockTripRow(tx, tripId);
   if (!row || String(row.Status || '').trim().toUpperCase() === 'DELETED') return { deleted: false, found: false, activeBills: 0 };
+  if(user)await require('./trip-record-scope').assertTripScopeInTransaction(tx,user,tripId);
   const activeBills = await countActiveTripBills(tx, tripId);
   const previousStatus = String(row.Status || '').trim();
   if (activeBills > 0) return { deleted: false, found: true, activeBills, previousStatus };

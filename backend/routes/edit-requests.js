@@ -900,6 +900,11 @@ async function requireTripApprovalInScope(req, res, next) {
     if (!r) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
 
     for (const [current, suffix] of [[scope, 'effective'], [actorScope, 'actor']]) {
+      if(!current.all){
+        const foreign=scopeFilter(current,{userCol:'m.SalesUserId',prefix:'tripApprovalOutside_'+suffix});
+        const outside=(await wfQuery(`SELECT TOP 1 1 AS ForeignMember FROM wf.v_TripMember m WHERE m.TripId=@tid AND CASE WHEN ${foreign.sql} THEN 0 ELSE 1 END=1`,{tid:{type:sql.Int,value:Number(r.TripId)},...foreign.inputs})).recordset?.[0];
+        if(outside)return res.status(404).json({message:'ไม่พบคำขออนุมัติทริปนี้'});
+      }
       if (inScope(current, { userId: r.RequestedBy, extraUserIds: [r.TripCreatedBy] })) continue;
       const memberFilter = scopeFilter(current, { userCol: 'm.SalesUserId', prefix: `tm_${suffix}` });
       const memberHit = (await wfQuery(`
@@ -934,6 +939,7 @@ router.get('/trip-approvals', async (req, res) => {
       const byTripCreator = scopeFilter(current, { userCol: 'st.CreatedBy', prefix: `tac_${suffix}` });
       const byMember = scopeFilter(current, { userCol: 'm.SalesUserId', prefix: `tam_${suffix}` });
       where += ` AND (${byReq.sql} OR ${byTripCreator.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = a.TripId AND ${byMember.sql}))`;
+      where += ` AND NOT EXISTS(SELECT 1 FROM wf.v_TripMember m WHERE m.TripId=a.TripId AND CASE WHEN ${byMember.sql} THEN 0 ELSE 1 END=1)`;
       Object.assign(inputs, byReq.inputs, byTripCreator.inputs, byMember.inputs);
     }
 

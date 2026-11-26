@@ -11,8 +11,9 @@ const db=h.installDbStub(({text,inputs})=>{
   if(text.includes('AS NativeRemainingQty'))return [{NativeRemainingQty:5,ActiveRemainingQty:1,InvalidReservations:0}];
   if(text.includes('SELECT Id, EmpId, PositionCode FROM wf.AppUser')){
     if(scopeFailure)throw Error('SCOPE_UNAVAILABLE');
-    return [{Id:Number(inputs.id),EmpId:Number(inputs.id)+1000,PositionCode:null}];
+    return require('./helpers/ownership-hierarchy.cjs').ownershipHierarchy(text,inputs);
   }
+  const hierarchy=require('./helpers/ownership-hierarchy.cjs').ownershipHierarchy(text,inputs);if(hierarchy)return hierarchy;
   if(text.includes('COL_LENGTH'))return [{hasConsumedQty:1,hasTable:1}];
   if(text.includes('FROM dbo.WFCoupon c WITH (UPDLOCK, ROWLOCK)'))return [{CouponID:42,CouponNo:'C-TEST',GoodID:3,NativeRemaQty:5,OwnerCustId:'123'}];
   if(text.includes('FROM dbo.EMCust beneficiary'))return beneficiaryVisible?[{ok:1}]:[];
@@ -43,8 +44,8 @@ test('read-only list intersects effective and actor scope without pre-settlement
   assert.equal(db.calls.some(c=>c.text.includes('SELECT DISTINCT c.CouponID')),false);
   assert.equal(db.calls.some(c=>c.kind==='tx'),false);
   for(const q of [list]){
-    assert.ok(q);assert.match(q.text,/couponOwnerExt\.SalesUserId IN \(@couponScope0U0\)/);
-    assert.match(q.text,/couponOwnerExt\.SalesUserId IN \(@couponScope1U0\)/);
+    assert.ok(q);assert.match(q.text,/couponOwnerExt\.SalesUserId IN \(@couponScope0U0(?:, @couponScope0U1)?\)/);
+    assert.match(q.text,/couponOwnerExt\.SalesUserId IN \(@couponScope1U0(?:, @couponScope1U1)?\)/);
     assert.equal(q.inputs.couponScope0U0,34);assert.equal(q.inputs.couponScope1U0,47);
     assert.equal(q.inputs.couponScope0E0,'1034');assert.equal(q.inputs.couponScope1E0,'1047');
   }

@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from 'react';
 import {req} from '../../services/api';
 import {useCan, useFeature} from '../../utils/capabilities';
 import {useAuthStore} from '../../store/auth-store';
+import {Native116RecoveryPanel} from './Native116RecoveryPanel';
 type Line={couponId:number;couponNo?:string;before:string;after:string;nativeBefore:string};
 type Preview={fingerprint:string;registered:boolean;opening:boolean;plan:{lines:Line[]};data?:{docDate:string;receiver:string;plate:string}};
 type Item={PermitId:string;CustId:number;DocuNo:string|null;State:string;Operation:string;opening:boolean};
@@ -98,5 +99,6 @@ export function CouponBridgeQueue(){
     {review.lines.map(l=><p key={l.couponNo}>{l.couponNo} · {l.beforeQty} → {l.afterQty} ตัน</p>)}</>}
   </div>)}
   {notice&&<p role="status" className="mt-2">{notice}</p>}
+  <Native116RecoveryPanel/>
  </section>;
 }

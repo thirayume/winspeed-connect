@@ -8,6 +8,7 @@ import type { AdminUser, Employee } from '../../types';
 import type { RoleProfile } from './RoleManagementPage';
 import { BatchUsersPanel } from './BatchUsersPanel';
 import { UserEditor } from './UserEditor';
+import {NativeEmployeeEditor} from './NativeEmployeeEditor';
 
 import { useAuthStore } from '../../store/auth-store';
 
@@ -81,7 +82,7 @@ export const AdminUsersPage = ({
   async function assignEmp(user: AdminUser, empId: string) {
     setSavingId(user.Id);
     try {
-      await updateUser(user.Id, { empId: empId || null });
+      await updateUser(user.Id, { empId: empId || null,expectedEmpId:user.EmpId||null });
       setUsers(prev => prev.map(u => u.Id === user.Id
         ? { ...u, EmpId: empId || null, EmpCode: employees.find(e => e.EmpID === empId)?.EmpCode ?? null, EmpName: employees.find(e => e.EmpID === empId)?.EmpName ?? null }
         : u));
@@ -251,6 +252,8 @@ export const AdminUsersPage = ({
       )}
 
       <div className="flex-1 flex flex-col gap-3.5 overflow-hidden p-3 sm:p-5">
+        {(myRole==='ADMIN'||sessionUser?.roles?.includes('ADMIN'))&&!sessionUser?.isImpersonating&&<NativeEmployeeEditor onSaved={load}/>}
+        <details className="shrink-0 rounded-xl border bg-white p-3 text-sm"><summary className="cursor-pointer font-semibold text-[#0C447C]">พนักงาน WinSpeed ที่ยังไม่ผูกบัญชี ({employees.filter(e=>!users.some(u=>String(u.EmpId)===String(e.EmpID))).length})</summary><p className="my-2 text-xs text-slate-500">ดึงจาก Employee ใน WinSpeed โดยตรง กดรีเฟรชหลังเพิ่มพนักงาน การมี Employee ยังไม่เปิดบัญชีหรือสิทธิ์เข้าสู่ระบบอัตโนมัติ</p><div className="max-h-44 overflow-auto">{employees.filter(e=>!users.some(u=>String(u.EmpId)===String(e.EmpID))).filter(e=>!searchQuery||`${e.EmpCode} ${e.EmpName}`.toLowerCase().includes(searchQuery.toLowerCase())).map(e=><div key={e.EmpID} className="flex items-center justify-between border-t p-2"><span>{e.EmpCode} · {e.EmpName}{!e.IsActive?' (ลาออก)':''}</span><button onClick={()=>setModalUser({EmpId:String(e.EmpID),DisplayName:e.EmpName})} className="text-blue-800 underline">เตรียมบัญชีใหม่</button></div>)}</div></details>
         {/* Summary Cards: Unique UserIds */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3.5 shrink-0">
           <DataSummaryCard

@@ -11,17 +11,18 @@ test.describe('Comprehensive Sales Trip E2E', () => {
     await login(page, 'e2e_sales', 'E2E Sales');
     await openSidebar(page, 'ขาย');
     await page.getByRole('button', { name: 'สร้างบิล' }).click();
-    await page.getByPlaceholder('ค้นหาชื่อลูกค้า...').fill('ทดสอบ');
+    await page.getByPlaceholder('ค้นหารหัสหรือชื่อลูกค้า...').fill('ทดสอบ');
     // ชื่อลูกค้าทดสอบเป็นข้อมูลจริงในฐาน จึงไม่เขียนไว้ในซอร์ส (ที่เก็บนี้เป็นสาธารณะ)
     // ตั้ง E2E_CUSTOMER เพื่อเจาะจงราย · ไม่ตั้งก็ใช้รายแรกที่ค้นเจอจากคำว่า "ทดสอบ"
     const wantedCustomer = process.env.E2E_CUSTOMER;
     const customerOption = wantedCustomer
-      ? page.locator('.max-h-60 .font-bold', { hasText: wantedCustomer })
-      : page.locator('.max-h-60 .font-bold').first();
+      ? page.locator('.max-h-48 .font-bold', { hasText: wantedCustomer })
+      : page.locator('.max-h-48 .font-bold').first();
     await expect(customerOption).toHaveCount(1);
     await customerOption.click();
-    await page.getByPlaceholder('เช่น กจ70-4088').fill(tripPlate);
-    await page.getByRole('button', { name: 'ยืนยันและเริ่มจัดออร์เดอร์' }).click();
+    await page.getByTestId('btn-customer-truck-picker').click();
+    await page.getByPlaceholder('เช่น 70-1234 กทม.').fill(tripPlate);
+    await page.getByRole('button', { name: 'ใช้คันนี้' }).click();
 
     const products = page.locator('.grid.grid-cols-2 button, .grid.grid-cols-3 button, .grid.grid-cols-4 button');
     await expect.poll(() => products.count(), { timeout: 10_000 }).toBeGreaterThan(1);
@@ -63,9 +64,9 @@ test.describe('Comprehensive Sales Trip E2E', () => {
       const response = await api<any>(page, `/so/${encodeURIComponent(String(order.id))}/confirm`, {
         method: 'PATCH',
         data: {},
-        expectedStatuses: [400],
+        expectedStatuses: [409],
       });
-      expect(response.body.message).toMatch(/ตรวจซ้ำ/);
+      expect(response.body.code).toBe('BILL_IN_ACTIVE_TRIP');
       gates.push({ id: order.id, message: response.body.message });
     }
 

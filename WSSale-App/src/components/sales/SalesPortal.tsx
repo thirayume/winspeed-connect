@@ -12,7 +12,6 @@ import { useSocketEvent } from '../../hooks/useSocket';
 import './SOStatusBadge';
 import { CreateSODialog } from './CreateSODialog';
 import './SODetailsPanel';
-import { TripSetupModal } from './TripSetupModal';
 import { TripSummaryModal } from './TripSummaryModal';
 import { SaleTripManager } from './SaleTripManager';
 import { useTripStore } from '../../store/trip-store';
@@ -43,7 +42,7 @@ export const SalesPortal = () => {
   const [returnToTripFromSoId, setReturnToTripFromSoId] = useState<string | null>(null);
   const [returnToTripKey, setReturnToTripKey] = useState<string | null>(null);
   const [shouldOpenActiveTripSummary, setShouldOpenActiveTripSummary] = useState(false);
-  
+
   const [customersMap, setCustomersMap] = useState<Record<string, string>>({});
   const [custCodeMap, setCustCodeMap]   = useState<Record<string, string>>({});
   const [dateFrom, setDateFrom] = useState('');
@@ -55,8 +54,7 @@ export const SalesPortal = () => {
 
   const { activeTrip, setTrip, clearTrip } = useTripStore();
   const [activeOrders, setActiveOrders] = useState<SalesOrder[]>([]);
-  const [activeLoading, setActiveLoading] = useState(false);
-  const [isTripSetupOpen, setIsTripSetupOpen] = useState(false);
+  const [, setActiveLoading] = useState(false);
 
   const [page, setPage]               = useState(1);
   const [limit, setLimit]              = usePageSize('sales-orders', 20, SALES_PAGE_SIZES);
@@ -64,7 +62,9 @@ export const SalesPortal = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SOStatus | ''>('');
-  
+  const [sortBy,setSortBy]=useState<'docuDate'|'docuNo'|'docuType'|'status'|'deliveryDate'>('docuDate');
+  const [sortDirection,setSortDirection]=useState<'asc'|'desc'>('desc');
+
   const [viewingTrip, setViewingTrip] = useState<any>(null);
 
   const unlockRequests  = useErpStore(s => s.unlockRequests);
@@ -113,6 +113,7 @@ export const SalesPortal = () => {
           dateTo: dateTo || undefined,
           page,
           limit,
+          sortBy,sortDirection,
         }),
         // Trip membership is required to group orders safely. Do not silently
         // present an empty board when that request was denied or failed.
@@ -157,10 +158,10 @@ export const SalesPortal = () => {
           : 'โหลดรายการขายหรือเที่ยวรถไม่สำเร็จ กรุณาลองใหม่');
     }
     setLoading(false);
-  }, [page, limit, debouncedSearch, statusFilter, dateFrom, dateTo, setUnlockRequests]);
+  }, [page, limit, debouncedSearch, statusFilter, dateFrom, dateTo,sortBy,sortDirection, setUnlockRequests]);
 
   useEffect(() => { loadData(); }, [loadData]);
-  
+
   useEffect(() => {
     fetchCustomers().then(custs => {
       const map: Record<string, string> = {};
@@ -210,7 +211,7 @@ export const SalesPortal = () => {
       const dateRaw = o.deliveryDate ? o.deliveryDate.split('T')[0] : '9999-12-31';
       const dateDisplay = o.deliveryDate ? formatThaiDate(o.deliveryDate) : 'ไม่ระบุวันรับ';
       const truck = o.truckPlate || 'ไม่ระบุทะเบียนรถ';
-      
+
       // P1 Finding 2: จัดกลุ่มตาม tripId จริงเป็นหลักเมื่อมี tripId เพื่อคง identity เดียวกันตลอด workflow
       const tripId = o.tripId;
       const tripCode = o.tripCode;
@@ -245,11 +246,7 @@ export const SalesPortal = () => {
         ? Array.from(custGroups.values())[0]
         : `${custGroups.size} ลูกค้า`;
     }
-    const sorted = Array.from(map.values()).sort((a, b) => {
-      const dateA = a.orders[0]?.deliveryDate || a.orders[0]?.createdAt || '';
-      const dateB = b.orders[0]?.deliveryDate || b.orders[0]?.createdAt || '';
-      return dateB.localeCompare(dateA);
-    });
+    const sorted = Array.from(map.values()); // preserve the server's full-page document order
     return sorted;
   }, [orders, customersMap, custCodeMap]);
   // Handle Jump to SO
@@ -336,9 +333,9 @@ export const SalesPortal = () => {
       const matchDate = soDate === activeTrip.deliveryDate;
       return (so.status === 'DRAFT' || !so.status) && matchTruck && matchDate;
     });
-    
+
     if (tripOrders.length === 0) return null;
-    
+
     const totalAmt = tripOrders.reduce((s, l) => s + (l.lines || []).reduce((ss, ll) => ss + (ll.qtyTon * ll.pricePerTon), 0), 0);
     const totalTon = tripOrders.reduce((s, l) => s + (l.lines || []).reduce((ss, ll) => ss + (ll.isGiveaway ? 0 : ll.qtyTon), 0), 0);
     const custIds = Array.from(new Set(tripOrders.map(o => String(o.custId || o.custName || '')).filter(Boolean)));
@@ -357,25 +354,7 @@ export const SalesPortal = () => {
     };
   }, [activeTrip, orders, activeOrders]);
 
-  const handleConfirmTrip = () => {
-    if (activeLoading) return;
-    if (!activeTripGroup) {
-      void appAlert('ไม่พบบิลในทริปนี้ กรุณาเพิ่มบิลก่อนยืนยัน', 'warning');
-      return;
-    }
-    // เปิด TripSummaryModal เพื่อยืนยันผ่าน atomic confirmTrip route (POST /api/trips/:id/confirm)
-    // ปิด legacy confirmation bypass ที่เคยใช้ Promise.all(confirmSO)
-    setViewingTrip(activeTripGroup);
-  };
-
-  const displayGroupedOrders = useMemo(() => {
-    if (!activeTripGroup) return groupedOrders;
-    const activeIds = new Set(activeTripGroup.orders.map(o => o.id));
-    return groupedOrders.map(g => ({
-      ...g,
-      orders: g.orders.filter(o => !activeIds.has(o.id))
-    })).filter(g => g.orders.length > 0);
-  }, [groupedOrders, activeTripGroup]);
+  const displayGroupedOrders = groupedOrders;
 
   useEffect(() => {
     if (shouldOpenActiveTripSummary && !loading && activeTripGroup) {
@@ -436,7 +415,7 @@ export const SalesPortal = () => {
                 if (!activeTripGroup && activeTrip) {
                   clearTrip();
                 }
-                setIsTripSetupOpen(true);
+                setIsCreating(true);
               }}
               className="h-10 px-5 flex items-center gap-2 rounded-xl text-white text-sm font-semibold hover:bg-blue-800 transition-colors shadow-sm"
               style={{ background: '#0C447C' }}
@@ -449,11 +428,11 @@ export const SalesPortal = () => {
 
       <div className="flex-1 flex overflow-hidden">
         {isCreating || editingSoId ? (
-          <CreateSODialog 
+          <CreateSODialog
              isOpen={editingSoId ? can('so.edit') : isCreating && can('so.create')}
              editSoId={editingSoId || undefined}
-             onClose={() => { setIsCreating(false); setEditingSoId(null); }} 
-             onCreated={() => { loadData(); setIsCreating(false); setEditingSoId(null); setShouldOpenActiveTripSummary(true); }} 
+             onClose={() => { setIsCreating(false); setEditingSoId(null); clearTrip(); }}
+             onCreated={() => { loadData(); setIsCreating(false); setEditingSoId(null); setShouldOpenActiveTripSummary(true); }}
           />
         ) : (
           <>
@@ -506,6 +485,7 @@ export const SalesPortal = () => {
             </div>
             {showFilters && (
               <div className="p-3 rounded-xl bg-gray-50 border border-gray-100 space-y-3">
+                <div className="flex flex-wrap gap-2"><label className="text-xs">เรียงเอกสาร<select aria-label="เรียงเอกสารขาย" value={sortBy} onChange={e=>{setSortBy(e.target.value as typeof sortBy);setPage(1);}} className="ml-2 rounded border p-2"><option value="docuDate">วันที่เอกสาร (DocuDate)</option><option value="docuNo">เลขเอกสาร (DocuNo)</option><option value="docuType">ชนิดเอกสาร (DocuType)</option><option value="status">สถานะ</option><option value="deliveryDate">วันนัดรับ</option></select></label><select aria-label="ทิศทางเรียงเอกสารขาย" value={sortDirection} onChange={e=>{setSortDirection(e.target.value as typeof sortDirection);setPage(1);}} className="rounded border p-2 text-xs"><option value="desc">มากไปน้อย / ล่าสุดก่อน</option><option value="asc">น้อยไปมาก / เก่าก่อน</option></select></div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1.5">สถานะ</label>
                   <select
@@ -589,14 +569,14 @@ export const SalesPortal = () => {
 
       <TripSummaryModal
         isOpen={!!viewingTrip}
-        onClose={() => setViewingTrip(null)}
+        onClose={() => { setViewingTrip(null); clearTrip(); }}
         trip={viewingTrip}
         onUpdate={() => {
           if (viewingTrip?.orders?.[0]?.id) {
             setReturnToTripFromSoId(String(viewingTrip.orders[0].id));
           }
           loadData();
-          setViewingTrip(null); 
+          setViewingTrip(null);
         }}
         onEditBill={(soId) => {
           if (!can('so.edit')) return;
@@ -618,17 +598,6 @@ export const SalesPortal = () => {
             setViewingTrip(null);
             setIsCreating(true);
           }
-        }}
-      />
-
-      <TripSetupModal
-        isOpen={isTripSetupOpen}
-        onClose={() => setIsTripSetupOpen(false)}
-        initialData={activeTrip || undefined}
-        onConfirm={(data) => {
-          setTrip(data);
-          setIsTripSetupOpen(false);
-          setIsCreating(true);
         }}
       />
 

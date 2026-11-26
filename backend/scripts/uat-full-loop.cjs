@@ -194,6 +194,27 @@ async function prepare() {
     fs.writeFileSync(fixturePath, JSON.stringify(fixtures), { mode: 0o600 });
     check(true, 'SEVEN_ISOLATED_UAT_USERS_CREATED');
   }
+  if(nativeV3){
+    const orgKey='QA-'+crypto.createHash('sha256').update(RUN).digest('hex').slice(0,12);
+    fixtures.org={manager:orgKey+'-M',sales:orgKey+'-S'};
+    const reviewer=JSON.parse(fs.readFileSync('/review-state/bootstrap.json','utf8'));
+    await db.wfTransaction(async tx=>{
+      for(const [code,name,parent,tier,role] of [[fixtures.org.manager,'QA loop manager',null,3,'MANAGER'],[fixtures.org.sales,'QA loop sales',fixtures.org.manager,5,'SALES']]){
+        await tx.request().input('code',db.sql.VarChar(30),code).input('name',db.sql.NVarChar(150),name)
+          .input('parent',db.sql.VarChar(30),parent).input('tier',db.sql.TinyInt,tier).input('role',db.sql.VarChar(20),role).input('note',db.sql.NVarChar(300),RUN)
+          .query(`IF EXISTS(SELECT 1 FROM wf.OrgPosition WITH(UPDLOCK,HOLDLOCK) WHERE PositionCode=@code AND (Note<>@note OR Note IS NULL)) RAISERROR('QA_ORG_NAMESPACE_CONFLICT',16,1);
+          IF NOT EXISTS(SELECT 1 FROM wf.OrgPosition WHERE PositionCode=@code) INSERT wf.OrgPosition(PositionCode,PositionName,ReportsTo,OrgUnit,Tier,DefaultRole,CanApprove,IsActive,Note,RecordScope)
+           VALUES(@code,@name,@parent,N'QA',@tier,@role,CASE WHEN @role='MANAGER' THEN 1 ELSE 0 END,1,@note,'ORG');`);
+      }
+      for(const key of ['manager','sales','sales2'])await tx.request().input('id',db.sql.Int,fixtures.users[key].id)
+        .input('username',db.sql.NVarChar(50),fixtures.users[key].username).input('pos',db.sql.VarChar(30),fixtures.org[key==='manager'?'manager':'sales'])
+        .query("UPDATE wf.AppUser SET PositionCode=@pos WHERE Id=@id AND Username=@username AND IsActive=1;IF @@ROWCOUNT<>1 RAISERROR('QA_ORG_USER_CHANGED',16,1);");
+      await tx.request().input('run',db.sql.VarChar(100),RUN).input('reviewer',db.sql.VarChar(20),String(reviewer.userId))
+        .query("INSERT wf.ChangeEvent(EntityType,EntityId,Action,ReasonCode,ReasonText,UserId,ActorUserId) VALUES('QA_ORGANIZATION',@run,'PREPARE','QA_FIXTURE',N'Isolated Full Loop hierarchy fixture; no live staff changes',@reviewer,@reviewer)");
+    },{isolationLevel:db.sql.ISOLATION_LEVEL.SERIALIZABLE});
+    fs.writeFileSync(fixturePath,JSON.stringify(fixtures),{mode:0o600});
+    check(true,'ISOLATED_MANAGER_AND_TWO_SALES_BRANCH_CREATED');
+  }
   await loginAll();
   const c = await call('GET', '/master/customers?q=' + CUST_ID + '&limit=50', undefined, 'sales');
   const g = await call('GET', '/master/goods?limit=2000', undefined, 'sales');
@@ -254,7 +275,7 @@ async function booking(book, c) {
     check(r.status === 200 && !!c.draftId, book + '_BOOKING_DRAFT_CREATED');
   }
   check((await call('POST', '/so', order, 'sales')).status === 409, book + '_DUPLICATE_QUOTE_CONVERSION_DENIED');
-  if (!c.verified) {
+  if (!c.verified && !nativeV3) {
     check((await call('PATCH', '/so/' + c.draftId + '/verify', {}, 'manager')).status === 200, book + '_DRAFT_VERIFIED');
     c.verified = true;
     save();
@@ -467,6 +488,12 @@ async function close() {
     prefix: param(db.sql.NVarChar(60), PREFIX + '%'),
   });
   check(Number(r.recordset[0].N) === ids.length, 'OWNED_TEST_USERS_DISABLED');
+  if(nativeV3&&fixtures.org){
+    const codes=[fixtures.org.sales,fixtures.org.manager];
+    for(const code of codes)await query('UPDATE wf.OrgPosition SET IsActive=0 WHERE PositionCode=@code AND Note=@run',{
+      code:param(db.sql.VarChar(30),code),run:param(db.sql.NVarChar(300),RUN)});
+    check(true,'OWNED_QA_ORGANIZATION_RETIRED');
+  }
   for (const [key, u] of Object.entries(fixtures.users)) {
     const denied = await call('POST', '/auth/login', { username: u.username, password: u.password });
     check([401, 403].includes(denied.status) && !denied.data.accessToken, 'DISABLED_LOGIN_' + key.toUpperCase());
@@ -654,6 +681,9 @@ async function main() {
 main()
   .then(() => console.log('LOOP_PHASE=' + phase + ' PASS'))
   .catch(e => {
+    // Keep operational diagnostics on the isolated server. Public/console
+    // output remains fixed labels; never print request bodies or credentials.
+    if(nativeV3)fs.writeFileSync(path.join(DIR,'failure-'+phase+'.json'),JSON.stringify({message:e.message,code:e.code,number:e.number,stack:e.stack}),{mode:0o600});
     console.log('LOOP_PHASE=' + phase + ' FAILED ' + (/^[A-Z_0-9]+$/.test(e.message) ? e.message : 'INTERNAL_FAILURE'));
     process.exitCode = 1;
   })

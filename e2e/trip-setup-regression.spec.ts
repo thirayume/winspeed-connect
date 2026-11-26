@@ -96,8 +96,8 @@ test('failed metadata read cannot open a clearing editor',async({page})=>{
  await expect(page.getByRole('button',{name:'แก้ไขข้อมูลเที่ยวรถ',exact:true})).toBeDisabled();
 });
 
-// The active-trip banner left the portal in the 9 Nov 2026 cleanup (aa422d5). The trip must still keep
-// its server members and plate, so "สร้างบิล" reopens it instead of clearing it as an empty trip.
+// The active-trip banner left the portal in the 9 Nov 2026 cleanup (aa422d5), and on 25 Nov 2026
+// clicking "สร้างบิล" opens CreateSODialog directly without the intermediate TripSetupModal popup.
 test('active trip keeps server members and plate when portal filter returns no orders',async({page})=>{
  const member=page.waitForResponse(r=>r.url().endsWith('/so/123'));
  await page.route('**/api/**',r=>{
@@ -113,5 +113,6 @@ test('active trip keeps server members and plate when portal filter returns no o
  await page.getByPlaceholder('ค้นหา ลูกค้า / WfRef...').fill('NO-MATCH');
  await page.waitForTimeout(600);
  await page.getByRole('button',{name:'สร้างบิล',exact:true}).click();
- await expect(page.getByPlaceholder('เช่น กจ70-4088 (เว้นว่างได้สำหรับ Draft Trip)')).toHaveValue('SERVER-42');
+ await expect(page.getByTestId('trip-setup-dialog')).toHaveCount(0);
+ await expect(page.getByText(/ทะเบียนรถ: SERVER-42/)).toBeVisible();
 });

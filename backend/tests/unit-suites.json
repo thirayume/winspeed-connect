@@ -223,6 +223,7 @@
     "tests/rebate-ticket-preview-route.test.js",
     "tests/ticket-sales-policy.test.js",
     "tests/giveaway-quota-loans.test.js",
+    "tests/giveaway-loan-organization.test.js",
     "tests/giveaway-quota-loan-routes.test.js",
     "tests/native-document-plan.test.js",
     "tests/native-document-target.test.js",
@@ -243,7 +244,19 @@
     "tests/sales-target-report.test.js",
     "tests/native-finance-export.test.js",
     "tests/price-report-history.test.js",
-    "tests/secondary-budget-report-access.test.js"
+    "tests/secondary-budget-report-access.test.js",
+    "tests/organization-territory-scope.test.js",
+    "tests/organization-directory-scope.test.js",
+    "tests/draft-trip-create-atomic.test.js",
+    "tests/report-organization-scope.test.js",
+    "tests/organization-employee.test.js",
+    "tests/draft-create-owner-scope.test.js",
+    "tests/trip-data-window.test.js",
+    "tests/master-customer-deactivate-atomic.test.js",
+    "tests/master-customer-mutation-atomic.test.js",
+    "tests/trip-approval-cancel-atomic.test.js",
+    "tests/native-116-direct-stage.test.js",
+    "tests/native-116-recovery.test.js"
   ],
   "test:unit": [
     "tests/policy-contract.test.js",
@@ -373,6 +386,7 @@
     "tests/rebate-ticket-lifecycle.test.js",
     "tests/ticket-sales-policy.test.js",
     "tests/giveaway-quota-loans.test.js",
+    "tests/giveaway-loan-organization.test.js",
     "tests/giveaway-quota-loan-routes.test.js",
     "tests/native-v3-qa-profile.test.js",
     "tests/native-writer-release.test.js",
@@ -384,6 +398,19 @@
     "tests/native-finance-reports.test.js",
     "tests/sales-target-report.test.js",
     "tests/native-finance-export.test.js",
-    "tests/price-report-history.test.js"
+    "tests/price-report-history.test.js",
+    "tests/organization-territory-scope.test.js",
+    "tests/organization-directory-scope.test.js",
+    "tests/draft-trip-create-atomic.test.js",
+    "tests/report-organization-scope.test.js",
+    "tests/organization-employee.test.js",
+    "tests/draft-create-owner-scope.test.js",
+    "tests/trip-data-window.test.js",
+    "tests/master-customer-deactivate-atomic.test.js",
+    "tests/master-customer-mutation-atomic.test.js",
+    "tests/trip-load-plan-audit-atomic.test.js",
+    "tests/trip-approval-cancel-atomic.test.js",
+    "tests/native-116-direct-stage.test.js",
+    "tests/native-116-recovery.test.js"
   ]
 }

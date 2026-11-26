@@ -27,6 +27,7 @@ async function authorizationHoldsAvailable(query,withBridge=false) {
   const flag=value=>value===0||value===1||value==='0'||value==='1'?Number(value):null;
   const ledger=flag(row.Ledger220),head=flag(row.HeaderVisible),line=flag(row.LineVisible);
   const bridge=bridgeSchema.available(row);
+  bridgeSchema.directAvailable(row);
   if(ledger===0 && head===0 && line===0 && flag(row.SchemaSelect)===1&&!bridge)return withBridge?{auth:false,bridge}:false;
   if(ledger===1 && head===1 && line===1 && flag(row.HeaderSelect)===1 && flag(row.LineSelect)===1)return withBridge?{auth:true,bridge}:true;
   throw unavailable();

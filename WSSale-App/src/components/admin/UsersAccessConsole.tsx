@@ -5,11 +5,12 @@ import { useAuthStore } from "../../store/auth-store";
 import { AdminUsersPage } from "./AdminUsersPage";
 import { RoleManagementPage } from "./RoleManagementPage";
 import { OrgHierarchyView } from "./OrgHierarchyView";
+import {SalesTerritoriesPage} from './SalesTerritoriesPage';
 import { ApproverGovernanceView } from "./ApproverGovernanceView";
 import { req } from "../../services/api";
 import { formatThaiDate } from "../../utils/date";
 
-type ConsoleTab = "users" | "roles" | "org" | "approvers" | "history";
+type ConsoleTab = "users" | "roles" | "org" | "territories" | "approvers" | "history";
 type HistoryDomain = "all" | "roles" | "batch" | "positions" | "regions";
 
 type AuditEntry = {
@@ -75,7 +76,7 @@ export function UsersAccessConsole({
   // Domain permission gates
   const canAccessUsers = hasUsersManage;
   const canAccessRoles = hasRolesManage;
-  const canAccessOrg = isAdmin || isManager || isAccounting || hasUsersManage;
+  const canAccessOrg = isAdmin || isCLevel || isManager || isAccounting || hasUsersManage;
   const canAccessApprovers = isAdmin || isCLevel || isManager;
   const canAccessAudit = hasRolesManage || hasUsersManage || isAdmin;
 
@@ -240,6 +241,7 @@ export function UsersAccessConsole({
             </button>
           )}
 
+          {canAccessOrg&&<button role="tab" aria-selected={activeTab==='territories'} onClick={()=>chooseTab('territories')} className="rounded-lg px-3 py-1.5 text-sm">เขตพื้นที่รับผิดชอบ</button>}
           {canAccessApprovers && (
             <button
               role="tab"
@@ -276,6 +278,7 @@ export function UsersAccessConsole({
 
       {/* Main Content Area based on Tab */}
       <main className="flex-1 overflow-hidden flex flex-col">
+        {activeTab==='territories'&&canAccessOrg&&<SalesTerritoriesPage/>}
         {/* Tab 1: Users View */}
         {activeTab === "users" && canAccessUsers && (
           <div className="flex-1 flex flex-col overflow-hidden">

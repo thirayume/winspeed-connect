@@ -4,11 +4,11 @@ import { useAuthStore } from '../store/auth-store';
 // source of truth and arrives on the user as capabilities.actions. This copy is only the
 // fallback for a session stored before the backend sent capabilities.
 const FALLBACK_ACTIONS: Record<string, string[]> = {
-  'so.create': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
-  'so.edit': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
+  'so.create': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'so.edit': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.cancel': ['SALES', 'C_LEVEL', 'ADMIN'],
   'so.verify': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  'so.confirm': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
+  'so.confirm': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'trip.view': ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'quotation.create': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'quotation.manage': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],

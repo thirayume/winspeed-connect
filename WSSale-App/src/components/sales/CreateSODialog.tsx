@@ -2,11 +2,10 @@ import { bookingNoteError } from '../../utils/bookingNotes';
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { unsavedMessage } from '../../utils/unsaved-changes';
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ShoppingCart, ChevronUp, ChevronDown, Stamp, Ticket, AlertTriangle, Gift, Sparkles, Clock } from 'lucide-react';
-import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, getRebateAvailability, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood, type PriceBook } from '../../services/api';
+import { X, Plus, Minus, Truck, Package, Search, Calendar, FileText, CheckCircle2, ShoppingCart, ChevronUp, ChevronDown, Ticket, AlertTriangle, Gift, Sparkles, Clock } from 'lucide-react';
+import { fetchCustomers, fetchGoods, fetchGiveawayGoods, fetchPrices, createSO, updateSO, fetchSalesOrder, fetchTruckPlates, fetchTruckTypes, fetchControlTickets, fetchControlTicketDetails, listUsers, getRebateBalance, getRebateAvailability, apiFetch, fetchTransports, fetchQuotation, fetchPriceBooks, fetchEffectivePrices, fetchAtpStock, cancelCouponReservation, fetchPriceIndicator, fetchCustomerCreditStatus, fetchCustomerTopGoods, type CustomerTopGood, type PriceBook } from '../../services/api';
 import type { EffectivePriceRow, AtpStockRow, PriceLevel } from '../../services/api';
 import { ThaiDatePicker } from '../ui/ThaiDatePicker';
-import { ThaiDateTimePicker } from '../ui/ThaiDateTimePicker';
 import { GiveawayBorrowModal } from './GiveawayBorrowModal';
 import { CouponPickerModal, type CouponItem } from './CouponPickerModal';
 import { RebateTicketPickerModal } from './RebateTicketPickerModal';
@@ -17,7 +16,7 @@ import { canViewRebateAmounts } from '../../utils/permissions';
 import { useCan, useFeature } from '../../utils/capabilities';
 import { appAlert, appConfirm } from '../ui/AppAlert';
 import { formatThaiDate, bangkokDate } from '../../utils/date';
-import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota, CustomerCreditStatus } from '../../types';
+import type { EMCust, EMGood, CurrentPrice, SalesOrderLine, SOPrefix, AdminUser, GiveawayQuota, CustomerCreditStatus, TruckType } from '../../types';
 
 import { Pagination } from '../ui/Pagination';
 type DraftLine = SalesOrderLine & {
@@ -32,7 +31,7 @@ type DraftLine = SalesOrderLine & {
   // Owner, 22 Nov 2026: a Rebate ticket line - the ticket's goods at price 0 (migration 258)
   isRebateTicket?: boolean;
 };
-type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; isControlTicket?: boolean; wfRef?: string; custId?: string; custName?: string; };
+type DraftBill = { id: string; soPrefix: SOPrefix; lines: DraftLine[]; remark: string; rebateDiscountAmt?: number; creditDays?: number; truckRemark?: string; billRemark?: string; isControlTicket?: boolean; pSling?: boolean; wfRef?: string; custId?: string; custName?: string; };
 
 const HISTORY_TAB = 'รายการที่เคยสั่งซื้อ';
 const GIVEAWAY_GROUP = 'ของแถม';
@@ -144,6 +143,7 @@ export function CreateSODialog({
   const [editingNative, setEditingNative] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+  const [createRequestId]=useState(()=>crypto.randomUUID());
   const [initializing, setInitializing] = useState(true);
   const [initialError, setInitialError] = useState('');
   const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
@@ -179,13 +179,19 @@ export function CreateSODialog({
   const [customerTrucks, setCustomerTrucks] = useState<string[]>([]);
   const [loadingTrucks, setLoadingTrucks] = useState(false);
   const [newTruckPlateInput, setNewTruckPlateInput] = useState('');
+  const [truckTypes, setTruckTypes] = useState<TruckType[]>([]);
+  const [truckTypeId, setTruckTypeId] = useState<string>('');
+  const selectedTruckType = useMemo(
+    () => truckTypes.find(t => String(t.Id) === String(truckTypeId)) || null,
+    [truckTypes, truckTypeId]
+  );
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
   // Mobile UX State
   const [mobileView, setMobileView] = useState<'products' | 'cart'>('products');
   const [isTruckInfoCollapsed, setIsTruckInfoCollapsed] = useState(false);
-  const draftSnapshot = JSON.stringify({ bills, truckPlate, controlTicketNo, transpId, deliveryDate, notifiedAt,
+  const draftSnapshot = JSON.stringify({ bills, truckPlate, truckTypeId, controlTicketNo, transpId, deliveryDate, notifiedAt,
     isOwnTruck, noTruckRequired, pSling, loadInOrder, salesUserId });
   useEffect(() => {
     if (!initializing && !initialError && initialSnapshot === null) setInitialSnapshot(draftSnapshot);
@@ -207,6 +213,9 @@ export function CreateSODialog({
     fetchAtpStock(editId).then(r => setAtpStock(r.data || [])).catch(console.error);
       
     fetchTransports().then(setTransports).catch(console.error);
+    fetchTruckTypes().then(types => {
+      if (!disposed) setTruckTypes((types || []).filter(t => t.IsActive !== false));
+    }).catch(console.error);
       
     const currentYear = new Date().getFullYear() + 543 - 2500 + 2500;
     const quotaUrl = targetUserId ? `/giveaway/my-quota?year=${currentYear}&salesUserId=${targetUserId}` : `/giveaway/my-quota?year=${currentYear}`;
@@ -265,6 +274,7 @@ export function CreateSODialog({
             truckRemark: q.TruckRemark || '',
             billRemark: q.BillRemark || '',
             isControlTicket: false,
+            pSling: !!q.PSling,
             lines: (q.lines || []).map((l, i) => ({
               tempId: `${l.GoodId}-${i}`,
               lineNo: i + 1,
@@ -297,7 +307,8 @@ export function CreateSODialog({
         setTranspId((so as any).transpId || (so as any).TranspId || '');
         setSalesUserId((so as any).salesUserId || (so as any).salesUserID || (so as any).SalesUserId || (so as any).SalesUserID || '');
         setDeliveryDate(so.deliveryDate ? so.deliveryDate.split('T')[0] : '');
-        setNotifiedAt((so as any).notifiedAt ? String((so as any).notifiedAt) : '');
+        const rawNotified = (so as any).notifiedAt || (so as any).requestedAt || (so as any).RequestedAt;
+        setNotifiedAt(rawNotified ? String(rawNotified).slice(0, 10) : '');
         setIsOwnTruck(!!(so as any).isOwnTruck);
         setNoTruckRequired(!!(so as any).noTruckRequired);
         setPSling(!!(so as any).pSling);
@@ -316,6 +327,7 @@ export function CreateSODialog({
           id: 'bill-1',
           soPrefix: so.soPrefix as SOPrefix,
           isControlTicket: Boolean(so.isControlTicket || so.truckPlate === 'ตั๋วคุม' || so.soPrefix === 'AI'),
+          pSling: !!(so as any).pSling,
           remark: so.remark || '',
           rebateDiscountAmt: canSeeRebate ? so.rebateDiscountAmt || 0 : 0,
           wfRef: (so as any).wfRef || (so as any).WfRef || '',
@@ -349,12 +361,12 @@ export function CreateSODialog({
       }).catch(failed).finally(complete);
     } else {
       setPersistedReservationIds(new Set());
-      setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '', creditDays: 0, isControlTicket: false }]);
+      setBills([{ id: 'bill-1', soPrefix: 'I', lines: [], remark: '', creditDays: 0, isControlTicket: false, pSling: false }]);
       setActiveBillId('bill-1');
-      setTruckPlate(''); setTranspId(''); setSalesUserId('');
+      setTruckPlate(''); setTruckTypeId(activeTrip?.truckTypeId || ''); setTranspId(''); setSalesUserId('');
       setNotifiedAt(''); setIsOwnTruck(false); 
       setNoTruckRequired(activeTrip?.isControlTicket ? true : false); 
-      setPSling(activeTrip?.pSling ? true : false);
+      setPSling(false);
       setLoadInOrder(activeTrip?.loadInOrder ? true : false);
       setUseControlTicket(!!activeTrip?.isControlTicket); setSelectedTicketForDraw('');
       setActiveTab(ALL_GOODS_TAB); setGoodSearch(''); setCurrentPage(1);
@@ -945,7 +957,7 @@ export function CreateSODialog({
 
   function addNewBill() {
     const newId = `bill-${Date.now()}`;
-    setBills(prev => [...prev, { id: newId, soPrefix: 'I', lines: [], remark: '', isControlTicket: false, creditDays: 0 }]);
+    setBills(prev => [...prev, { id: newId, soPrefix: 'I', lines: [], remark: '', isControlTicket: false, pSling: false, creditDays: 0 }]);
     setActiveBillId(newId);
     setBillCustSearch('');
     setIsBillCustOpen(false);
@@ -996,11 +1008,6 @@ export function CreateSODialog({
   const totalTons = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isGiveaway ? 0 : (Number(l.qtyTon) || 0)), 0), 0);
   const totalRebateDiscount = 0;
   // เลขตั๋วที่ถูกเบิกจริงในบิลทั้งหมด — ใช้เป็น placeholder ให้ผู้ใช้เห็นว่าถ้าเว้นว่างจะได้อะไร
-  const drawnTicketNos = Array.from(new Set(
-    bills.flatMap(b => b.lines.filter(l => l.isControlTicketDrawn && l.refControlTicketNo)
-                              .map(l => l.refControlTicketNo as string))
-  )).join(', ');
-
   const totalPayable = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? 0 : (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0)), 0), 0);
   const totalOffset = bills.reduce((s, b) => s + b.lines.reduce((ls, l) => ls + (l.isControlTicketDrawn ? (Number(l.qtyTon) || 0) * (Number(l.pricePerTon) || 0) : 0), 0), 0);
   const totalCartItems = bills.reduce((s, b) => s + b.lines.length, 0);
@@ -1014,6 +1021,27 @@ export function CreateSODialog({
     }
     const hasInvalidCust = bills.some(b => !b.custId);
     if (hasInvalidCust) { setError('กรุณาเลือกลูกค้าให้ครบถ้วนทุกบิล'); return; }
+
+    if (notifiedAt && notifiedAt.slice(0, 10) < bangkokDate()) {
+      setError('วันที่นัดรับ ห้ามระบุวันในอดีต');
+      return;
+    }
+
+    const allControlTicketBills = bills.every(b => b.isControlTicket || b.soPrefix === 'AI');
+    const cleanedTruckPlate = truckPlate.trim();
+    if (!allControlTicketBills && !cleanedTruckPlate) {
+      setError('กรุณาเลือกรถขนส่งของลูกค้าก่อนบันทึก (กดปุ่ม "เลือกรถ" ที่ชื่อลูกค้า)');
+      if (activeBill?.custId) {
+        setCustomerTrucks([]);
+        setTruckPickerOpen(true);
+        setLoadingTrucks(true);
+        fetchTruckPlates(activeBill.custId)
+          .then(plates => setCustomerTrucks(plates || []))
+          .catch(() => setCustomerTrucks([]))
+          .finally(() => setLoadingTrucks(false));
+      }
+      return;
+    }
 
     // Ensure credit & aging status is loaded for all customers in this trip
     const statusLookup: Record<string, CustomerCreditStatus> = { ...custCreditMap };
@@ -1114,9 +1142,10 @@ export function CreateSODialog({
           controlTicketNo: controlTicketNo.trim() || undefined,
           deliveryDate: deliveryDate || undefined,
           notifiedAt: notifiedAt || undefined,
+          requestedAt: notifiedAt || undefined,
           isOwnTruck,
           noTruckRequired: Boolean(noTruckRequired),
-          pSling,
+          pSling: Boolean(b.pSling ?? pSling),
           loadInOrder,
           remark: b.remark || undefined,
           rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
@@ -1168,9 +1197,10 @@ export function CreateSODialog({
             controlTicketNo: controlTicketNo.trim() || undefined,
             deliveryDate: deliveryDate || undefined,
             notifiedAt: notifiedAt || undefined,
+            requestedAt: notifiedAt || undefined,
             isOwnTruck,
             noTruckRequired: Boolean(noTruckRequired),
-            pSling,
+            pSling: Boolean(b.pSling),
             loadInOrder,
             remark: b.remark || undefined,
             rebateDiscountAmt: canSeeRebate ? b.rebateDiscountAmt || 0 : 0,
@@ -1197,8 +1227,27 @@ export function CreateSODialog({
           };
         });
 
-        const res = await createSO(payload);
+        const allControlTicket = bills.every(b => b.isControlTicket || b.soPrefix === 'AI');
+        const cleanPlate = allControlTicket || noTruckRequired ? null :
+          (truckPlate && !['ยังไม่ระบุรถ', 'ตั๋วคุม', 'ไม่ระบุทะเบียนรถ'].includes(truckPlate.trim()) ? truckPlate.trim() : null);
+        const anyBillPSling = bills.some(b => Boolean(b.pSling));
+        // One server transaction creates the trip, all bills and their audit.
+        // A retry after a known validation failure cannot leave unlinked bills.
+        const savePayload=payload.map((order,i)=>i===0?{...order,createRequestId,...(!(activeTrip as any)?.tripId?{tripSetup:{transRegistration:cleanPlate,deliveryDate:deliveryDate||undefined,truckTypeId:truckTypeId||undefined}}:{})}:order);
+        const res = await createSO(savePayload);
         setIsSaveCommitted(true);
+        if (res.trip) {
+            useTripStore.getState().setTrip({
+              tripId: res.trip.tripId,
+              tripCode: res.trip.tripCode,
+              truckPlate: allControlTicket ? 'ตั๋วคุม' : (cleanPlate || undefined),
+              truckTypeId: res.trip.truckTypeId || undefined,
+              deliveryDate: deliveryDate || '',
+              isControlTicket: allControlTicket,
+              pSling: anyBillPSling,
+              loadInOrder,
+            });
+        }
         const serverWarnings = Array.isArray((res as any)?.warnings)
           ? (res as any).warnings.map((w: any) => typeof w === 'string' ? w : w?.message).filter(Boolean)
           : [];
@@ -1298,7 +1347,7 @@ export function CreateSODialog({
         <div className="flex items-center justify-between px-4 py-2 sm:px-6 sm:py-3 border-b border-gray-100 bg-[#0C447C] text-white shrink-0">
           <div>
             <h2 className="text-base sm:text-xl font-bold flex items-center gap-2"><Truck size={20} className="sm:w-6 sm:h-6"/> {(activeTrip && !editSoId) ? 'เพิ่มบิลในทริป' : 'บิล'}</h2>
-            <p className="hidden sm:block text-xs text-blue-200 mt-1">{(activeTrip || editSoId) ? `ทะเบียนรถ: ${truckPlate || 'ไม่ระบุ'} | วันที่: ${deliveryDate ? formatThaiDate(deliveryDate) : '-'} | จำนวน ${bills.length} บิล | Pre-Sling: ${pSling ? 'ใช่' : 'ไม่'}` : 'จัดเรียงบิล I, K ในรถคันเดียวกัน และจัดการเบิกตั๋วคุม'}</p>
+            <p className="hidden sm:block text-xs text-blue-200 mt-1">{`ทะเบียนรถปัจจุบัน: ${truckPlate || 'ยังไม่ได้เลือกรถ'} | ชนิดรถ: ${selectedTruckType ? selectedTruckType.Name : 'ยังไม่ระบุ (รอคลังสินค้ายืนยัน)'} | วันที่: ${deliveryDate ? formatThaiDate(deliveryDate) : '-'} | จำนวน ${bills.length} บิล`}</p>
           </div>
           <button onClick={handleCloseModal} data-testid="btn-close-dialog" className="text-white/80 hover:text-white rounded-full p-1.5 sm:p-2 hover:bg-white/10">
             <X size={20} />
@@ -1306,7 +1355,6 @@ export function CreateSODialog({
         </div>
 
         {/* TRUCK INFO BAR — shared across all bills */}
-        {!(activeTrip || editSoId) && (
         <div className="bg-white border-b border-gray-200 shrink-0 flex flex-col">
           <div 
             className="flex items-center justify-between px-4 sm:px-6 py-1.5 bg-gray-50 border-b border-gray-100 cursor-pointer lg:hidden"
@@ -1315,7 +1363,7 @@ export function CreateSODialog({
             <div className="flex items-center gap-2">
               <Truck size={14} className="text-gray-500" />
               <span className="text-xs font-bold text-gray-700">
-                เที่ยวรถ {truckPlate ? `[${truckPlate}]` : ''} ({bills.length} บิล)
+                เที่ยวรถ {truckPlate ? `[${truckPlate}]` : '[ยังไม่ได้เลือกรถ]'} ({bills.length} บิล)
               </span>
             </div>
             {isTruckInfoCollapsed ? <ChevronDown size={16} className="text-gray-400" /> : <ChevronUp size={16} className="text-gray-400" />}
@@ -1344,98 +1392,76 @@ export function CreateSODialog({
                     <ThaiDatePicker value={deliveryDate} onChange={setDeliveryDate} className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white" />
                   </div>
                   <div className="min-w-[170px]">
-                    <label className="text-[10px] font-bold text-gray-700 block mb-1"><Calendar size={10} className="inline mr-1 text-gray-400"/>วันที่แจ้ง/เวลานัด</label>
-                    <ThaiDateTimePicker
+                    <label className="text-[10px] font-bold text-gray-700 block mb-1"><Calendar size={10} className="inline mr-1 text-gray-400"/>วันที่นัดรับ</label>
+                    <ThaiDatePicker
                       value={notifiedAt}
                       onChange={setNotifiedAt}
+                      min={bangkokDate()}
                       className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white"
                     />
-                  </div>
-                  <div className="min-w-[170px]">
-                    <label className="text-[10px] font-bold text-gray-700 block mb-1">
-                      <Stamp size={10} className="inline mr-1 text-gray-400"/>เลขที่ตั๋วคุมอ้างอิง
-                    </label>
-                    <input
-                      list="ct-ref-list"
-                      value={controlTicketNo}
-                      onChange={e => setControlTicketNo(e.target.value.toUpperCase())}
-                      placeholder={drawnTicketNos || 'ไม่ระบุ'}
-                      className="w-full text-sm font-mono border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50 focus:bg-white"
-                    />
-                    <datalist id="ct-ref-list">
-                      {controlTickets.map(t => <option key={t.DocuNo} value={t.DocuNo}>{formatThaiDate(t.DocuDate)}</option>)}
-                    </datalist>
-                    {!controlTicketNo && drawnTicketNos && (
-                      <p className="text-[9px] text-purple-600 mt-1">ระบบจะใช้ {drawnTicketNos} จากบรรทัดที่เบิก</p>
-                    )}
                   </div>
                 </div>
               </div>
 
-              {/* SECTION 2: Truck & Transport Info */}
+              {/* SECTION 2: Pre-Sling, Load In Order & Selected Truck Status */}
               <div className="flex-1 bg-white p-4 rounded-xl border border-gray-200 shadow-sm relative">
                 <div className="absolute -top-3 left-4 bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold border border-gray-200">
-                  ข้อมูลรถบรรทุก & ขนส่ง (เว้นได้หากเป็น Draft)
+                  เงื่อนไขการขึ้นของ & รถขนส่ง (ระบุรถจากปุ่ม "เลือกรถ" ของลูกค้า)
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-2">
-                  <div className="relative min-w-[140px]">
-                    <label className="text-[10px] font-bold text-gray-700 block mb-1"><Truck size={10} className="inline mr-1 text-gray-400"/>ทะเบียนรถ</label>
-                    <input
-                      value={truckPlate} onChange={e => setTruckPlate(e.target.value)}
-                      onFocus={() => setIsTruckOpen(true)} onBlur={() => setTimeout(() => setIsTruckOpen(false), 200)}
-                      placeholder="เช่น 70-1087"
-                      disabled={noTruckRequired}
-                      className={`w-full border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none disabled:bg-gray-100 disabled:text-gray-400 ${truckPlate && truckPlates.length > 0 && !truckPlates.includes(truckPlate) ? 'border-amber-400 text-amber-700 bg-amber-50 focus:ring-amber-500' : 'border-gray-200 focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white'}`}
-                    />
-                    {isTruckOpen && !noTruckRequired && truckPlates.length > 0 && (
-                      <div className="absolute z-30 w-full mt-1 bg-white border rounded-lg shadow-lg max-h-32 overflow-y-auto">
-                        {truckPlates.filter(p => p.toLowerCase().includes(truckPlate.toLowerCase())).map(p => (
-                          <div key={p} className="px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer font-mono border-b border-gray-50" onClick={() => { setTruckPlate(p); setIsTruckOpen(false); }}>{p}</div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-[150px]">
-                    <label className="text-[10px] font-bold text-gray-700 block mb-1">ขนส่งโดย</label>
-                    <select
-                      value={transpId}
-                      onChange={e => setTranspId(e.target.value ? Number(e.target.value) : '')}
-                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#0C447C] bg-gray-50 focus:bg-white"
-                    >
-                      <option value="">-- ไม่ระบุ (ใช้ค่าดั้งเดิม) --</option>
-                      {transports.map(t => (
-                        <option key={t.TranspID} value={t.TranspID}>{t.TranspName}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-1 sm:col-span-2 lg:col-span-3 flex flex-wrap items-center gap-3 pt-1">
-                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 rounded-lg px-3 py-2 cursor-pointer">
-                      <input type="checkbox" checked={isOwnTruck} onChange={e => setIsOwnTruck(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]" />
-                      ขึ้นรถตัวเอง
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 rounded-lg px-3 py-2 cursor-pointer">
+                <div className="flex flex-col gap-3 mt-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 rounded-lg px-3 py-2 cursor-pointer" title="เงื่อนไข Pre-Sling แยกตามบิลที่กำลังเลือกอยู่">
                       <input
                         type="checkbox"
-                        checked={noTruckRequired}
+                        checked={Boolean(activeBill?.pSling)}
                         onChange={e => {
-                          setNoTruckRequired(e.target.checked);
-                          if (e.target.checked) setTruckPlate('');
+                          updateBillInfo(activeBillId, { pSling: e.target.checked });
+                          setPSling(e.target.checked);
                         }}
                         className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
                       />
-                      ไม่ต้องระบุรถ
+                      <span>Pre-Sling (บิลที่ {bills.findIndex(b => b.id === activeBillId) + 1})</span>
                     </label>
-                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 rounded-lg px-3 py-2 cursor-pointer">
-                      <input type="checkbox" checked={pSling} onChange={e => setPSling(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]" />
-                      P-Sling
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-200 rounded-lg px-3 py-2 cursor-pointer" title="เงื่อนไขขึ้นของตามลำดับของรถคันนี้">
+                      <input
+                        type="checkbox"
+                        checked={loadInOrder}
+                        onChange={e => setLoadInOrder(e.target.checked)}
+                        className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                      />
+                      <span>ขึ้นของตามลำดับ</span>
                     </label>
+
+                    <div
+                      data-testid="current-selected-truck-badge"
+                      className={`inline-flex items-center gap-2 text-xs font-bold rounded-lg px-3 py-2 border ${
+                        truckPlate
+                          ? 'bg-blue-50 text-[#0C447C] border-blue-200'
+                          : 'bg-amber-50 text-amber-800 border-amber-200'
+                      }`}
+                    >
+                      <Truck size={14} className="shrink-0" />
+                      <span>
+                        รถที่เลือกปัจจุบัน:{' '}
+                        <strong>{truckPlate || 'ยังไม่ได้เลือกรถ (กดปุ่ม "เลือกรถ" ที่ชื่อลูกค้า)'}</strong>
+                        {selectedTruckType ? ` · ชนิดรถ: ${selectedTruckType.Name}` : (truckPlate ? ' · ชนิดรถ: ยังไม่ระบุ (รอคลังยืนยัน)' : '')}
+                      </span>
+                    </div>
                   </div>
+
+                  {(truckPlate || loadInOrder) && !truckTypeId && (
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 bg-amber-50/90 border border-amber-200 rounded-lg px-3 py-1.5">
+                      <AlertTriangle size={13} className="shrink-0 text-amber-600" />
+                      <span>
+                        คำแนะนำ: กรุณาระบุชนิดรถในปุ่ม <strong>"เลือกรถ"</strong> (ถ้าทราบ) เพื่อให้สอดคล้องกับการขึ้นของตามลำดับ — หากไม่ทราบสามารถเว้นว่างไว้เพื่อให้ฝ่ายคลังสินค้ายืนยันได้
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </div>
-        )}
 
         {/* MOBILE SEGMENTED CONTROL */}
         <div className="lg:hidden flex border-b border-gray-200 bg-white shrink-0">
@@ -1476,6 +1502,7 @@ export function CreateSODialog({
               <FileText size={16} /> 
               <span>บิลที่ {i+1} ({b.soPrefix})</span>
               {b.isControlTicket && <span className="ml-1 text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
+              {b.pSling && <span className="ml-1 text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Pre-Sling</span>}
               <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
               {!editSoId && (
                 <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
@@ -1513,6 +1540,7 @@ export function CreateSODialog({
                       <FileText size={16} /> 
                       <span>บิลที่ {i+1} {b.wfRef ? `(เลขที่: ${b.wfRef})` : `(${b.soPrefix})`}</span>
                       {b.isControlTicket && <span className="ml-1 text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
+                      {b.pSling && <span className="ml-1 text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Pre-Sling</span>}
                       <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded-full border ${billTotal > 0 ? 'bg-blue-100 text-blue-800 border-blue-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>฿{billTotal.toLocaleString('th-TH', { maximumFractionDigits: 0 })}</span>
                       {!editSoId && bills.length > 1 && (
                         <X size={14} className="ml-2 text-gray-400 hover:text-red-500" onClick={(e) => { e.stopPropagation(); removeBill(b.id); }} />
@@ -1793,6 +1821,7 @@ export function CreateSODialog({
                           </span>
                           <button
                             type="button"
+                            data-testid="btn-customer-truck-picker"
                             onClick={() => {
                               // Open at once: the plate box works while the history loads (it used to wait for it).
                               setCustomerTrucks([]);
@@ -1803,11 +1832,19 @@ export function CreateSODialog({
                                 .catch(() => setCustomerTrucks([]))
                                 .finally(() => setLoadingTrucks(false));
                             }}
-                            className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 hover:bg-blue-200 text-[#0C447C] font-bold text-[11px] border border-blue-200 transition-colors shrink-0 shadow-xs cursor-pointer"
+                            className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-bold text-[11px] border transition-colors shrink-0 shadow-xs cursor-pointer ${
+                              truckPlate
+                                ? 'bg-blue-100 hover:bg-blue-200 text-[#0C447C] border-blue-300'
+                                : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                            }`}
                             title="เลือกรถที่ลูกค้ารายนี้เคยใช้ขนส่ง (หรือระบุคันใหม่)"
                           >
-                            <Truck size={13} className="text-[#0C447C]" />
-                            <span>เลือกรถ</span>
+                            <Truck size={13} className={truckPlate ? 'text-[#0C447C]' : 'text-amber-700'} />
+                            <span>
+                              {truckPlate
+                                ? `เลือกรถ (${truckPlate}${selectedTruckType ? ` · ${selectedTruckType.Name}` : ''})`
+                                : 'เลือกรถ'}
+                            </span>
                           </button>
                         </div>
                       ) : (
@@ -2272,6 +2309,66 @@ export function CreateSODialog({
             </div>
             
             <div className="p-4 space-y-4">
+              {/* Current Selected Truck Banner */}
+              <div className={`px-3 py-2 rounded-xl border text-xs flex items-center justify-between ${
+                truckPlate
+                  ? 'bg-blue-50 border-blue-200 text-[#0C447C]'
+                  : 'bg-gray-50 border-gray-200 text-gray-600'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <Truck size={15} className="shrink-0" />
+                  <div>
+                    <div className="font-bold">
+                      รถที่เลือกปัจจุบันของทริปนี้: <span className="font-mono">{truckPlate || 'ยังไม่ได้เลือก'}</span>
+                    </div>
+                    <div className="text-[11px] opacity-80">
+                      ชนิดรถ: {selectedTruckType ? selectedTruckType.Name : 'ยังไม่ระบุ (รอคลังสินค้ายืนยัน)'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Truck Type Selector + Load In Order */}
+              <div className="space-y-2 bg-gray-50/70 p-3 rounded-xl border border-gray-200">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    ชนิดรถขนส่ง (ระบุถ้าทราบ)
+                  </label>
+                  <select
+                    data-testid="select-truck-type"
+                    value={truckTypeId}
+                    onChange={e => setTruckTypeId(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-xs font-semibold bg-white focus:border-[#0C447C] outline-none"
+                  >
+                    <option value="">-- ยังไม่ระบุชนิดรถ (เว้นว่างให้คลังสินค้ายืนยัน) --</option>
+                    {truckTypes.map(t => (
+                      <option key={t.Id} value={String(t.Id)}>
+                        {t.Name} (แม่ {t.MaxWeightMain || 0} ตัน{t.MaxWeightTrailer ? ` + ลูก ${t.MaxWeightTrailer} ตัน` : ''})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {!truckTypeId && (
+                  <div className="flex items-start gap-1.5 text-[11px] font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                    <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-600" />
+                    <span>
+                      กรุณาระบุชนิดรถ (ถ้าทราบ) เพื่อให้สอดคล้องกับการขึ้นของตามลำดับ หากไม่ทราบสามารถเว้นว่างไว้เพื่อให้ฝ่ายคลังสินค้ายืนยันได้
+                    </span>
+                  </div>
+                )}
+
+                <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-700 pt-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={loadInOrder}
+                    onChange={e => setLoadInOrder(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-[#0C447C] focus:ring-[#0C447C]"
+                  />
+                  <span>ขึ้นของตามลำดับ (สำหรับรถคันนี้)</span>
+                </label>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">
                   ระบุทะเบียนรถคันใหม่
@@ -2286,6 +2383,7 @@ export function CreateSODialog({
                     onKeyDown={e => {
                       if (e.key === 'Enter' && newTruckPlateInput.trim()) {
                         setTruckPlate(newTruckPlateInput.trim());
+                        setNoTruckRequired(false);
                         setNewTruckPlateInput('');
                         setTruckPickerOpen(false);
                       }
@@ -2296,6 +2394,7 @@ export function CreateSODialog({
                     disabled={!newTruckPlateInput.trim()}
                     onClick={() => {
                       setTruckPlate(newTruckPlateInput.trim());
+                      setNoTruckRequired(false);
                       setNewTruckPlateInput('');
                       setTruckPickerOpen(false);
                     }}
@@ -2318,27 +2417,39 @@ export function CreateSODialog({
                   </div>
                 ) : (
                   <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                    {customerTrucks.map((plate) => (
+                    {customerTrucks.map((plate) => {
+                      const isSelectedPlate = plate === truckPlate;
+                      return (
                       <button
                         key={plate}
                         type="button"
                         onClick={() => {
                           setTruckPlate(plate);
+                          setNoTruckRequired(false);
                           setTruckPickerOpen(false);
                         }}
-                        className="w-full text-left px-3 py-2 rounded-xl border border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 flex items-center justify-between transition-colors group cursor-pointer"
+                        className={`w-full text-left px-3 py-2 rounded-xl border flex items-center justify-between transition-colors group cursor-pointer ${
+                          isSelectedPlate
+                            ? 'border-[#0C447C] bg-blue-50'
+                            : 'border-gray-200 hover:border-blue-400 hover:bg-blue-50/50'
+                        }`}
                       >
                         <div className="flex items-center gap-2">
-                          <Truck size={14} className="text-gray-400 group-hover:text-[#0C447C]" />
-                          <span className="font-bold text-xs text-gray-800 group-hover:text-[#0C447C]">
+                          <Truck size={14} className={isSelectedPlate ? 'text-[#0C447C]' : 'text-gray-400 group-hover:text-[#0C447C]'} />
+                          <span className={`font-bold text-xs ${isSelectedPlate ? 'text-[#0C447C]' : 'text-gray-800 group-hover:text-[#0C447C]'}`}>
                             {plate}
                           </span>
+                          {isSelectedPlate && (
+                            <span className="text-[10px] font-bold bg-[#0C447C] text-white px-1.5 py-0.5 rounded">
+                              กำลังเลือกอยู่
+                            </span>
+                          )}
                         </div>
                         <span className="text-[11px] text-blue-600 font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
                           เลือกคันนี้ →
                         </span>
                       </button>
-                    ))}
+                    );})}
                   </div>
                 )}
               </div>

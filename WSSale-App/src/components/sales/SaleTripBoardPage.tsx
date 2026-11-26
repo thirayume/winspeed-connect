@@ -32,6 +32,7 @@ import {
 } from '../common/HoldCapabilityBanner';
 import { useAuthStore } from '../../store/auth-store';
 import { formatThaiDate } from '../../utils/date';
+import { DocumentDate } from '../common/DocumentDate';
 
 const NAVY = '#0C447C';
 
@@ -146,7 +147,9 @@ function BookingBlock({ b }: { b: TripBooking }) {
         <span className={`rounded border px-1.5 py-px text-[10px] font-semibold ${prefixClass(b.soPrefix)}`}>
           เล่ม {b.soPrefix || '?'}
         </span>
-        <span className="font-mono text-xs font-medium text-gray-800">{b.docuNo || '(ยังไม่มีเลขที่)'}</span>
+        <span className="font-mono text-xs font-medium text-gray-800">{b.docuNo || '(ยังไม่มีเลขที่)'}
+          <DocumentDate date={b.docuDate} draftDate={b.createdAt} isDraft={b.memberKind === 'DRAFT'}/>
+        </span>
         {b.memberKind === 'DRAFT' && (
           <span className="rounded border border-gray-300 bg-gray-50 px-1.5 py-px text-[10px] text-gray-600">
             ฉบับร่าง

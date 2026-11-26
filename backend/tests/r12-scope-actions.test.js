@@ -24,6 +24,7 @@ const below = { 'MGR-03': ['SALES-LEAD', 'SALES-A'], 'SALES-LEAD': ['SALES-A'], 
 const owners = { 500: 11, 600: 20 };
 
 const db = h.installDbStub(({ text, inputs }) => {
+  if (/SELECT PositionCode,ReportsTo,RecordScope,IsActive FROM wf.OrgPosition/.test(text))return [{PositionCode:inputs.pos,RecordScope:'ORG',IsActive:1}];
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser WHERE Id = @id/.test(text)) return appUsers[inputs.id] ? [appUsers[inputs.id]] : [];
   if (/;WITH tree AS/.test(text)) {
     const codes = below[inputs.pos] || [];
@@ -80,10 +81,10 @@ test('a MANAGER on the org chart approves only its team\'s giveaways and bills',
   assert.match(q.text, /s\.SalesUserId IN \(/);
 });
 
-test('a MANAGER not yet on the org chart still sees and acts on every bill', async () => {
+test('a MANAGER not yet on the org chart cannot act on another user bill', async () => {
   const before = db.calls.length;
   const r = await app.call('PATCH', '/api/so/600/giveaway-lines/1/approve', { body: {}, user: { sub: 30, role: 'MANAGER' } });
-  assert.notEqual(r.status, 404);
+  assert.equal(r.status, 404);
   assert.ok(!db.calls.slice(before).some(c => /;WITH tree AS/.test(c.text)), 'no team lookup for an unplaced manager');
 });
 

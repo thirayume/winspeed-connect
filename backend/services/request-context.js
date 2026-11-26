@@ -12,8 +12,9 @@ const als = new AsyncLocalStorage();
 
 function runWithUser(user, fn) {
   const { effective: effectiveId, actor: actorId } = businessIds(user);
-  return als.run({ effectiveId, actorId }, fn);
+  return als.run({ effectiveId, actorId,orgBranch:user?.orgBranch||null }, fn);
 }
+function currentOrgBranch(){return als.getStore()?.orgBranch||null;}
 
 /** Actor user id of the current request (the admin behind Access As, or the user themself). */
 function currentActorId() {
@@ -36,4 +37,4 @@ async function hasColumn(queryFn, table, column) {
   return present;
 }
 
-module.exports = { runWithUser, currentActorId, hasColumn };
+module.exports = { runWithUser, currentActorId, currentOrgBranch, hasColumn };

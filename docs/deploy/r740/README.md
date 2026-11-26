@@ -214,6 +214,36 @@ afterward. Do not increase the ten-second timeout or disable WinSpeed triggers.
 Native WinSpeed 116 create/edit/cancel operations need their approved Sale-App
 bridge permit; incomplete saves remain held for review/recovery.
 
+The uncommitted Direct116 candidate changes that last rule only after its own
+acceptance and reviewed activation. The running release above remains governed
+by its existing protocol. Candidate migrations 281 and 283–289 provide scoped
+authority, connection staging, audit admission, metadata order and recovery.
+`-NativeWriterDirect116 -NativeWriterProgramName <reviewed-name>
+-NativeWriterLoginSidHex <reviewed-sid>` selects the direct plan for both planning
+and apply. Keep these exact values from the verified native client; the recorder
+employee is not a substitute for the authenticated native audit operator.
+
+The direct plan verifies 50 fingerprints, head FIRST DELETE, audit LAST INSERT,
+coupon consume FIRST UPDATE, current migration hashes and the five reviewed hook
+bodies stored in the default-off contract. It explicitly recognizes only the
+reviewed legacy four-hook upgrade. App readers/reservations stop on unfinished
+native stages or attestation drift. New native cuts use free quantity; reductions
+and cancellation return only that document's allocations through immutable return
+entries. Expired tickets warn and remain usable under the owner's policy.
+
+An incomplete native autocommit save is never declared successful just because
+WinSpeed opens a print selector or writes an audit attempt. Review the completed
+receipt, physical document, balances and reservations. Admin's native recovery
+panel first shows a fresh preview. Close the original WinSpeed connection before
+confirming a reasoned restore of the exact pre-save header, all detail columns
+and coupon balances. A session-owned lease proves closure without granting the
+app VIEW SERVER STATE. Changed sources, invoiced/admitted documents, stale proof
+or an active original connection keep the hold. Recovery records its own actual/
+effective administrator; it never manufactures the original native operator,
+approval or audit. History-aware pause retains the guards; nightly restore must
+preserve the same audited protocol and native policy. See GO-LIVE-STATUS for the
+remaining physical gate; direct mode is currently enabled only on the v3 copy.
+
 For controlled deactivation, use `PlanDisable` then `Disable` with a fresh hash.
 It refuses unfinished native work and outstanding reservations. With business
 history, it pauses the native-writer contract while retaining the bridge/hooks:
@@ -561,3 +591,31 @@ in both live companies and UAT). No new migration, Rebate Reset, flag change or
 company2 native writer activation is needed. UAT remains limited to its clone;
 cross-company acceptance uses isolated copies and a login without live access.
 See GO-LIVE-STATUS for candidate versus actual deployed results.
+
+The current direct candidate also rejects native I/U/D audits when no observed
+save stage exists. WinSpeed can otherwise continue to print after an earlier
+statement was rejected. Print audits remain allowed. The reviewed release plan
+accepts only the exact previous direct module/fingerprints for this upgrade;
+unknown drift still blocks activation. Migration 288 preserves legacy caller
+SET options, and 289 rotates only an exhausted native SMID block while retaining
+all cancelled-document history. Down migration does not restore a retired block.
+These changes are rehearsed on v3 only; follow GO-LIVE-STATUS before rollout.
+
+After a native save error, WinSpeed may still open its print selection window.
+Close that window, reopen the document and verify its persisted quantities; do
+not infer success from the print dialog or repeatedly press Save. The direct
+protocol requires a completed native audit receipt. A failed increase against an
+App reservation must preserve the prior saved document and balances.
+
+For the organization candidate, apply the reviewed private setup separately in
+UAT before PROD: validate unique native Employee codes and existing account
+links; use the ADMIN native-Employee editor for names/supervisors; create each
+promotion position directly below its actual manager; and assign SALE and
+PROMOTION territories independently in the territory editor. Province overlap
+is permitted across the two types, but not between active territories of the
+same type. Preserve existing document owners and historical keys. The reserved
+App admin uses a system Employee metadata record, never a fabricated native
+login. Re-review cross-company identity bindings after either Employee link
+changes. Missing secondary-company staff/accounts need explicit setup; do not
+copy passwords or activate inactive accounts automatically. Annual plans and
+sales targets remain business-owner setup after rollout.

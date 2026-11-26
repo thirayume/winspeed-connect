@@ -2,17 +2,24 @@
 const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/route-harness.cjs');
 let state,failAudit=false,queue=Promise.resolve();
 const db=h.installDbStub(({kind,text,inputs:p})=>{
+ if(text.includes('SELECT Id, EmpId, PositionCode'))return [{Id:Number(p.id),EmpId:null,PositionCode:{10:'QA-SALES',20:'QA-MANAGER',30:'QA-EXEC'}[p.id]||null}];
+ if(text.includes('SELECT PositionCode,ReportsTo,RecordScope,IsActive'))return [{PositionCode:p.pos,IsActive:1,RecordScope:'ORG'}];
+ if(text.includes(';WITH budgetBranches'))return (p.pos==='QA-MANAGER'?['QA-MANAGER','QA-SALES']:p.pos==='QA-EXEC'?['QA-EXEC','QA-MANAGER','QA-SALES']:[p.pos]).map(PositionCode=>({PositionCode}));
+ if(text.includes('SELECT PositionCode FROM wf.OrgPosition WITH'))return ['QA-SALES','QA-MANAGER','QA-EXEC','QA-WEST'].includes(p.branch)?[{PositionCode:p.branch}]:[];
+ if(text.includes('wf.fn_IsUserAbovePosition'))return [{Allowed:p.branch==='QA-SALES'&&[20,30].includes(Number(p.supervisor))||p.branch==='QA-MANAGER'&&Number(p.supervisor)===30?1:0}];
+ if(text.includes(';WITH tree AS'))return (p.pos==='QA-MANAGER'?[10,20]:p.pos==='QA-EXEC'?[10,20,30]:[p.id]).map(Id=>({Id,EmpId:null}));
+ if(text.includes('wf.fn_IsOrganizationSuperior'))return [{Allowed:[[20,10],[30,20],[30,10]].some(([a,b])=>a===Number(p.supervisor)&&b===Number(p.employee))?1:0}];
  assert.doesNotMatch(text,/\b(?:UPDATE|INSERT INTO|DELETE FROM)\s+(?:dbo\.|wf\.(?:GiveawayBudget|Rebate))/i);
  if(text.includes('SELECT * FROM wf.BudgetPlan')){assert.match(text,/@id/);return state.plan?[state.plan]:[];}
  if(text.includes('SELECT * FROM wf.PromotionBudgetLine'))return state.lines;
  if(text.includes('SELECT Region,Amount FROM wf.PromotionBudgetAllocation'))return state.allocations;
  if(text.includes('SELECT PlanId FROM wf.BudgetPlan'))return state.plan&&state.plan.PlanId!==p.id?[{PlanId:state.plan.PlanId}]:[];
- if(text.includes('INSERT INTO wf.BudgetPlan')){state.plan={PlanId:1,PeriodYear:p.periodYear,Channel:p.channel,Title:p.title,PreparedBy:p.preparedBy,PreparedActorId:p.preparedActorId,Status:'DRAFT',EditVersion:1};return [{PlanId:1}];}
+ if(text.includes('INSERT INTO wf.BudgetPlan')){state.plan={PlanId:1,PeriodYear:p.periodYear,Channel:p.channel,BranchPositionCode:p.branchPositionCode,Title:p.title,PreparedBy:p.preparedBy,PreparedActorId:p.preparedActorId,Status:'DRAFT',EditVersion:1};return [{PlanId:1}];}
  if(text.includes('UPDATE wf.BudgetPlan')){
   assert.equal(kind,'tx');const b=state.plan;b.EditVersion++;
   if(text.includes('DeletedAt=GETUTCDATE'))Object.assign(b,{DeletedAt:'2026-11-25',DeletedBy:p.uid});
   else if(text.includes('DeletedAt=NULL'))Object.assign(b,{DeletedAt:null,DeletedBy:null});
-  else if(text.includes("Status='DRAFT'"))Object.assign(b,{DocumentJson:p.document,Status:'DRAFT',Title:p.title,PeriodYear:p.periodYear,Channel:p.channel,AssignedReviewerId:p.reviewer,AssignedApproverId:p.approver,ReviewedBy:null,ReviewedAt:null,ApprovedBy:null,ApprovedAt:null});
+  else if(text.includes("Status='DRAFT'"))Object.assign(b,{BranchPositionCode:p.branchPositionCode,DocumentJson:p.document,Status:'DRAFT',Title:p.title,PeriodYear:p.periodYear,Channel:p.channel,AssignedReviewerId:p.reviewer,AssignedApproverId:p.approver,ReviewedBy:null,ReviewedAt:null,ApprovedBy:null,ApprovedAt:null});
   else if(text.includes("Status='PENDING'"))Object.assign(b,{Status:'PENDING',PreparedAt:'2026-11-23',ReviewedBy:null,ReviewedActorId:null,ReviewedAt:null,ApprovedBy:null,ApprovedActorId:null,ApprovedAt:null});
   else if(text.includes("Status='APPROVED'"))Object.assign(b,{Status:'APPROVED',ApprovedBy:p.uid,ApprovedActorId:p.actor,ApprovedAt:'2026-11-23'});
   else if(text.includes("Status='REJECTED'"))b.Status='REJECTED';
@@ -30,12 +37,26 @@ db.stub.wfTransaction=fn=>{const run=queue.then(async()=>{const before=structure
 const auditPath=require.resolve('../services/policy-contract');require.cache[auditPath]={id:auditPath,filename:auditPath,loaded:true,exports:{logChangeEvent:async(tx,event)=>{assert.equal(tx,db.tx);if(failAudit)throw Error('AUDIT_FAILED');state.events.push(event);}}};
 const budget=require('../services/promotion-budget');
 const users={sales:{sub:10,role:'SALES'},reviewer:{sub:20,role:'MANAGER'},approver:{sub:30,role:'C_LEVEL'},other:{sub:40,role:'SALES'}};
-const payload=()=>({periodYear:2569,channel:'ทั่วไป',title:'QA annual plan',assignedReviewerId:20,assignedApproverId:30,lines:[{region:'QA North',category:'1.1',itemName:'QA bag',quantity:10,unitPrice:11,amount:110}],allocations:[{region:'QA North',amount:1000}]});
+const payload=()=>({periodYear:2569,channel:'ทั่วไป',branchPositionCode:'QA-SALES',title:'QA annual plan',assignedReviewerId:20,assignedApproverId:30,lines:[{region:'QA North',category:'1.1',itemName:'QA bag',quantity:10,unitPrice:11,amount:110}],allocations:[{region:'QA North',amount:1000}]});
 const write=(user,action,input={})=>budget.write(db.stub,user,{expectedVersion:state.plan?.EditVersion,...input},state.plan?.PlanId||null,action,'QA test',null);
 test.beforeEach(()=>{state={plan:null,lines:[],allocations:[],events:[]};failAudit=false;});
 test('annual years normalize and quantities/amounts are exact without mixing giveaway quotas',()=>{
  assert.equal(budget.year(2569),2026);assert.equal(budget.year(2026),2026);
  for(const p of [{...payload(),periodYear:0},{...payload(),lines:[{...payload().lines[0],amount:109}]},{...payload(),allocations:[{region:'N',amount:1},{region:'N',amount:2}]}])assert.throws(()=>budget.validate(p));
+});
+test('an admin-prepared branch plan is readable by its manager and approvals follow the owned branch',async()=>{
+ const admin={sub:99,role:'ADMIN'};
+ await write(admin,'save',payload());
+ const s=await require('../services/visible-scope').getVisibleScope(users.reviewer,db.stub.wfQuery,{includePositions:true});
+ assert.equal(budget.canRead({...users.reviewer,budgetRecordScopes:[s]},state.plan),true);
+ await write(admin,'submit');await write(users.reviewer,'review');await write(users.approver,'approve');
+ assert.equal(state.plan.Status,'APPROVED');assert.equal(state.plan.PreparedBy,99);
+});
+test('branch selection is required, scoped and immutable after first save',async()=>{
+ await assert.rejects(write(users.sales,'save',{...payload(),branchPositionCode:null}),/เลือกสายงาน/);
+ await assert.rejects(write(users.sales,'save',{...payload(),branchPositionCode:'QA-WEST'}),e=>e.status===403);
+ await write(users.sales,'save',payload());const before=structuredClone(state);
+ await assert.rejects(write({sub:99,role:'ADMIN'},'save',{...payload(),branchPositionCode:'QA-WEST'}),e=>e.status===409);assert.deepEqual(state,before);
 });
 test('full prepare/review/approve chain; stale and out-of-order approvals cannot spend or overwrite',async()=>{
  await write(users.sales,'save',payload());await write(users.sales,'submit');
@@ -60,6 +81,11 @@ test('owner/assignment checks and Access As require an auditable actual identity
  await write(users.sales,'save',payload());assert.equal(budget.canRead(users.other,state.plan),false);
  await assert.rejects(write({...users.sales,isImpersonating:true,actorSub:40,actorRole:'SALES'},'save',payload()),e=>e.status===503);
  await assert.rejects(write(users.other,'submit'),e=>e.status===403);
+});
+
+test('same-role managers outside the reporting line cannot replace the assigned approval chain',async()=>{
+ await write(users.sales,'save',{...payload(),assignedReviewerId:30,assignedApproverId:20});
+ const before=structuredClone(state);await assert.rejects(write(users.sales,'submit'),e=>e.code==='BUDGET_APPROVER_OUTSIDE_CHAIN');assert.deepEqual(state,before);
 });
 test('Budget Plan menu follows assigned permissions, including custom reviewers and revoked access',()=>{
  const menu=user=>require('../services/role-profiles').filteredCapabilities(user).menus;

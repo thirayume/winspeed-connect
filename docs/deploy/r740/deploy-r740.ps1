@@ -31,6 +31,9 @@ param(
   [int]$NativeWriterActorId,
   [string]$NativeWriterEvidence,
   [string]$NativeWriterPlanHash,
+  [switch]$NativeWriterDirect116,
+  [string]$NativeWriterProgramName = 'Prosoft WINSpeed',
+  [string]$NativeWriterLoginSidHex,
   [switch]$NativeWriterRefresh
 )
 $ErrorActionPreference = 'Stop'
@@ -247,7 +250,8 @@ function Invoke-NativeWriterRelease {
   $database = if ($Environment -eq 'uat') { 'dbwins_worldfert9_uat' } else { 'dbwins_worldfert9' }
   $action = if ($NativeWriterAction -in @('Disable','PlanDisable')) { 'DISABLE' } else { 'ENABLE' }
   $inputJson = @{database=$database;action=$action;approverId=$NativeWriterApproverId;actorId=$NativeWriterActorId;
-    reason=$NativeWriterEvidence;sourceRevision=$revision} | ConvertTo-Json -Compress
+    reason=$NativeWriterEvidence;sourceRevision=$revision;directNative116=[bool]$NativeWriterDirect116;
+    nativeProgramName=$NativeWriterProgramName;nativeLoginSidHex=$NativeWriterLoginSidHex} | ConvertTo-Json -Compress
   $input64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($inputJson))
   $node = (Get-Command node -ErrorAction Stop).Source
   $json = & $node (Join-Path $repo 'backend/scripts/native-writer-release-payload.cjs') $input64

@@ -10,12 +10,14 @@ const h = require('./helpers/route-harness.cjs');
 h.installDbStub(() => []);
 const { lockTripForMembership, deleteTripIfEmpty } = require('../services/trip-membership-lock');
 
-function fakeDatabase({ status = 'OPEN', bills = 0 } = {}) {
+function fakeDatabase({ status = 'OPEN', bills = 0,visible=true } = {}) {
   const db = { trip: { TripId: 7, Status: status }, bills, statements: [], lockOwner: null, waiters: [] };
   db.begin = () => {
     const tx = { id: Symbol('tx') };
     const run = async (text, inputs) => {
       db.statements.push(text);
+      if(text.includes('SELECT Id, EmpId, PositionCode'))return {recordset:[{Id:Number(inputs.id),EmpId:null,PositionCode:null}]};
+      if(text.includes('WHERE t.TripId=@membershipTripId'))return {recordset:visible?[{ok:1}]:[]};
       if (/FROM wf\.SalesTrip WITH \(UPDLOCK, HOLDLOCK\)/.test(text)) {
         while (db.lockOwner && db.lockOwner !== tx.id) await new Promise(resolve => db.waiters.push(resolve));
         db.lockOwner = tx.id;
@@ -64,6 +66,12 @@ test('joining a missing, deleted or malformed trip is refused; no trip means no 
   assert.equal(await lockTripForMembership(db.begin(), ''), null);
   assert.equal(db.statements.length, before, 'no query without a trip');
 });
+test('membership authorization uses the locked transaction and rejects a hidden or mixed trip before attaching a bill',async()=>{
+ const hidden=fakeDatabase({visible:false}),tx=hidden.begin();
+ try{await assert.rejects(lockTripForMembership(tx,7,{sub:43,role:'SALES'}),e=>e.status===404&&e.code==='TRIP_NOT_FOUND');assert.equal(hidden.bills,0);assert.equal(hidden.lockOwner,tx.id);}
+ finally{tx.end();}
+ const own=fakeDatabase(),ok=own.begin();try{await lockTripForMembership(ok,7,{sub:43,role:'SALES'});assert.ok(own.statements.some(s=>s.includes('outsideMember')&&s.includes('@tripStartUtc')));}finally{ok.end();}
+});
 
 test('delete keeps a trip that still has bills and counts them from committed rows', async () => {
   const db = fakeDatabase({ bills: 2 });
@@ -86,13 +94,14 @@ test('the routes use the lock: bill create and edit join under it, both delete p
   const so = fs.readFileSync(path.join(__dirname, '../routes/so.js'), 'utf8');
   const trips = fs.readFileSync(path.join(__dirname, '../routes/trips.js'), 'utf8');
   const create = so.slice(so.indexOf("router.post('/', requireCapability('so.create')"), so.indexOf("router.put('/:id', requireCapability('so.edit')"));
-  assert.ok(create.indexOf('lockTripForMembership(tx, tripToJoin)') > 0 && create.indexOf('lockTripForMembership(tx, tripToJoin)') < create.indexOf('INSERT INTO wf.SalesOrder'),
+  assert.ok(create.indexOf('lockTripForMembership(tx, tripToJoin,req.user)') > 0 && create.indexOf('lockTripForMembership(tx, tripToJoin,req.user)') < create.indexOf('INSERT INTO wf.SalesOrder'),
     'create takes the trip lock before the first insert');
-  assert.match(so, /Number\(effectiveTripId\) !== Number\(existingRow\.TripId \|\| 0\)\)\s+await require\('\.\.\/services\/trip-membership-lock'\)\.lockTripForMembership\(tx, effectiveTripId\)/);
+  assert.match(so,/\[existingRow\.TripId,effectiveTripId\]/);
+  assert.match(so,/lockTripForMembership\(tx,membershipTrip,req.user\)/);
   assert.match(so, /deleteTripIfEmpty\(tx, tid\)/);
   assert.doesNotMatch(so, /UPDATE wf\.SalesTrip SET Status = 'DELETED'/);
   const del = trips.slice(trips.indexOf("router.delete('/:id'"));
   const body = del.slice(0, del.indexOf('// ── Multi-customer'));
-  assert.match(body, /wfTransaction\(async tx =>/); assert.match(body, /deleteTripIfEmpty\(tx, tripId\)/); assert.match(body, /action: 'DELETE'/);
+  assert.match(body, /wfTransaction\(async tx =>/); assert.match(body, /deleteTripIfEmpty\(tx, tripId,req\.user\)/); assert.match(body, /action: 'DELETE'/);
   assert.doesNotMatch(body, /UPDATE wf\.SalesTrip SET Status = 'DELETED'/);
 });

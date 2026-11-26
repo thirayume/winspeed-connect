@@ -41,7 +41,15 @@ function Read-Plan{
  $actual=Rows $payload.metadataQuery;$fingerprints=@()
  foreach($r in $actual){if(-not $r.definition){throw 'NATIVE_RELEASE_METADATA_INVISIBLE'};$fingerprints+=,@($r.TableName.ToLower(),$r.name.ToLower(),[int]$r.is_disabled,(Hash $r.definition))}
  $baseline=Matches $fingerprints $payload.baseline;$bridge=Matches $fingerprints $payload.expected
- if(-not $baseline -and -not $bridge){throw 'NATIVE_RELEASE_METADATA_DRIFT'}
+ $legacy=$false
+ if($payload.native116.enabled -and $payload.priorExpected){$legacy=Matches $fingerprints $payload.priorExpected}
+ $priorDirect=$false
+ if($payload.native116.enabled -and $payload.priorDirectExpected){$priorDirect=Matches $fingerprints $payload.priorDirectExpected}
+ if(-not $baseline -and -not $bridge -and -not $legacy -and -not $priorDirect){throw 'NATIVE_RELEASE_METADATA_DRIFT'}
+ if($payload.native116.enabled -and ($bridge -or $priorDirect)){
+  foreach($order in $payload.orders){$row=@($actual|Where-Object {$_.name -eq $order.name});$field=if($order.event -eq 'DELETE'){'FirstDelete'}else{'LastInsert'}
+   if($row.Count -ne 1 -or [int]$row[0].$field -ne 1){throw 'NATIVE_RELEASE_TRIGGER_ORDER_DRIFT'}}
+ }
  $reader=(Rows "SELECT OBJECT_DEFINITION(OBJECT_ID('wf.usp_ReadNativeDocumentMetadata')) Body,USER_NAME(execute_as_principal_id) PrincipalName FROM sys.sql_modules WHERE object_id=OBJECT_ID('wf.usp_ReadNativeDocumentMetadata')")[0]
  $readerBody=$reader.Body.Replace("`r`n","`n").Trim().Replace('CREATE PROCEDURE ','ALTER PROCEDURE ')
  $expectedReader=$payload.readerSql.Replace("`r`n","`n").Trim()
@@ -56,11 +64,12 @@ function Read-Plan{
   (SELECT COUNT(*) FROM wf.CouponNativeCutAuthorization WHERE State='ACTIVE') OldAuthorizations,
   (SELECT COUNT(*) FROM wf.CouponNativeEditHold h WHERE NOT EXISTS(SELECT 1 FROM wf.CouponNativeEditRelease r WHERE r.EditId=h.EditId)) OldHolds,
   (SELECT COUNT(*) FROM wf.CouponBridgePermit WHERE ReleasedAtUtc IS NULL AND State<>'CANCELLED') BridgePermits,
+  (SELECT COUNT(*) FROM wf.Native116Stage WHERE State='PENDING') Native116Stages,
   (SELECT COUNT(*) FROM wf.NativeDocumentRequest WHERE Status IN('PENDING','APPROVED') AND ExpiresAtUtc>GETUTCDATE()) WriterRequests,
   (SELECT COUNT(*) FROM wf.NativeDeliveryRequest WHERE Status IN('PENDING','APPROVED') AND ExpiresAt>GETUTCDATE()) Legacy104,
   (SELECT COUNT(*) FROM wf.NativeManualRedemptionRequest WHERE Status IN('PENDING','APPROVED') AND ExpiresAt>GETUTCDATE()) Legacy116,
   (SELECT COUNT(*) FROM wf.CouponReservation WHERE Status='RESERVED' AND ReservedQty>ISNULL(ConsumedQty,0) AND (ExpiresAt IS NULL OR ExpiresAt>GETUTCDATE() OR wf.fn_CouponBridgeReservationHeld(Id)=1)) LiveReservations")[0]
- if($busy.OldAuthorizations -or $busy.OldHolds -or $busy.BridgePermits -or $busy.WriterRequests -or $busy.Legacy104 -or $busy.Legacy116){throw 'NATIVE_RELEASE_UNFINISHED_WORK'}
+ if($busy.OldAuthorizations -or $busy.OldHolds -or $busy.BridgePermits -or $busy.Native116Stages -or $busy.WriterRequests -or $busy.Legacy104 -or $busy.Legacy116){throw 'NATIVE_RELEASE_UNFINISHED_WORK'}
  if($payload.action -eq 'DISABLE' -and $busy.LiveReservations){throw 'NATIVE_RELEASE_RESERVATIONS_PREVENT_DISABLE'}
  $contract=Rows "SELECT PolicyVersion,MetadataHash,IsEnabled,ApprovedById,ApprovedActorId FROM wf.NativeWriterContract WHERE ServerName=@server AND DatabaseName=DB_NAME() AND PolicyVersion=@policy" @{server=$payload.server;policy=$payload.policy}
  if($payload.refreshParentReleaseId){
@@ -76,15 +85,36 @@ function Read-Plan{
   if($sourceState.sourceRevision -cne $payload.sourceRevision -or $sourceState.writerEnabled -ne $true -or $sourceState.bridgeEnabled -ne $true){throw 'NATIVE_RELEASE_REFRESH_SOURCE_REVISION_CHANGED'}
  }
  $bridgeContract=Rows "SELECT Enabled,ModulesHash FROM wf.CouponBridgeContract WHERE Version='116-BRIDGE-v1'"
- if($bridgeContract.Count -ne 1 -or ($bridgeContract[0].Enabled -and $bridgeContract[0].ModulesHash -ne $payload.moduleHash)){throw 'NATIVE_RELEASE_BRIDGE_CONTRACT_CHANGED'}
+ if($bridgeContract.Count -ne 1 -or ($bridgeContract[0].Enabled -and $bridgeContract[0].ModulesHash -ne $payload.moduleHash -and
+  -not($legacy -and $bridgeContract[0].ModulesHash -eq $payload.priorModuleHash) -and
+  -not($priorDirect -and $bridgeContract[0].ModulesHash -eq $payload.priorDirectModuleHash))){throw 'NATIVE_RELEASE_BRIDGE_CONTRACT_CHANGED'}
+ $nativePolicy=Rows "SELECT Enabled,ModulesHash,wf.fn_Native116HooksReady() HooksReady,ProgramName,CONVERT(varchar(172),LoginSid,1) LoginSidHex,ApprovedById FROM wf.Native116Contract WHERE Version='NATIVE-116-DIRECT-v1'"
+ if($nativePolicy.Count -ne 1 -or ($nativePolicy[0].Enabled -and -not $payload.native116.enabled)){throw 'NATIVE_RELEASE_PROTOCOL_DOWNGRADE_FORBIDDEN'}
+ if($legacy -and $nativePolicy[0].Enabled){throw 'NATIVE_RELEASE_DIRECT_STATE_INCONSISTENT'}
+ if($nativePolicy[0].Enabled -and (($nativePolicy[0].ModulesHash -cne $payload.moduleHash -and
+  -not($priorDirect -and $nativePolicy[0].ModulesHash -ceq $payload.priorDirectModuleHash)) -or $nativePolicy[0].HooksReady -ne 1)){throw 'NATIVE_RELEASE_DIRECT_ATTESTATION_CHANGED'}
+ if($priorDirect -and $nativePolicy[0].ModulesHash -cne $payload.priorDirectModuleHash){throw 'NATIVE_RELEASE_DIRECT_STATE_INCONSISTENT'}
+ if($payload.refreshParentReleaseId -and $payload.native116.enabled){
+  if($sourceState.native116Policy.enabled -ne $true -or $sourceState.native116Policy.programName -cne $payload.native116.programName -or
+   $sourceState.native116Policy.loginSidHex -cne $payload.native116.loginSidHex -or -not $nativePolicy[0].Enabled -or
+   $nativePolicy[0].ProgramName -cne $payload.native116.programName -or
+   $nativePolicy[0].LoginSidHex.ToLower() -cne $payload.native116.loginSidHex -or $nativePolicy[0].ApprovedById -ne $payload.approverId){throw 'NATIVE_RELEASE_REFRESH_DIRECT_POLICY_CHANGED'}
+ }
  if($payload.action -eq 'DISABLE' -and -not $bridge){throw 'NATIVE_RELEASE_NOT_ACTIVE'}
  $first=(Rows "SELECT COUNT(*) Conflicts FROM sys.triggers WHERE parent_id=OBJECT_ID('dbo.WFCoupon') AND OBJECTPROPERTY(object_id,'ExecIsFirstUpdateTrigger')=1 AND name<>'WF_CouponNativeConsume'")[0].Conflicts
  if($first){throw 'NATIVE_RELEASE_TRIGGER_ORDER_CONFLICT'}
+ if($payload.native116.enabled){
+  $firstHead=(Rows "SELECT COUNT(*) Conflicts FROM sys.triggers WHERE parent_id=OBJECT_ID('dbo.WFRedemtionHD') AND OBJECTPROPERTY(object_id,'ExecIsFirstDeleteTrigger')=1 AND name<>'WF_CouponNativeEditHeadHook'")[0].Conflicts
+  $lastAudit=(Rows "SELECT COUNT(*) Conflicts FROM sys.triggers WHERE parent_id=OBJECT_ID('dbo.SMAudit') AND OBJECTPROPERTY(object_id,'ExecIsLastInsertTrigger')=1 AND name<>'WF_Native116AuditHook'")[0].Conflicts
+  if($firstHead -or $lastAudit){throw 'NATIVE_RELEASE_TRIGGER_ORDER_CONFLICT'}
+ }
  $state=[ordered]@{server=$identity.ServerName;database=$identity.DbName;dbId=$identity.DbId;action=$payload.action;sourceRevision=$payload.sourceRevision;sourceHash=$payload.sourceHash;
   approverId=$payload.approverId;actorId=$payload.actorId;reason=$payload.reason;readerPrincipal=$reader.PrincipalName;readerHash=(Hash $reader.Body);fingerprints=$fingerprints;
-  writerContract=$contract;bridgeContract=$bridgeContract;busy=$busy}
+  writerContract=$contract;bridgeContract=$bridgeContract;native116Policy=$nativePolicy;desiredNative116Policy=$payload.native116;busy=$busy;
+  triggerOrder=@($actual|Select-Object TableName,name,FirstDelete,LastInsert,FirstUpdate)}
+ $state.sourceProtocol=if($bridge){'CURRENT'}elseif($priorDirect){'PRIOR_DIRECT'}elseif($legacy){'LEGACY_BRIDGE'}else{'BASELINE'}
  $state.releaseCount=(Rows 'SELECT COUNT(*) Total FROM wf.NativeWriterRelease')[0].Total
- $state.businessHistory=(Rows 'SELECT (SELECT COUNT(*) FROM wf.NativeDocumentReceipt)+(SELECT COUNT(*) FROM wf.CouponBridgeDocument) Total')[0].Total
+ $state.businessHistory=(Rows 'SELECT (SELECT COUNT(*) FROM wf.NativeDocumentReceipt)+(SELECT COUNT(*) FROM wf.CouponBridgeDocument)+(SELECT COUNT(*) FROM wf.Native116Stage) Total')[0].Total
  $state.guardMode=if($state.businessHistory -gt 0){'RETAIN_HISTORY_GUARDS'}else{'PRISTINE_BASELINE'}
  $planHash=Hash ($state|ConvertTo-Json -Depth 8 -Compress)
  return @{hash=$planHash;state=$state}
@@ -94,27 +124,46 @@ try{
  if(-not $apply){$plan=Read-Plan;Write-Output ('NATIVE_RELEASE_PLAN='+($plan|ConvertTo-Json -Depth 9 -Compress));return}
  if(-not $payload.refreshParentReleaseId -and $approvedPlan -notmatch '^[a-f0-9]{64}$'){throw 'NATIVE_RELEASE_PLAN_APPROVAL_REQUIRED'}
  $tx=$connection.BeginTransaction([Data.IsolationLevel]::Serializable)
- Exec "SET LOCK_TIMEOUT 10000;SET XACT_ABORT ON;DECLARE @r int;EXEC @r=sp_getapplock @Resource='WF_NATIVE_WRITER_RELEASE',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=10000;IF @r<0 RAISERROR('NATIVE_RELEASE_BUSY',16,1);"
+ Exec "SET LOCK_TIMEOUT 10000;SET XACT_ABORT ON;DECLARE @r int;EXEC @r=sp_getapplock @Resource='WF_NATIVE_WRITER_RELEASE',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=10000;IF @r<0 RAISERROR('NATIVE_RELEASE_BUSY',16,1);
+ EXEC @r=sp_getapplock @Resource='WF_NATIVE_DOCUMENTS_V3',@LockMode='Exclusive',@LockOwner='Transaction',@LockTimeout=10000;IF @r<0 RAISERROR('NATIVE_RELEASE_BUSY',16,1);"
  $plan=Read-Plan
  if($payload.refreshParentReleaseId){$approvedPlan=$plan.hash}
  if($plan.hash -ne $approvedPlan){throw 'NATIVE_RELEASE_PLAN_CHANGED'}
  $values=@{server=$payload.server;policy=$payload.policy;metadata=$payload.metadataHash;module=$payload.moduleHash;approver=[int]$payload.approverId;actor=[int]$payload.actorId;reason=$payload.reason}
  if($payload.action -eq 'ENABLE'){
   if(-not $payload.refreshParentReleaseId){
-   foreach($hook in $payload.hooks){Exec $hook.sql}
+   foreach($hook in $payload.hooks){
+    if($hook.name -eq 'WF_Native116AuditHook' -and -not (Rows "SELECT OBJECT_ID('dbo.WF_Native116AuditHook','TR') Id")[0].Id){Exec $hook.sql.Replace('ALTER TRIGGER ','CREATE TRIGGER ')}else{Exec $hook.sql}
+   }
    Exec "ENABLE TRIGGER dbo.WF_CouponNativeConsume ON dbo.WFCoupon;
    ENABLE TRIGGER dbo.WF_CouponReservationGuard ON dbo.WFCoupon;
    ENABLE TRIGGER dbo.WF_CouponNativeEditHeadHook ON dbo.WFRedemtionHD;
    ENABLE TRIGGER dbo.WF_CouponNativeEditDetailHook ON dbo.WFRedemtionDT;
    EXEC sp_settriggerorder @triggername='dbo.WF_CouponNativeConsume',@order='First',@stmttype='UPDATE';"
+   if($payload.native116.enabled){
+    Exec "ENABLE TRIGGER dbo.WF_Native116AuditHook ON dbo.SMAudit;
+     EXEC sp_settriggerorder @triggername='dbo.WF_CouponNativeEditHeadHook',@order='First',@stmttype='DELETE';
+     EXEC sp_settriggerorder @triggername='dbo.WF_Native116AuditHook',@order='Last',@stmttype='INSERT';"
+   }
   }
   Exec "UPDATE wf.NativeWriterContract SET IsEnabled=1,MetadataHash=@metadata,ApprovedById=@approver,ApprovedActorId=@actor,ApprovedAtUtc=GETUTCDATE(),Evidence=@reason
    WHERE ServerName=@server AND DatabaseName=DB_NAME() AND PolicyVersion=@policy;
    IF @@ROWCOUNT=0 INSERT wf.NativeWriterContract(ServerName,DatabaseName,PolicyVersion,MetadataHash,IsEnabled,ApprovedById,ApprovedActorId,ApprovedAtUtc,Evidence)
     VALUES(@server,DB_NAME(),@policy,@metadata,1,@approver,@actor,GETUTCDATE(),@reason);
    UPDATE wf.CouponBridgeContract SET Enabled=1,ModulesHash=@module,ApprovedById=@approver,ActorId=@actor,ApprovedAtUtc=GETUTCDATE(),Evidence=@reason WHERE Version='116-BRIDGE-v1';" $values
+  if($payload.native116.enabled){
+   $values.nativeProgram=$payload.native116.programName;$values.nativeSid=$payload.native116.loginSidHex
+   foreach($hook in $payload.hooks){
+    $hookValues=@{name=$hook.name;table=$hook.table;definition=$hook.sql.Replace('ALTER TRIGGER ','CREATE TRIGGER ').Replace("`r`n","`n");module=$payload.moduleHash}
+    Exec "UPDATE wf.Native116HookContract SET TableName=@table,ExpectedDefinition=@definition,ModulesHash=@module WHERE TriggerName=@name;
+     IF @@ROWCOUNT=0 INSERT wf.Native116HookContract(TriggerName,TableName,ExpectedDefinition,ModulesHash) VALUES(@name,@table,@definition,@module);" $hookValues
+   }
+   Exec "UPDATE wf.Native116Contract SET Enabled=1,ProgramName=@nativeProgram,LoginSid=CONVERT(varbinary(85),@nativeSid,1),ModulesHash=@module,ApprovedById=@approver,ApprovedAtUtc=GETUTCDATE(),Evidence=@reason WHERE Version='NATIVE-116-DIRECT-v1';IF @@ROWCOUNT<>1 RAISERROR('NATIVE_RELEASE_DIRECT_POLICY_MISSING',16,1);
+    IF wf.fn_Native116HooksReady()<>1 RAISERROR('NATIVE_RELEASE_DIRECT_ATTESTATION_FAILED',16,1);" $values
+  }
  }elseif($plan.state.businessHistory -eq 0){
   foreach($hook in $payload.originalHooks){Exec $hook.sql}
+  if($payload.native116.enabled){Exec "DROP TRIGGER dbo.WF_Native116AuditHook;UPDATE wf.Native116Contract SET Enabled=0 WHERE Version='NATIVE-116-DIRECT-v1';"}
   Exec "DISABLE TRIGGER dbo.WF_CouponNativeConsume ON dbo.WFCoupon;
    DISABLE TRIGGER dbo.WF_CouponReservationGuard ON dbo.WFCoupon;
    DISABLE TRIGGER dbo.WF_CouponNativeEditHeadHook ON dbo.WFRedemtionHD;
@@ -130,9 +179,14 @@ try{
  foreach($r in $actual){$fingerprints+=,@($r.TableName.ToLower(),$r.name.ToLower(),[int]$r.is_disabled,(Hash $r.definition))}
  $expected=if($payload.action -eq 'ENABLE' -or $plan.state.businessHistory -gt 0){$payload.expected}else{$payload.baseline}
  if(-not (Matches $fingerprints $expected)){throw 'NATIVE_RELEASE_POST_METADATA_MISMATCH'}
+ if($payload.native116.enabled -and ($payload.action -eq 'ENABLE' -or $plan.state.businessHistory -gt 0)){
+  foreach($order in $payload.orders){$row=@($actual|Where-Object {$_.name -eq $order.name});$field=if($order.event -eq 'DELETE'){'FirstDelete'}else{'LastInsert'}
+   if($row.Count -ne 1 -or [int]$row[0].$field -ne 1){throw 'NATIVE_RELEASE_POST_TRIGGER_ORDER_MISMATCH'}}
+ }
  $values.plan=$approvedPlan;$values.action=$payload.action;$values.release=[Guid]::NewGuid();$values.baseline=($payload.originalHooks|ConvertTo-Json -Depth 6 -Compress)
  $values.before=($plan.state|ConvertTo-Json -Depth 9 -Compress)
- $values.after=([ordered]@{writerEnabled=($payload.action -eq 'ENABLE');bridgeEnabled=($payload.action -eq 'ENABLE' -or $plan.state.businessHistory -gt 0);fingerprints=$fingerprints;guardMode=$plan.state.guardMode;sourceRevision=$payload.sourceRevision;parentReleaseId=$payload.refreshParentReleaseId}|ConvertTo-Json -Depth 9 -Compress)
+ $values.after=([ordered]@{writerEnabled=($payload.action -eq 'ENABLE');bridgeEnabled=($payload.action -eq 'ENABLE' -or $plan.state.businessHistory -gt 0);native116Policy=$payload.native116;
+  triggerOrder=@($actual|Select-Object TableName,name,FirstDelete,LastInsert,FirstUpdate);fingerprints=$fingerprints;guardMode=$plan.state.guardMode;sourceRevision=$payload.sourceRevision;parentReleaseId=$payload.refreshParentReleaseId}|ConvertTo-Json -Depth 9 -Compress)
  $values.parent=if($payload.refreshParentReleaseId){[Guid]$payload.refreshParentReleaseId}else{[DBNull]::Value}
  Exec "INSERT wf.NativeWriterRelease(ReleaseId,ParentReleaseId,Action,ServerName,DatabaseName,PlanHash,ModulesHash,BaselineHooksJson,ApprovedById,ActorId,Reason,SqlLogin)
   VALUES(@release,@parent,@action,@server,DB_NAME(),@plan,@module,@baseline,@approver,@actor,@reason,ORIGINAL_LOGIN());

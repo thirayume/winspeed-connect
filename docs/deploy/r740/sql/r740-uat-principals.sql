@@ -251,6 +251,14 @@ BEGIN
  FROM sys.triggers t LEFT JOIN sys.sql_modules m ON m.object_id=t.object_id
  WHERE t.parent_id IN(OBJECT_ID(''dbo.SOHD''),OBJECT_ID(''dbo.SODT''),OBJECT_ID(''dbo.SOHDRemark''),OBJECT_ID(''dbo.SODTRemark''),OBJECT_ID(''dbo.SOInvHD''),OBJECT_ID(''dbo.SOInvDT''),OBJECT_ID(''dbo.SMSat''),OBJECT_ID(''dbo.SMReserveSat''),OBJECT_ID(''dbo.ICStockDetail''),OBJECT_ID(''dbo.ICCostDetail''),OBJECT_ID(''dbo.WFRedemtionHD''),OBJECT_ID(''dbo.WFRedemtionDT''),OBJECT_ID(''dbo.WFCoupon''),OBJECT_ID(''dbo.VTVAT''),OBJECT_ID(''dbo.SMAudit''),OBJECT_ID(''dbo.SMEvent''),OBJECT_ID(''dbo.SMID''),OBJECT_ID(''dbo.EMRunBrch''),OBJECT_ID(''dbo.EMRunChar''),OBJECT_ID(''dbo.Define_104''));
 END;';
+        -- Migration 286 adds only fixed trigger-order metadata. Accept its exact
+        -- reviewed projection after restore; older snapshots retain the277body.
+        IF EXISTS(SELECT 1 FROM wf.SchemaMigration WHERE FileName='286_native_116_metadata_scope.sql')
+            SET @native_expected=REPLACE(@native_expected,N't.name,t.is_disabled,m.definition',
+                N't.name,t.is_disabled,m.definition,'+CHAR(10)+
+                N'  CONVERT(int,OBJECTPROPERTY(t.object_id,''ExecIsFirstDeleteTrigger'')) FirstDelete,'+CHAR(10)+
+                N'  CONVERT(int,OBJECTPROPERTY(t.object_id,''ExecIsLastInsertTrigger'')) LastInsert,'+CHAR(10)+
+                N'  CONVERT(int,OBJECTPROPERTY(t.object_id,''ExecIsFirstUpdateTrigger'')) FirstUpdate');
         SET @native_expected=REPLACE(@native_expected,CHAR(13),N'');
         SET @native_uat=REPLACE(@native_expected,N'WITH EXECUTE AS SELF',N'WITH EXECUTE AS ''wf_r740_uat_migrator_v2''');
         SET @native_actual=LTRIM(RTRIM(REPLACE(OBJECT_DEFINITION(OBJECT_ID(N'wf.usp_ReadNativeDocumentMetadata')),CHAR(13),N'')));

@@ -12,8 +12,8 @@ async function requireTripAuditIdentity(user){
     throw Object.assign(Error('TRIP_ACTOR_AUDIT_UNAVAILABLE'),{status:503});
   return ids;
 }
-async function logTripChange(tx,{tripId,action,before,after,effectiveId}){
+async function logTripChange(tx,{tripId,action,before,after,effectiveId,reasonCode='TRIP_LOAD_PLAN'}){
   await logChangeEvent(tx,{entityType:'SALES_TRIP',entityId:String(tripId),action,
-    beforeJson:before,afterJson:after,reasonCode:'TRIP_LOAD_PLAN',userId:String(effectiveId)});
+    beforeJson:before,afterJson:after,reasonCode,userId:String(effectiveId)});
 }
 module.exports={requireTripAuditIdentity,logTripChange};

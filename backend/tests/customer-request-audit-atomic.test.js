@@ -11,6 +11,10 @@ require.cache[auth] = { id: auth, filename: auth, loaded: true, exports: {
   requireRole: () => (_req, _res, next) => next(), requireCapability: () => (_req, _res, next) => next()
 } };
 const db = h.installDbStub(({ kind, text, inputs }) => {
+  if(text.includes('SELECT Id, EmpId, PositionCode'))return [{Id:inputs.id,EmpId:null,PositionCode:'QA-CUSTOMER-MGR'}];
+  if(text.includes('SELECT PositionCode,ReportsTo,RecordScope,IsActive'))return [{PositionCode:'QA-CUSTOMER-MGR',IsActive:1,RecordScope:'ORG'}];
+  if(text.includes(';WITH tree AS'))return [{Id:inputs.id,EmpId:null},{Id:7,EmpId:null}];
+  if(text.includes('wf.fn_IsOrganizationSuperior'))return [{Allowed:inputs.employee===7?1:0}];
   if (text.includes("COL_LENGTH('wf.ChangeEvent'")) return [{ HasCol: 1 }];
   if (text.includes('INSERT INTO wf.CustomerRequest')) {
     assert.equal(kind, 'tx'); state.request = { Id: 42, Status: 'PENDING', RequestedBy: inputs.uid }; return [{ Id: 42 }];
@@ -36,7 +40,7 @@ db.stub.wfTransaction = async fn => { const before = structuredClone(state); try
 let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master']]); });
 test.after(async () => app.close());
-test.beforeEach(() => { state = { request: { Id: 42, Status: 'PENDING', CustName: 'PRIVATE_NAME', Email: 'PRIVATE_EMAIL', WinspeedCustId: '12', CreditLimit: 20 }, ext: false, credit: false, audits: [] }; failure = null; withContext = true; user = { sub: 8, actorSub: 17, role: 'MANAGER', actorRole: 'ADMIN', isImpersonating: true }; });
+test.beforeEach(() => { state = { request: { Id: 42, Status: 'PENDING', RequestedBy: 7, CustName: 'PRIVATE_NAME', Email: 'PRIVATE_EMAIL', WinspeedCustId: '12', CreditLimit: 20 }, ext: false, credit: false, audits: [] }; failure = null; withContext = true; user = { sub: 8, actorSub: 17, role: 'MANAGER', actorRole: 'ADMIN', isImpersonating: true }; });
 
 test('create and audit roll back together; audit stores actor/effective without PII', async () => {
   failure = 'audit'; const original = structuredClone(state);

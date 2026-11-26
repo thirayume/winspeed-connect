@@ -623,3 +623,19 @@ test('real SO list on a secondary database receives reviewed identities and the 
   assert.ok(query); assert.match(query.text, /hd\.DocuDate >= @globalStartDate/);
   assert.match(query.text, /so\.CreatedAt >= @globalStartUtc/);
 });
+
+test('organization branch admission returns 403 before the endpoint and preserves request context',async t=>{
+ const visibility=require('../services/visible-scope'),original=visibility.getVisibleScope;
+ const activeContext=require('../services/request-context');let entered=0,checkedBranch=null;
+ const app=express();app.use((req,res,next)=>db.runWithTarget('onprem',next,'secondary'));
+ const router=express.Router();router.get('/stats',requireAuth,(_req,res)=>{entered++;res.json({branch:activeContext.currentOrgBranch()});});app.use('/api/so',router);
+ const server=http.createServer(app);await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>server.close());
+ const token=jwt.sign({sub:22,id:22,role:'ACCOUNTING',actorSub:17,actorRole:'ADMIN',impersonating:true},SECRET);
+ const oldRestricted=restrictedActor;restrictedActor=false;rejectBinding=false;clearAccountStatusCache();
+ visibility.getVisibleScope=async()=>{checkedBranch=activeContext.currentOrgBranch();if(checkedBranch==='OTHER-BRANCH')throw Object.assign(Error('ORG_BRANCH_NOT_VISIBLE'),{code:'ORG_BRANCH_NOT_VISIBLE',status:403});return {all:false,userIds:[34]};};
+ try{
+  const read=branch=>fetch(`http://127.0.0.1:${server.address().port}/api/so/stats`,{headers:{authorization:`Bearer ${token}`,'X-Org-Branch':branch}});
+  let response=await read('OTHER-BRANCH');assert.equal(response.status,403);assert.equal((await response.json()).code,'ORG_BRANCH_NOT_VISIBLE');assert.equal(entered,0);assert.equal(checkedBranch,'OTHER-BRANCH');
+  response=await read('MY-BRANCH');assert.equal(response.status,200);assert.equal((await response.json()).branch,'MY-BRANCH');assert.equal(entered,1);
+ }finally{visibility.getVisibleScope=original;restrictedActor=oldRestricted;}
+});

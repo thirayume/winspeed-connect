@@ -27,7 +27,8 @@ const db = h.installDbStub(call => {
   if (/FROM dbo\.SOInvDT d/.test(t)) return state.items107;
   if (/SELECT DISTINCT RTRIM\(r\.DocuNo\) AS SlipNo, RTRIM\(rd\.CouponNo\) AS CouponNo, RTRIM\(r\.CarLicense\) AS Plate/.test(t))
     return state.refs107.filter(r => r.date >= call.inputs.globalStartDate);
-  if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001', PositionCode: 'TEAM-T' }];
+  if (/SELECT PositionCode,ReportsTo,RecordScope,IsActive FROM wf.OrgPosition/.test(t))return [{PositionCode:'TEAM-T',RecordScope:'ORG',IsActive:1}];
+  if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001', PositionCode: null }];
   if (/WITH tree AS/.test(t)) return [{ Id: call.inputs.id, EmpId: '7001' }];
   if (/SELECT SalesUserId FROM wf\.SalesOrderExt/.test(t)) return [];
   if (/^INSERT INTO wf\.NativePrintLog /.test(t.trim())) { if(failPrintAudit) throw Error('TEST_AUDIT_FAILED'); state.printed.push(call.inputs); return []; }

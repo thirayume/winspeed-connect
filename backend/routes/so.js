@@ -10,7 +10,7 @@ const router = require('express').Router();
 const { sql, wfQuery, wfTransaction, getTarget } = require('../db');
 const { toHttpError } = require('../services/error-adapter');
 const { requireAuth, requireRole, requireCapability, requireRebateAmountAccess, canViewAllRebateAmounts } = require('../middleware/auth');
-const { hasPermission } = require('../services/role-capabilities');
+const { hasPermission, canConfirmWithoutCounterVerify } = require('../services/role-capabilities');
 
 // Rebate on bills (amounts, discount at create/edit): the roles the bill editor shows it to. SALES lost rebate
 // visibility at go-live (frontend permissions.ts REBATE_OWN_ROLES = []); the API used the wider rebate-report rule
@@ -412,7 +412,7 @@ async function soVisibleTo(user, so, knownScope = null) {
 async function requireSoInScope(req, res, next) {
   try {
     const scope = await getVisibleScope(req.user);
-    if (scope.all) return next();
+    if (scope.all&&actorPerspective(req.user)===req.user) return next();
     const so = await getSoOrThrow(req.params.id);
     if (!(await soVisibleTo(req.user, so, scope))) return res.status(404).json({ message: `SO id ${req.params.id} ไม่พบ` });
     next();
@@ -696,6 +696,7 @@ router.get('/stats', async (req, res) => {
 // ── GET /api/so ───────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
+    const documentOrder=require('../services/document-list-order').documentOrder(req.query);
     const { status, custId, search, dateFrom, dateTo, page = 1, limit = 50 } = req.query;
     const conditions = [];
     const dataWindow = await require('../services/global-data-window-store').readGlobalDataWindow();
@@ -762,7 +763,7 @@ router.get('/', async (req, res) => {
           so.ImportedAt,
           so.SalesUserId,
           CAST(NULL AS VARCHAR(20)) AS OwnerEmpId,
-          CAST(0 AS BIT) AS AwaitingAi
+          CAST(0 AS BIT) AS AwaitingAi,CAST(NULL AS datetime2) AS DocuDate,CAST(0 AS int) AS DocuType
         FROM wf.SalesOrder so WITH (NOLOCK)
         WHERE so.Status <> 'DELETED' AND so.CreatedAt >= @globalStartUtc
 
@@ -790,7 +791,7 @@ router.get('/', async (req, res) => {
           ext.ImportedAt,
           ext.SalesUserId,
           CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId,
-          CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi
+          CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi,CAST(hd.DocuDate AS datetime2) AS DocuDate,hd.DocuType
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
@@ -846,7 +847,7 @@ router.get('/', async (req, res) => {
           CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.ValidUntil END AS LinkedQuoteValidUntil,
           CASE WHEN pq.Id IS NULL THEN NULL WHEN pq.CreatedAt >= @globalStartUtc THEN N'รอใบเสนอราคายืนยัน' ELSE N'มีใบเสนอราคาค้างก่อนวันเริ่มข้อมูล กรุณาติดต่อผู้ดูแล' END AS QuotationLockReason,
           CAST(NULL AS VARCHAR(20)) AS OwnerEmpId,
-          CAST(0 AS BIT) AS AwaitingAi
+          CAST(0 AS BIT) AS AwaitingAi,CAST(NULL AS datetime2) AS DocuDate,CAST(0 AS int) AS DocuType
         FROM wf.SalesOrder so WITH (NOLOCK)
         OUTER APPLY (
           SELECT TOP 1 q.Id, q.QuoteNo, q.Status, q.Remark, q.ValidUntil, q.CreatedAt
@@ -906,7 +907,7 @@ router.get('/', async (req, res) => {
           CASE WHEN pq.CreatedAt >= @globalStartUtc THEN pq.ValidUntil END AS LinkedQuoteValidUntil,
           CASE WHEN pq.Id IS NULL THEN NULL WHEN pq.CreatedAt >= @globalStartUtc THEN N'รอใบเสนอราคายืนยัน' ELSE N'มีใบเสนอราคาค้างก่อนวันเริ่มข้อมูล กรุณาติดต่อผู้ดูแล' END AS QuotationLockReason,
           CAST(hd.EmpID AS VARCHAR(20)) AS OwnerEmpId,
-          CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi
+          CAST(CASE WHEN hd.DocuType = 103 AND hd.AppvFlag = 'W' AND hd.AppvDocuNo IS NULL THEN 1 ELSE 0 END AS BIT) AS AwaitingAi,CAST(hd.DocuDate AS datetime2) AS DocuDate,hd.DocuType
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON ext.SOID = CONVERT(VARCHAR(50), hd.SOID)
@@ -932,7 +933,7 @@ router.get('/', async (req, res) => {
       ),
       FilteredOrders AS (
         SELECT q.*, u.DisplayName AS SalesName, COUNT_BIG(*) OVER() AS FilteredTotal,
-               ROW_NUMBER() OVER (ORDER BY COALESCE(q.DeliveryDate, q.CreatedAt) DESC, q.CreatedAt DESC, q.Id DESC) AS RowNum
+               ROW_NUMBER() OVER (ORDER BY ${documentOrder}) AS RowNum
         FROM Orders q
         LEFT JOIN wf.AppUser u WITH (NOLOCK) ON u.Id = q.SalesUserId
         ${where}
@@ -1229,9 +1230,9 @@ router.post('/price-indicator', requireCapability('so.create'), async (req, res)
   try {
     const { custId, deliveryDate, lines } = req.body || {};
     if (!Array.isArray(lines) || lines.length > 50) return res.status(400).json({ message: 'lines ต้องเป็นรายการไม่เกิน 50 บรรทัด' });
+    if (!await require('../services/secondary-customer-scope').customerVisible(req.user, custId))
+      return res.status(404).json({ message: 'ไม่พบลูกค้า' });
     if (req.user.identityMapping) {
-      if (!await require('../services/secondary-customer-scope').secondaryCustomerVisible(req.user, custId))
-        return res.status(404).json({ message: 'ไม่พบลูกค้า' });
       if (deliveryDate) {
         const window = await require('../services/global-data-window-store').readGlobalDataWindow();
         if (!/^\d{4}-\d{2}-\d{2}$/.test(String(deliveryDate)) || String(deliveryDate) < window.businessDate)
@@ -1425,6 +1426,8 @@ router.get('/:id', async (req, res) => {
     // person printing as salesperson, the tax id as address and phone, or the company's own address (UAT RPT-06)
     const party = (await wfQuery(`
       SELECT (SELECT TOP 1 DisplayName FROM wf.AppUser WHERE Id = @uid) AS SalesName,
+             (SELECT CONVERT(varchar(10),DocuDate,23) FROM dbo.SOHD WHERE SOID=@native AND DocuNo=@nativeNo AND DocuType IN(103,104)) AS NativeDocuDate,
+             (SELECT DocuType FROM dbo.SOHD WHERE SOID=@native AND DocuNo=@nativeNo AND DocuType IN(103,104)) AS NativeDocuType,
              RTRIM(c.CustCode) AS CustCode,
              c.CustAddr1, c.CustAddr2, c.Amphur, c.Province, c.PostCode, c.ContTel, c.ContTel1,
              c.BillState, c.BillDay, c.BillDate, c.BillWeek,
@@ -1432,6 +1435,8 @@ router.get('/:id', async (req, res) => {
       FROM (SELECT 1 AS x) one
       LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = @cid`, {
       uid: { type: sql.Int, value: so.SalesUserId ? Number(so.SalesUserId) : null },
+      native:{type:sql.Int,value:so.ImportedDocuNo&&/^\d+$/.test(String(so.Id))&&Number(so.Id)<=2147483647?Number(so.Id):null},
+      nativeNo:{type:sql.NVarChar(50),value:so.ImportedDocuNo||null},
       cid: { type: sql.Int, value: /^\d+$/.test(String(so.CustId || '')) ? Number(so.CustId) : null },
     })).recordset?.[0] || {};
     const phone = [party.ContTel1, party.ContTel].map(v => String(v || '').trim()).find(v => v && !/^tax/i.test(v)) || null;
@@ -1455,6 +1460,7 @@ router.get('/:id', async (req, res) => {
 
     res.json(redactSoForRole(req, {
       ...camelizeRow(so),
+      docuDate:party.NativeDocuDate||null,docuType:party.NativeDocuType||0,
       docStage: stageCarrier[0].docStage || null,
       custCode: so.CustCode || party.CustCode || null,
       salesName: party.SalesName || null,
@@ -1574,6 +1580,7 @@ const CAN_ENTER_FOR_OTHERS = ['ADMIN', 'C_LEVEL', 'MANAGER', 'COUNTER_SALES'];
 function resolveSalesOwner(req, impersonatedId) {
   const enteredBy = req.user.sub;
   const wanted = impersonatedId ? Number(impersonatedId) : null;
+  if(impersonatedId!=null&&impersonatedId!==''&&(!Number.isSafeInteger(wanted)||wanted<=0))throw Object.assign(Error('รหัสผู้ขายไม่ถูกต้อง'),{status:400});
   if (!wanted || wanted === enteredBy) return { salesUserId: enteredBy, enteredByUserId: enteredBy };
   if (!CAN_ENTER_FOR_OTHERS.includes(req.user.role)) {
     const e = new Error('บทบาทของคุณเปิดใบแทนพนักงานขายคนอื่นไม่ได้');
@@ -1581,6 +1588,10 @@ function resolveSalesOwner(req, impersonatedId) {
     throw e;
   }
   return { salesUserId: wanted, enteredByUserId: enteredBy };
+}
+async function assertCustomerWithinWriteScope(user,custId,queryFn=wfQuery,knownScope=null){
+ const scope=knownScope||await getVisibleScope(user,queryFn);
+ if(!scope.all&&!await require('../services/secondary-customer-scope').customerReferenceVisible(user,custId,{scopes:[scope],queryFn}))throw Object.assign(Error('ไม่พบลูกค้าในสายงานที่มีสิทธิ์'),{status:404});
 }
 
 /**
@@ -1676,6 +1687,12 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
   try {
     const orders = Array.isArray(req.body) ? req.body : [req.body];
     if (orders.length === 0) return res.status(400).json({ message: 'ไม่มีข้อมูลคำสั่งซื้อ' });
+    if(orders.some(o=>!o||typeof o!=='object'||Array.isArray(o)))return res.status(400).json({message:'ข้อมูลบิลไม่ถูกต้อง'});
+    if(orders.slice(1).some(o=>o.tripSetup!==undefined))return res.status(400).json({message:'ระบุข้อมูลเที่ยวใหม่เฉพาะบิลแรก'});
+    const receipts=require('../services/draft-creation-receipt'),creationProof=receipts.request(orders,req.user);
+    const previousCreation=await receipts.read(wfQuery,creationProof,req.user);if(previousCreation)return res.json(previousCreation);
+    const createScope=await getVisibleScope(req.user);
+    for(const order of orders){const owner=resolveSalesOwner(req,order.salesUserId);if(!inScope(createScope,{userId:owner.salesUserId}))throw Object.assign(Error('ผู้ขายอยู่นอกสายงานที่มีสิทธิ์'),{status:403});}
 
     for (const order of orders) {
       validateBookingNotes(order);
@@ -1692,6 +1709,7 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
     }
 
     // Owner, 22 Nov 2026: Rebate ticket lines (price 0) need the permission, the Pool and enough usable tickets per goods.
+    for(const order of orders)await assertCustomerWithinWriteScope(req.user,order.custId,wfQuery,createScope);
     {
       const ticketLinesByCustomer = new Map();
       for (const order of orders) ticketLinesByCustomer.set(order.custId, [...(ticketLinesByCustomer.get(order.custId) || []), ...(order.lines || [])]);
@@ -1724,13 +1742,20 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
     const salesOwnerIds = new Set();
     const creditChecks = [];
     let anyNeedsApproval = false;
+    let createdTrip=null;
+    let replayedCreation=null;
 
     await wfTransaction(async tx => {
+      replayedCreation=await receipts.lockAndRead(txQueryFn(tx),creationProof,req.user);if(replayedCreation)return;
+      const writeScope=await getVisibleScope(req.user,txQueryFn(tx));
+      for(const order of orders){const owner=resolveSalesOwner(req,order.salesUserId);if(!inScope(writeScope,{userId:owner.salesUserId}))throw Object.assign(Error('สิทธิ์ของผู้ขายเปลี่ยนแล้ว กรุณาโหลดใหม่'),{status:403});}
+      for(const order of orders)await assertCustomerWithinWriteScope(req.user,order.custId,txQueryFn(tx),writeScope);
+      if(orders[0].tripSetup!==undefined)createdTrip=await require('../services/draft-trip-create').createDraftTrip(tx,req.user,orders,orders[0].tripSetup);
       // Take the trip membership lock before any bill is written (lowest trip first), so a
       // trip being deleted at the same moment cannot end up with a new bill.
       const tripsToJoin = [...new Set(orders.map(o => o.tripId).filter(v => v != null && v !== '' && v !== 0 && v !== '0').map(v => Number(v)))]
         .sort((a, b) => a - b);
-      for (const tripToJoin of tripsToJoin) await require('../services/trip-membership-lock').lockTripForMembership(tx, tripToJoin);
+      for (const tripToJoin of tripsToJoin) await require('../services/trip-membership-lock').lockTripForMembership(tx, tripToJoin,req.user);
       for (const order of orders) {
         const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, salesUserId: impersonatedId, rebateDiscountAmt, convertFromQuoteId, creditDays, truckRemark, billRemark, transpId, loadInOrder } = order;
         const truckPlate = order.truckPlate || null;
@@ -2076,7 +2101,10 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
           });
         }
       }
+      const coreResponse=Array.isArray(req.body)?{ids:createdIds,wfRefs:createdRefs}:{id:createdIds[0],wfRef:createdRefs[0]};
+      await receipts.save(tx,creationProof,salesOwnerIds,{...coreResponse,needsApproval:anyNeedsApproval,trip:createdTrip,warnings:[...customerCreditResults.values()].flatMap(r=>r.warnings||[])});
     });
+    if(replayedCreation)return res.json(replayedCreation);
 
     // เตือนหลัง commit — ใบเปิดสำเร็จแล้ว คำเตือนไม่ย้อนกลับไปยกเลิก
     const warnings = [];
@@ -2105,9 +2133,9 @@ router.post('/', requireCapability('so.create'), async (req, res) => {
 
     // For backwards compatibility, if they sent an array, return array format. Otherwise return single object format.
     if (Array.isArray(req.body)) {
-      res.json({ ids: createdIds, wfRefs: createdRefs, needsApproval: anyNeedsApproval, warnings });
+      res.json({ ids: createdIds, wfRefs: createdRefs, needsApproval: anyNeedsApproval, warnings,trip:createdTrip });
     } else {
-      res.json({ id: createdIds[0], wfRef: createdRefs[0], needsApproval: anyNeedsApproval, warnings });
+      res.json({ id: createdIds[0], wfRef: createdRefs[0], needsApproval: anyNeedsApproval, warnings,trip:createdTrip });
     }
   } catch (e) { console.error(e); res.status(e.status || 500).json({ message: e.message, code: e.code, problems: e.problems }); }
 });
@@ -2201,6 +2229,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         return res.status(400).json({ message: 'ผลรวมยอดแม่ + ยอดลูก ต้องเท่ากับจำนวนตันในแต่ละรายการ' });
       }
     }
+    await assertCustomerWithinWriteScope(req.user,order.custId);
     await require('../services/rebate-ticket-lines').validateDraftTicketLines(require('../services/rebate-sql').defaultRebateQuery,
       { user: req.user, custId: order.custId, lines: order.lines });
 
@@ -2217,6 +2246,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
       const beforeLines = await getLines(so.Id);
       let approvalReset = null;
       await require('../services/so-rebate-transaction').withSoRebateTransaction(async tx => {
+        await assertCustomerWithinWriteScope(req.user,order.custId,txQueryFn(tx));
         await require('../services/so-rebate-transaction').assertNoRedeemedTicketForBooking(tx,so);
         const { transactionQuery: rebateTransactionQuery } = require('../services/rebate-sql');
         const { assertBookingSnapshotEditable } = require('../services/rebate-booking-snapshot');
@@ -2386,6 +2416,7 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
 
     await wfTransaction(async tx => {
       const { soPrefix, custId, custName, controlTicketNo, deliveryDate, requestedAt, isOwnTruck, noTruckRequired, pSling, remark, lines, rebateDiscountAmt, creditDays, truckRemark, billRemark, transpId } = order;
+      await assertCustomerWithinWriteScope(req.user,custId,txQueryFn(tx));
       const truckPlate = order.truckPlate || null;
 
       // R6-1: Sanitize client-supplied lines by stripping private internal markers
@@ -2453,10 +2484,11 @@ router.put('/:id', requireCapability('so.edit'), requireSoInScope, async (req, r
         ? (order.tripId ? Number(order.tripId) : null)
         : (existingRow.TripId !== undefined ? existingRow.TripId : (so.TripId || null));
 
-      // Moving the bill into another trip: hold that trip's membership lock and refuse a
-      // trip that has been deleted in the meantime.
-      if (effectiveTripId && Number(effectiveTripId) !== Number(existingRow.TripId || 0))
-        await require('../services/trip-membership-lock').lockTripForMembership(tx, effectiveTripId);
+      // Both the source and destination trip must remain visible while membership
+      // changes. Checking only the destination would allow detaching a bill from
+      // a mixed/foreign trip through a crafted API request.
+      const membershipTrips=[...new Set([existingRow.TripId,effectiveTripId].filter(Boolean).map(Number))].sort((a,b)=>a-b);
+      for(const membershipTrip of membershipTrips)await require('../services/trip-membership-lock').lockTripForMembership(tx,membershipTrip,req.user);
 
       if (effectiveTripId !== existingRow.TripId) {
         await audit(tx, so.Id, req.user.sub, 'TRIP_CHANGED', so.Status, so.Status,
@@ -2735,7 +2767,10 @@ router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, 
     if (replay) return res.json(replay);
     // All-scope roles skip the scope lookup middleware. Validate the actual
     // order's data window here before any native replay or mutation path.
-    await getSoOrThrow(req.params.id);
+    const currentForConfirmation=await getSoOrThrow(req.params.id);
+    if(currentForConfirmation.IsControlTicket||currentForConfirmation.SoPrefix==='AI'||currentForConfirmation.TruckPlate==='ตั๋วคุม'){
+      if(!hasPermission(req.user,'so.control-ticket')||!hasPermission(actorPerspective(req.user),'so.control-ticket'))return res.status(403).json({code:'CONTROL_TICKET_PERMISSION_REQUIRED',message:'เฉพาะ Counter Sale และผู้มีสิทธิ์เท่านั้นที่จำหน่ายตั๋วปุ๋ยได้'});
+    }
     const pendingQuote = await getPendingQuoteForSo(req.params.id);
     if (pendingQuote) {
       return res.status(400).json({
@@ -2787,8 +2822,8 @@ router.patch('/:id/confirm', requireCapability('so.confirm'), requireSoInScope, 
         });
       }
 
-      // FR-022 on a WinSpeed bill unlocked for an edit: the counter checks it again before it is locked
-      if (Number(isSohdOrder.IsUnlocked) && req.user.role !== 'ADMIN' && !isSohdOrder.VerifiedAt) {
+      // FR-022 on a WinSpeed bill unlocked for an edit: SALES and above may confirm directly (owner, 25 Nov 2026)
+      if (Number(isSohdOrder.IsUnlocked) && !canConfirmWithoutCounterVerify(req.user) && !isSohdOrder.VerifiedAt) {
         return res.status(400).json({ message: 'ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (FR-022)' });
       }
 

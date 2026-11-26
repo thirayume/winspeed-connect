@@ -72,7 +72,7 @@ const REPORTS = {
       WITH WfDraft AS (
         SELECT Status, COUNT_BIG(*) AS Cnt
         FROM wf.SalesOrder WITH (NOLOCK)
-        WHERE CreatedAt >= @globalStartUtc
+        WHERE CreatedAt >= @globalStartUtc AND /*ORG_SCOPE:SalesUserId:-*/
         GROUP BY Status
       ),
       WinspeedBase AS (
@@ -90,7 +90,7 @@ const REPORTS = {
         FROM dbo.SOHD hd WITH (NOLOCK)
         LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK)
           ON CONVERT(VARCHAR(50), ext.SOID) = CONVERT(VARCHAR(50), hd.SOID)
-        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate
+        WHERE hd.DocuType IN (103, 104) AND hd.DocuDate >= @globalStartDate AND /*ORG_SCOPE:ext.SalesUserId:hd.EmpID*/
         GROUP BY
           CASE
             WHEN hd.DocuStatus = 'C' THEN 'CANCELLED'
@@ -127,7 +127,7 @@ const REPORTS = {
                  p.AllocatedAmt, p.AccruedAmt, p.ClaimedAmt,
                  (p.AccruedAmt - p.ClaimedAmt) AS Available
           FROM wf.RebatePool p JOIN wf.AppUser u ON u.Id = p.SalesUserId
-          WHERE (p.AccruedAmt > 0 OR p.ClaimedAmt > 0)
+          WHERE (p.AccruedAmt > 0 OR p.ClaimedAmt > 0) AND /*ORG_SCOPE:p.SalesUserId:-*/
           ORDER BY p.PeriodYear DESC, p.PeriodMonth DESC, Available DESC`,
   },
   'giveaway': {
@@ -142,7 +142,7 @@ const REPORTS = {
       { key: 'RemainingQty', label: 'คงเหลือ', type: 'integer', unit: 'ชิ้น', aggregation: 'sum' },
     ],
     sql: `SELECT Region, Brand, ItemName, BudgetQty, WithdrawnQty, RemainingQty
-          FROM wf.v_GiveawayBudgetStatus ORDER BY Region, Brand, ItemName`,
+          FROM wf.v_GiveawayBudgetStatus WHERE /*ORG_SCOPE:SalesUserId:-*/ ORDER BY Region, Brand, ItemName`,
   },
   'paper-status': {
     title: 'สถานะเอกสาร (Paper Trail)',
@@ -245,7 +245,7 @@ const REPORTS = {
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           LEFT JOIN wf.SalesOrderExt ext WITH (NOLOCK) ON ext.SOID = hd.SOID
           LEFT JOIN wf.SalesOrderLineExt le WITH (NOLOCK) ON le.SOID = dt.SOID AND le.ListNo = dt.ListNo
-          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND /*ORG_SCOPE:-:hd.EmpID*/
             AND hd.DocuDate >= @globalStartDate
           ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
   },
@@ -274,7 +274,7 @@ const REPORTS = {
           FROM dbo.SOHD hd WITH (NOLOCK)
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = hd.EmpID
-          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND /*ORG_SCOPE:-:hd.EmpID*/
             AND hd.DocuDate >= @globalStartDate
           ORDER BY hd.DocuDate DESC, hd.SOID DESC`,
   },
@@ -371,7 +371,7 @@ const REPORTS = {
             CAST(dt.RemaQty AS DECIMAL(12,3)) AS BacklogTon
           FROM dbo.SOHD hd WITH (NOLOCK)
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
-          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND dt.RemaQty > 0
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND dt.RemaQty > 0 AND /*ORG_SCOPE:-:hd.EmpID*/
             AND hd.DocuDate >= @globalStartDate
             AND (hd.DocuDate >= @legacyCut OR RTRIM(hd.TransRegistration) = N'ตั๋วคุม')
           UNION ALL
@@ -386,7 +386,7 @@ const REPORTS = {
           FROM dbo.SOHD hd WITH (NOLOCK)
           JOIN dbo.SODT dt WITH (NOLOCK) ON dt.SOID = hd.SOID
           WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
-            AND dt.RemaQty > 0 AND (hd.DocuDate IS NULL OR hd.DocuDate < @globalStartDate
+            AND /*ORG_SCOPE:-:hd.EmpID*/ AND dt.RemaQty > 0 AND (hd.DocuDate IS NULL OR hd.DocuDate < @globalStartDate
               OR (hd.DocuDate >= @globalStartDate AND hd.DocuDate < @legacyCut
                 AND ISNULL(RTRIM(hd.TransRegistration), N'') <> N'ตั๋วคุม'))
           GROUP BY hd.CustID, hd.CustName, dt.GoodID, dt.GoodName,
@@ -437,7 +437,7 @@ const REPORTS = {
           LEFT JOIN dbo.EMEmp emp WITH (NOLOCK) ON emp.EmpID = hd.EmpID
           -- bookings taken this Bangkok month: it summed bookings and their closing documents (each sale twice)
           -- over all history since 2019 (UAT RPT-06)
-          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C'
+          WHERE hd.DocuType = 103 AND ISNULL(hd.DocuStatus, 'N') <> 'C' AND /*ORG_SCOPE:-:hd.EmpID*/
             AND hd.DocuDate >= DATEADD(month, DATEDIFF(month, 0, DATEADD(hour, 7, GETUTCDATE())), 0)
             AND hd.DocuDate >= @globalStartDate
           GROUP BY emp.EmpName
@@ -765,7 +765,7 @@ const REPORTS = {
       { key: 'Amount', label: 'เป็นเงิน (บาท)', type: 'money', precision: 2, unit: 'บาท', aggregation: 'sum' },
       { key: 'SalesEmpName', label: 'ผู้แทนขาย', type: 'text' },
     ],
-    run: (params) => runCustomerDispatchReport(params),
+    organizationScope:true,run: (params,options) => runCustomerDispatchReport(params,options),
   },
   'pricelist_sheet': {
     title: 'ตารางราคาขาย (Pricelist)',
@@ -854,15 +854,15 @@ const REPORTS = {
  * function = ตรวจสอบเชิงลึก
  */
 const invoiceReports = require('../services/invoice-register-report');
-REPORTS['daily-invoice'] = {title:'Daily Invoice — ใบส่งของแยกชุด J/N พร้อมเอกสารขนส่ง',category:'finance',columns:invoiceReports.dailyColumns,run:p=>invoiceReports.run('daily-invoice',p)};
-REPORTS['net-sales-detail'] = {title:'ยอดขายสุทธิรายลูกค้าและสินค้า หลังลดหนี้ เพิ่มหนี้ และรับคืน',category:'finance',columns:invoiceReports.netColumns,run:p=>invoiceReports.run('net-sales-detail',p)};
-REPORTS['cn-returns']={title:'ทะเบียนใบลดหนี้และรับคืนสินค้าจาก WinSpeed',category:'finance',columns:invoiceReports.netColumns,run:p=>invoiceReports.run('credit-returns',p)};
+REPORTS['daily-invoice'] = {title:'Daily Invoice — ใบส่งของแยกชุด J/N พร้อมเอกสารขนส่ง',category:'finance',columns:invoiceReports.dailyColumns,organizationScope:true,run:(p,o)=>invoiceReports.run('daily-invoice',p,o)};
+REPORTS['net-sales-detail'] = {title:'ยอดขายสุทธิรายลูกค้าและสินค้า หลังลดหนี้ เพิ่มหนี้ และรับคืน',category:'finance',columns:invoiceReports.netColumns,organizationScope:true,run:(p,o)=>invoiceReports.run('net-sales-detail',p,o)};
+REPORTS['cn-returns']={title:'ทะเบียนใบลดหนี้และรับคืนสินค้าจาก WinSpeed',category:'finance',columns:invoiceReports.netColumns,organizationScope:true,run:(p,o)=>invoiceReports.run('credit-returns',p,o)};
 const budgetReports=require('../services/promotion-budget-report');
-REPORTS['budget-project-register']={title:'ทะเบียนโครงการส่งเสริมการขายตามแผนรายปี',category:'finance',columns:budgetReports.projectColumns,run:p=>budgetReports.run(p,{register:true})};
-REPORTS['budget-annual-estimate']={title:'ประมาณการค่าใช้จ่ายส่งเสริมการขายรายปี (1 ม.ค. – 31 ธ.ค.)',category:'finance',columns:budgetReports.columns,run:p=>budgetReports.run(p)};
-REPORTS['budget-plan-approval']={title:'คำขออนุมัติงบส่งเสริมการขาย',category:'finance',columns:budgetReports.columns,run:p=>{
+REPORTS['budget-project-register']={title:'ทะเบียนโครงการส่งเสริมการขายตามแผนรายปี',category:'finance',columns:budgetReports.projectColumns,organizationScope:true,run:(p,o)=>budgetReports.run(p,{...o,register:true})};
+REPORTS['budget-annual-estimate']={title:'ประมาณการค่าใช้จ่ายส่งเสริมการขายรายปี (1 ม.ค. – 31 ธ.ค.)',category:'finance',columns:budgetReports.columns,organizationScope:true,run:(p,o)=>budgetReports.run(p,o)};
+REPORTS['budget-plan-approval']={title:'คำขออนุมัติงบส่งเสริมการขาย',category:'finance',columns:budgetReports.columns,organizationScope:true,run:(p,o)=>{
   if(!p.planId)throw Object.assign(Error('กรุณาเลือกเลขแผนที่ต้องการพิมพ์คำขออนุมัติ'),{status:400});
-  return budgetReports.run(p);
+  return budgetReports.run(p,o);
 }};
 
 const REPORT_ROLES = {
@@ -918,7 +918,8 @@ function parseDateParam(value, fallback) {
 // Chart is team-scoped → no reports; one not yet placed still sees all).
 router.use(async (req, _res, next) => {
   try {
-    req.scopeSeesAll = await require('../services/secondary-budget-report-access').allReportScopes(req.user);
+    req.reportScopes=await require('../services/secondary-budget-report-access').businessScopes(req.user);
+    req.scopeSeesAll=req.reportScopes.length>0&&req.reportScopes.every(s=>s.all===true);
   } catch (e) {
     console.error('[reports] scope lookup failed:', e.message);
     req.scopeSeesAll = false;
@@ -934,7 +935,8 @@ function isUserAdmin(user) {
 function canRunReport(req, type) {
   const rule = REPORT_ROLES[type];
   if (rule === undefined) return false;
-  if (req.scopeSeesAll !== true) return false;
+  const shared=['pricelist_sheet','costlist_sheet'].includes(type),scoped=REPORTS[type]?.organizationScope||REPORTS[type]?.sql?.includes('/*ORG_SCOPE:');
+  if (req.scopeSeesAll !== true&&!shared&&!(scoped&&Array.isArray(req.reportScopes)&&req.reportScopes.length)) return false;
   return require('../services/secondary-budget-report-access').perspectives(req.user,true).every(({user})=>{
     if(rule===null)return Boolean(user);
     if(typeof rule==='function')return Boolean(rule(user));
@@ -1028,7 +1030,7 @@ router.get('/types', async (req, res) => {
   }
 });
 
-async function runReport(type, params = {}) {
+async function runReport(type, params = {},options={}) {
   const def = REPORTS[type];
   if (!def) return null;
   if (def.available === false) {
@@ -1044,7 +1046,8 @@ async function runReport(type, params = {}) {
     if (def.sql.includes('@globalStartDate')) sqlInputs.globalStartDate = { type: sql.Date, value: businessDate };
     if (def.sql.includes('@globalStartUtc')) sqlInputs.globalStartUtc = { type: sql.DateTime2, value: utcInstant };
   }
-  const result = def.run ? await def.run(params) : ((await wfQuery(def.sql, sqlInputs)).recordset || []);
+  const scopedQuery=def.sql?require('../services/report-organization-scope').compile(def.sql,options.scopes):null;
+  const result = def.run ? await def.run(params,options) : ((await wfQuery(scopedQuery.sql, {...sqlInputs,...scopedQuery.inputs})).recordset || []);
   // node-mssql recordset arrays carry a .columns metadata map. It is not the
   // ReportColumn[] contract consumed by the screen, PDF and XLSX formatters.
   // Only a structured report result may override the configured columns.
@@ -1096,7 +1099,7 @@ router.get('/:type', async (req, res) => {
     if (config.visibility[req.params.type] === false && !isUserAdmin(req.user)) {
       return res.status(403).json({ message: 'รายงานนี้ถูกปิดการแสดงผลโดยผู้ดูแลระบบ' });
     }
-    const data = await runReport(req.params.type, req.query);
+    const data = await runReport(req.params.type, req.query,{scopes:req.reportScopes});
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     data.isoStamp = config.isoStamps?.[req.params.type] || null;
     res.json(data);
@@ -1231,7 +1234,7 @@ router.get('/:type/export', async (req, res) => {
     if (config.visibility[req.params.type] === false && !isUserAdmin(req.user)) {
       return res.status(403).json({ message: 'รายงานนี้ถูกปิดการแสดงผลโดยผู้ดูแลระบบ' });
     }
-    const data = await runReport(req.params.type, ['daily-invoice','net-sales-detail','cn-returns','ar-receipt-history','cq-cheque-register','sales-target-comparison'].includes(req.params.type)?{...req.query,exportAll:'true'}:req.query);
+    const data = await runReport(req.params.type, ['daily-invoice','net-sales-detail','cn-returns','ar-receipt-history','cq-cheque-register','sales-target-comparison'].includes(req.params.type)?{...req.query,exportAll:'true'}:req.query,{scopes:req.reportScopes});
     if (!data) return res.status(404).json({ message: 'ไม่พบรายงาน' });
     data.isoStamp = config.isoStamps?.[req.params.type] || null;
 
@@ -1378,7 +1381,8 @@ router.get('/:type/export', async (req, res) => {
 });
 
 // ── R-4 รายงานการขนสินค้าตามรายชื่อลูกค้า ────────────────────────────────────
-async function runCustomerDispatchReport(params = {}) {
+async function runCustomerDispatchReport(params = {},options={}) {
+  const organization=require('../services/report-organization-scope').predicate(options.scopes,{userCol:'ext.SalesUserId',empCol:'h.EmpID'},'dispatchOrg');
   const { businessDate } = await require('../services/global-data-window-store').readGlobalDataWindow();
   const today = new Date();
   const defaultFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30);
@@ -1424,7 +1428,7 @@ async function runCustomerDispatchReport(params = {}) {
         WHERE r.SOID = h.SOID AND wf.fn_BookingTicketNos(r.Remark) IS NOT NULL
         ORDER BY r.ListNo
     ) drawn
-    WHERE  h.DocuType = 104
+    WHERE  h.DocuType = 104 AND (${organization.sql})
       AND  h.DocuStatus <> 'C'
       AND  d.GoodQty2 > 0
       AND  h.DocuDate >= @from AND h.DocuDate <= @to
@@ -1433,7 +1437,7 @@ async function runCustomerDispatchReport(params = {}) {
                        OR ISNULL(cu.CustName, h.CustName) LIKE @custLike)
     ORDER BY CustName, h.DocuDate, h.DocuNo, d.ListNo`,
     {
-      from:     { type: sql.DateTime2,   value: startOfDay },
+      ...organization.inputs,from:     { type: sql.DateTime2,   value: startOfDay },
       to:       { type: sql.DateTime2,   value: endOfDay },
       globalStartDate: { type: sql.Date, value: businessDate },
       cust:     { type: sql.NVarChar(60), value: custFilter },

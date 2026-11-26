@@ -51,8 +51,44 @@ test('release refuses foreign targets, invented reviewers, missing evidence and 
  for(const db of ['dbwins_worldfert9','dbwins_worldfert9_uat'])assert.equal(payload({...base(),database:db,sourceRevision:'a'.repeat(40)}).database,db);
 });
 test('deactivation recovers the exact original four custom hooks; native fingerprints remain unchanged',()=>{
- const p=payload(base());assert.equal(p.migrations.length,15);assert.equal(p.hooks.length,4);assert.equal(originals().length,4);
+ const p=payload(base());assert.equal(p.migrations.length,23);assert.equal(p.hooks.length,4);assert.equal(originals().length,4);
  for(const h of p.originalHooks){const b=baseline.find(r=>r[1]===h.name.toLowerCase());assert.equal(digest(h.sql.replace('ALTER TRIGGER ','CREATE TRIGGER ')),b[3]);assert.equal(h.disabled,b[2]);}
  for(let i=0;i<baseline.length;i++)if(!p.hooks.some(h=>h.name.toLowerCase()===baseline[i][1]))assert.deepEqual(p.expected[i],baseline[i]);
  assert.equal(payload(base()).sourceHash,p.sourceHash);
+});
+
+test('direct release pins a native policy, five hooks and the recovery migrations without changing native hooks',()=>{
+ const direct=require('../services/native-116-direct-hooks');
+ const p=payload({...base(),directNative116:true,nativeProgramName:'QA Native Client',nativeLoginSidHex:'0x0102'});
+ assert.equal(p.hooks.length,5);assert.equal(p.expected.length,baseline.length+1);assert.equal(p.moduleHash,direct.moduleHash);
+ assert.ok(p.migrations.some(m=>m.file==='287_native_116_reviewed_recovery.sql'));
+ assert.ok(p.migrations.some(m=>m.file==='288_native_116_floor_set_options.sql'));
+ assert.ok(p.migrations.some(m=>m.file==='289_native_116_retired_id_ranges.sql'));
+ assert.equal(p.priorDirectModuleHash,'d731b80ddab8190fb79ca95bfd00d93e73dfac79a27d77ad09a8cc62caa065cf');
+ assert.deepEqual(p.priorDirectExpected,direct.previous.expectedTriggers(baseline));
+ assert.notEqual(p.moduleHash,p.priorDirectModuleHash);
+ assert.deepEqual(p.native116,{enabled:true,programName:'QA Native Client',loginSidHex:'0x0102'});
+ assert.notEqual(payload({...base(),directNative116:true,nativeProgramName:'QA Other Client',nativeLoginSidHex:'0x0102'}).sourceHash,p.sourceHash);
+ assert.notEqual(payload({...base(),directNative116:true,nativeProgramName:'QA Native Client',nativeLoginSidHex:'0x0103'}).sourceHash,p.sourceHash);
+ for(const change of [{nativeLoginSidHex:null},{nativeLoginSidHex:'0x0'},{nativeLoginSidHex:'0x'+ 'ff'.repeat(86)},{nativeProgramName:'\nQA'}, {directNative116:'true'}])assert.throws(()=>payload({...base(),directNative116:true,nativeProgramName:'QA Native Client',nativeLoginSidHex:'0x0102',...change}));
+});
+test('restore preserves the audited direct policy and refuses attestation drift or protocol downgrade',()=>{
+ const {copiedApproval}=require('../services/native-writer-refresh');
+ const hash=require('../services/native-116-direct-hooks').moduleHash;
+ const input={database:'dbwins_worldfert9_uat',sourceRevision:'a'.repeat(40),expectedDirect:true,
+  contract:{IsEnabled:1,MetadataHash:require('../services/initial-invoice-metadata').EXPECTED,ApprovedById:1,ApprovedActorId:2},
+  release:{ReleaseId:'11111111-1111-4111-8111-111111111111',Action:'ENABLE',DatabaseName:'dbwins_worldfert9',ServerName:'R740-SRV\\SQL2008',ModulesHash:hash,ApprovedById:1,ActorId:2},
+  bridge:{Enabled:1,ModulesHash:hash},native116:{Enabled:1,ModulesHash:hash,HooksReady:1,ProgramName:'QA Native Client',LoginSidHex:'0x0102',ApprovedById:1},
+  audit:{sourceRevision:'a'.repeat(40),writerEnabled:true,bridgeEnabled:true,native116Policy:{enabled:true,programName:'QA Native Client',loginSidHex:'0x0102'}}};
+ assert.equal(copiedApproval(input).moduleHash,hash);
+ for(const change of [{expectedDirect:false},{native116:{...input.native116,HooksReady:0}},{native116:{...input.native116,ModulesHash:'b'.repeat(64)}},
+  {native116:{...input.native116,LoginSidHex:'0x0103'}},{native116:{...input.native116,ApprovedById:3}},{audit:{...input.audit,native116Policy:{enabled:false}}}])assert.throws(()=>copiedApproval({...input,...change}));
+});
+test('direct reservations reject missing hook attestation even when the bridge contract is enabled',async()=>{
+ const {assertNativeReservationReady}=require('../services/native-writer-availability');
+ const env={NATIVE_DOCUMENT_WRITER_VERSION:'v3',NATIVE_COUPON_BRIDGE_ENABLED:'true',NATIVE_COUPON_BRIDGE_DIRECT_ENABLED:'true'},hash=require('../services/native-116-direct-hooks').moduleHash;
+ for(const ready of [0,1]){
+  const q=async text=>({recordset:[text.includes('Native116Contract')?{Enabled:1,ModulesHash:hash,PolicyPinned:1,HooksReady:ready}:{TargetReady:1,Enabled:1,ModulesHash:hash}]});
+  if(ready)await assertNativeReservationReady(q,env);else await assert.rejects(assertNativeReservationReady(q,env),{code:'COUPON_NATIVE_WRITER_NOT_READY'});
+ }
 });

@@ -107,7 +107,7 @@ router.get('/board', async (req, res) => {
           so.TruckPlate,
           so.ControlTicketNo,
           so.ImportedDocuNo,
-          so.CreatedAt,
+          so.CreatedAt,CAST(NULL AS DATETIME) AS DocuDate,
           so.DeliveryDate,
           so.SalesUserId,
           CAST('DRAFT' AS VARCHAR(20)) AS SourceType,
@@ -130,7 +130,7 @@ router.get('/board', async (req, res) => {
           w.TruckPlate,
           w.ControlTicketNo,
           w.ImportedDocuNo,
-          w.CreatedAt,
+          w.CreatedAt,w.DocuDate,
           w.DeliveryDate,
           w.SalesUserId,
           CAST('WINSPEED' AS VARCHAR(20)) AS SourceType,
@@ -148,7 +148,7 @@ router.get('/board', async (req, res) => {
             hd.TransRegistration AS TruckPlate,
             ext.ControlTicketNo,
             hd.DocuNo AS ImportedDocuNo,
-            ISNULL(ext.CreatedAt, hd.DocuDate) AS CreatedAt,
+            ISNULL(ext.CreatedAt, hd.DocuDate) AS CreatedAt,hd.DocuDate,
             ext.DeliveryDate,
             ext.SalesUserId,
             ext.TripId,
@@ -186,7 +186,7 @@ router.get('/board', async (req, res) => {
       ),
       ActiveSO AS ( SELECT * FROM RankedSO WHERE RN <= 100 )
       SELECT so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
-             so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName AS SalesName,
+             so.ImportedDocuNo, so.CreatedAt,so.DocuDate, so.DeliveryDate, u.DisplayName AS SalesName,
              so.DocuType, so.TripId, so.SoPrefix, so.NoTruckRequired,
              SUM(CASE
                    WHEN so.SourceType = 'DRAFT' AND ISNULL(sol.IsGiveaway, 0) = 0 THEN ISNULL(sol.QtyTon, 0)
@@ -234,7 +234,7 @@ router.get('/board', async (req, res) => {
       LEFT JOIN wf.SalesOrderLineExt sle WITH (NOLOCK)
         ON so.SourceType = 'WINSPEED' AND CONVERT(VARCHAR(50), sle.SOID) = so.Id AND sle.ListNo = dt.ListNo
       GROUP BY so.Id, so.WfRef, so.CustName, so.Status, so.TruckPlate, so.ControlTicketNo,
-               so.ImportedDocuNo, so.CreatedAt, so.DeliveryDate, u.DisplayName, so.DocuType,
+               so.ImportedDocuNo, so.CreatedAt,so.DocuDate, so.DeliveryDate, u.DisplayName, so.DocuType,
                so.TripId, so.SoPrefix, so.NoTruckRequired
       ORDER BY so.CreatedAt DESC
       -- 18 Nov 2026: plan for the actual dates and scope; a cached plan timed out at 30 s, this one runs in 0.3 s
@@ -248,7 +248,7 @@ router.get('/board', async (req, res) => {
         id: row.Id, wfRef: row.WfRef, custName: row.CustName, status: row.Status,
         truckPlate: row.TruckPlate, controlTicketNo: row.ControlTicketNo,
         importedDocuNo: row.ImportedDocuNo, createdAt: row.CreatedAt,
-        deliveryDate: row.DeliveryDate, salesName: row.SalesName, docuType: row.DocuType,
+        deliveryDate: row.DeliveryDate, salesName: row.SalesName, docuType: row.DocuType,docuDate:row.DocuDate,
         tripId: row.TripId, soPrefix: row.SoPrefix, noTruckRequired: row.NoTruckRequired,
         totalQtyTon: row.TotalQtyTon, drawnQtyTon: row.DrawnQtyTon,
         qtyTon: Math.max(0, (row.TotalQtyTon || 0) - (row.DrawnQtyTon || 0)),

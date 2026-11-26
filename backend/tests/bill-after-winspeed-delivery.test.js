@@ -18,6 +18,8 @@ const requests = {
   2: { Id: 2, SoId: '900000901', RequesterId: 43, Status: 'PENDING', ReqType: 'EDIT', Reason: 'new date' },
 };
 const db = h.installDbStub(({ text, inputs }) => {
+  if(text.includes('WHERE CustID=@scopeCustomerId')&&inputs.scopeCustomerCode==='900001')return [{CustID:900001,CustCode:'QA-900001'}];
+  if(text.includes('WHERE c.CustID=@visibilityCustId')&&Number(inputs.visibilityCustId)===900001)return [{ok:1}];
   if (/FROM wf\.v_AllSalesOrders WHERE CAST\(Id AS INT\) = @id/.test(text)) return [current];
   if (/FROM wf\.EditReason/.test(text)) return [{ ReasonCode: 'X', ReasonText: 'customer cancelled', AppliesTo: 'SO_CANCEL,SO_DELETE', IsActive: 1 }];
   if (/JOIN dbo\.SOHD d WITH \(NOLOCK\) ON d\.DocuType = 104/.test(text)) return issued ? [{ DocuNo: issued }] : [];

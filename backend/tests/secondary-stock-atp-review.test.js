@@ -7,7 +7,7 @@ require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{
   requireAuth:(req,_res,next)=>{req.user=user;next();},
   requireRole:()=> (_req,_res,next)=>next(),requireCapability:()=> (_req,_res,next)=>next()}};
 const db=h.installDbStub(({text,inputs})=>{
-  if(/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(text))return [{Id:Number(inputs.id),EmpId:Number(inputs.id)+1000,PositionCode:null}];
+  const hierarchy=require('./helpers/ownership-hierarchy.cjs').ownershipHierarchy(text,inputs);if(hierarchy)return hierarchy;
   if(/SELECT TOP 1 1 AS ok FROM wf\.SalesOrder o/.test(text))return authorized?[{ok:1}]:[];
   if(/FROM wf\.OperationalStock s/.test(text))return [{GoodId:'TEST-GOOD',WarehouseId:'-',GoodName:'Test',QtyOnHand:10,Unit:'ตัน',Source:'MANUAL',AsOf:new Date()}];
   if(/STOCK_FRESHNESS_DAYS/.test(text))return [{SettingValue:'7'}];

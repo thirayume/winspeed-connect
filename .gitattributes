@@ -20,3 +20,6 @@ backend/migrations/273_coupon_bridge_native_session.sql -text
 backend/migrations/274_coupon_bridge_native_detail_finalize.sql -text
 backend/migrations/275_coupon_bridge_native_set_options.sql -text
 backend/migrations/276_native_redemption_id_history.sql -text
+# Preserve the exact mixed-ending bytes already rehearsed/applied on v3.
+backend/migrations/285_native_116_audit_admission.sql -text whitespace=cr-at-eol
+backend/migrations/286_native_116_metadata_scope.sql -text whitespace=cr-at-eol

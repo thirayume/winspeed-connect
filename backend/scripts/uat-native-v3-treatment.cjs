@@ -13,7 +13,16 @@ module.exports=async function(ctx){
  const {QA}=require('../services/native-document-target');
  const treatment=require('./native-v3-qa-profile.cjs').assertQaProfile().treatment;
  if(!['ZERO','DISCOUNT'].includes(treatment)||!state.rebate?.approval)throw Error('QA_TREATMENT_REBATE_REQUIRED');
- const c=state.treatmentCase||(state.treatmentCase={book:'K',treatment});if(c.treatment!==treatment)throw Error('QA_TREATMENT_CHANGED');save();
+ // Keep separate receipts when the isolated QA runtime rehearses both modes.
+ // A profile switch must never reinterpret or replace an earlier mode's proof.
+ state.treatmentCases||={};
+ if(state.treatmentCase){
+  const old=state.treatmentCase;
+  if(!['ZERO','DISCOUNT'].includes(old.treatment))throw Error('QA_TREATMENT_CHANGED');
+  state.treatmentCases[old.treatment]||=old;
+ }
+ const c=state.treatmentCases[treatment]||(state.treatmentCases[treatment]={book:'K',treatment});
+ if(c.treatment!==treatment)throw Error('QA_TREATMENT_CHANGED');save();
  if(treatment==='ZERO'){
   if(c.converted&&!state.cases.RZ?.invoice)await require('./uat-native-v3-rebate-use.cjs')({...ctx,caseKey:'RZ',rebateState:{...state.rebate,approval:c.converted}});
   const target=state.cases.R.soid;
@@ -84,7 +93,18 @@ module.exports=async function(ctx){
  check(receipts.length===1&&receipts[0].Treatment===treatment&&Number(receipts[0].QuantityTon)===0.05,'TREATMENT_ONE_RECEIPT_'+treatment);
  // The simulated source belongs to the counter employee, so its own counter
  // requests the draw; do not widen the normal salesperson's coupon scope.
- const fixtureCall=(method,url,body,key)=>call(method,url,body,key==='sales'&&url.startsWith('/native-documents/116/')?'counter':key);
+ const fixtureCall=async(method,url,body,key)=>{
+  if(!url.startsWith('/native-documents/116/'))return call(method,url,body,key);
+  if(key==='sales')return call(method,url,body,'counter');
+  if(key==='manager'){
+   const denied=await call(method,url,body,key);
+   check(denied.status===404&&denied.data.code==='ND_COUPON_NOT_FOUND','TREATMENT_OUTSIDE_BRANCH_MANAGER_DENIED_'+treatment);
+   // This Counter fixture is outside the sales manager's branch. The real QA
+   // administrator reviews it; normal branch approval is tested in both books.
+   return call(method,url,body,endpointUser);
+  }
+  return call(method,url,body,key);
+ };
  await require('./uat-native-v3-phases.cjs')({...ctx,call:fixtureCall,lineTon:0.05,totalTon:0.05}).raceRedemption('K',c);
  if(!c.invoice){
   const lines=c.cuts.flatMap(cut=>cut.receipt.lines.map(l=>({redemptionId:cut.receipt.nativeId,lineNo:l.NativeLineNo}))),data={docDate:deliveryDate};

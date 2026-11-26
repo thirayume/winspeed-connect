@@ -89,6 +89,9 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
     if (raw.length === 10) {
       const gregorian = parseThaiDateToGregorian(raw);
       if (gregorian) {
+        if ((min && gregorian < min) || (max && gregorian > max)) {
+          return;
+        }
         onChange(gregorian);
         const d = new Date(gregorian);
         if (!isNaN(d.getTime())) {
@@ -106,7 +109,7 @@ export const ThaiDatePicker: React.FC<ThaiDatePickerProps> = ({
       setDisplayValue(value ? toThaiDateInputFormat(value) : '');
     } else if (displayValue.length === 10) {
        const gregorian = parseThaiDateToGregorian(displayValue);
-       if (!gregorian) {
+       if (!gregorian || (min && gregorian < min) || (max && gregorian > max)) {
          setDisplayValue(value ? toThaiDateInputFormat(value) : '');
        }
     }

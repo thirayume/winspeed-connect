@@ -6,8 +6,9 @@ const budgetActions=['budget.plan.create','budget.plan.review','budget.plan.appr
 const error=(code,status=403)=>Object.assign(Error(code),{code,status});
 function classify(req){
  const path=String(req.path||''),method=String(req.method||'');
+ if(req.baseUrl==='/api/auth'&&method==='GET'&&['/scope-groups','/sales-territories'].includes(path))return 'organization-read';
  if(req.baseUrl==='/api/budget'){
-  if(method==='GET'&&(/^(\/plans|\/staff|\/customers|\/approvers|\/expenditure)$/.test(path)||/^\/plans\/[1-9]\d*(\/(history|report|export))?$/.test(path)||/^\/reports\/(annual|projects)(\/export)?$/.test(path)))return 'budget-read';
+  if(method==='GET'&&(/^(\/plans|\/branches|\/staff|\/customers|\/approvers|\/expenditure)$/.test(path)||/^\/plans\/[1-9]\d*(\/(history|report|export))?$/.test(path)||/^\/reports\/(annual|projects)(\/export)?$/.test(path)))return 'budget-read';
   if(method==='POST'&&path==='/plans'||['PUT','DELETE'].includes(method)&&/^\/plans\/[1-9]\d*$/.test(path)||method==='POST'&&/^\/plans\/[1-9]\d*\/(submit|review|approve|reject|cancel|restore)$/.test(path))return 'budget-write';
  }
  if(req.baseUrl==='/api/reports'&&method==='GET'){
@@ -61,18 +62,19 @@ async function allReportScopes(user,db=require('../db')){
 // Directory results intersect both identities and both company hierarchies.
 // Every translated member needs its own current, reviewed identity binding.
 async function businessScopes(user,db=require('../db')){
- const {getVisibleScope}=require('./visible-scope');if(!user.identityMapping)return Promise.all([...new Set([user,identity.actorPerspective(user)])].map(u=>getVisibleScope(u)));
+ const {getVisibleScope}=require('./visible-scope');if(!user.identityMapping)return Promise.all([...new Set([user,identity.actorPerspective(user)])].map(u=>getVisibleScope(u,db.wfQuery,{includePositions:true})));
  const result=[],access=user.secondaryModuleAccess,resolver=require('./database-identity-resolver'),repository=resolver.sqlRepository(db,require('../onprem-target').isSwitchableDb);
  for(const u of [...new Set([user,identity.actorPerspective(user)])]){
-  const pair=perspectives(u);const scope=await db.runWithTarget('onprem',()=>getVisibleScope(pair[0].user),access.primaryDatabase);
-  result.push(await getVisibleScope(pair[1].user));
+  const pair=perspectives(u);const scope=await db.runWithTarget('onprem',()=>getVisibleScope(pair[0].user,db.wfQuery,{includePositions:true}),access.primaryDatabase);
+  result.push(await getVisibleScope(pair[1].user,db.wfQuery,{includePositions:true}));
   if(scope.all)continue;
   const members=[...new Set(scope.userIds.map(Number))];if(members.length>500)throw error('SECONDARY_SCOPE_TOO_LARGE',503);
   const translated=[];
   for(const id of members){try{const m=await resolver.resolveReviewedIdentity({primaryUserId:id,primaryDatabase:access.primaryDatabase,targetDatabase:access.targetDatabase},repository);translated.push(m.targetUserId);}catch(e){if(e.code!=='IDENTITY_BINDING_INVALID')throw e;}}
   const inputs=Object.fromEntries(translated.map((id,i)=>['dir'+i,{type:db.sql.Int,value:id}]));
-  const rows=translated.length?(await db.wfQuery('SELECT Id,EmpId FROM wf.AppUser WHERE IsActive=1 AND Id IN ('+translated.map((_,i)=>'@dir'+i).join(',')+')',inputs)).recordset:[];
-  result.push({all:false,userIds:rows.map(r=>Number(r.Id)),empIds:rows.map(r=>r.EmpId).filter(v=>v!=null&&v!==''),basis:'REVIEWED_PRIMARY_SCOPE'});
+  const rows=translated.length?(await db.wfQuery('SELECT Id,EmpId,PositionCode FROM wf.AppUser WHERE IsActive=1 AND Id IN ('+translated.map((_,i)=>'@dir'+i).join(',')+')',inputs)).recordset:[];
+  // Never assume primary position codes identify secondary branches.
+  result.push({all:false,userIds:rows.map(r=>Number(r.Id)),empIds:rows.map(r=>r.EmpId).filter(v=>v!=null&&v!==''),positionCodes:[...new Set(rows.map(r=>r.PositionCode).filter(Boolean))],basis:'REVIEWED_PRIMARY_SCOPE'});
  }
  return result;
 }

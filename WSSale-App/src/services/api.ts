@@ -18,14 +18,15 @@ import type {
 
 import { dbTargetHeader } from '../store/db-mode';
 import { bangkokDate } from '../utils/date';
+import {useOrgScopeStore} from '../store/org-scope-store';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
 
 // ── Auth token storage ────────────────────────────────────────
 const TOKEN_KEY = 'wssale_token';
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
-export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+export const setToken = (t: string) => {useOrgScopeStore.getState().setBranch('');localStorage.setItem(TOKEN_KEY, t);};
+export const clearToken = () => {useOrgScopeStore.getState().setBranch('');localStorage.removeItem(TOKEN_KEY);};
 
 function notifyAuthExpired(requestToken: string | null) {
   // A response from the previous login/database must not revoke a newer session.
@@ -36,7 +37,8 @@ function notifyAuthExpired(requestToken: string | null) {
 
 function authHeaders(): Record<string, string> {
   const t = getToken();
-  return t ? { Authorization: `Bearer ${t}` } : {};
+  const branch=useOrgScopeStore.getState().branch;
+  return t ? { Authorization: `Bearer ${t}`,...(branch?{'X-Org-Branch':branch}:{}) } : {};
 }
 
 import { useAppStore } from '../store/app-store';
@@ -217,6 +219,7 @@ export const createUser = (payload: {
 export const listUsers = () => req<AdminUser[]>('/auth/users');
 
 export const updateUser = (id: number, patch: {
+  expectedEmpId?:string|null;
   empId?: string | null; role?: string; roleCodes?: string[]; expectedRoleCodes?: string[]; displayName?: string; isActive?: boolean;
   password?: string; lineUserId?: string | null;
   address?: string | null; phone?: string | null; email?: string | null;
@@ -230,7 +233,7 @@ export const updateUser = (id: number, patch: {
 export const deleteUser = (id: number) =>
   req<{ ok: boolean }>(`/auth/users/${id}`, { method: 'DELETE' });
 
-export const fetchEmployees = () => req<Employee[]>('/master/employees');
+export const fetchEmployees = async () => (await req<Employee[]>('/master/employees')).map(e=>({...e,EmpID:String(e.EmpID)}));
 
 // ── ผังตำแหน่ง (wf.OrgPosition) — จากผังองค์กร 2568 ────────────
 export type OrgPosition = {
@@ -239,10 +242,12 @@ export type OrgPosition = {
   OrgUnit: string; Tier: number;
   DefaultRole: string | null; CanApprove: boolean; IsActive: boolean;
   Note: string | null; AssignedCount: number;
+  RecordScope?:'ORG'|'GLOBAL';
 };
 export const listOrgPositions = () => req<OrgPosition[]>('/auth/org-positions');
 
 export interface CreateOrgPositionInput {
+  recordScope?:'ORG'|'GLOBAL';
   positionCode: string;
   positionName: string;
   reportsTo?: string | null;
@@ -254,6 +259,7 @@ export interface CreateOrgPositionInput {
 }
 
 export interface UpdateOrgPositionInput {
+  recordScope?:'ORG'|'GLOBAL';
   positionName?: string;
   reportsTo?: string | null;
   orgUnit?: string;
@@ -286,7 +292,7 @@ const MASTER_CACHE_TTL = 5 * 60 * 1000;
 const masterCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
 
 function cachedReq<T>(key: string, loader: () => Promise<T>, ttl = MASTER_CACHE_TTL): Promise<T> {
-  key = JSON.stringify([getToken(), dbTargetHeader(), key]);
+  key = JSON.stringify([getToken(), dbTargetHeader(),useOrgScopeStore.getState().branch, key]);
   const now = Date.now();
   const cached = masterCache.get(key);
   if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
@@ -564,6 +570,7 @@ export const searchAgingOrders = (params: {
 
 // ── Sales Orders ──────────────────────────────────────────────
 export const fetchSalesOrders = (params?: {
+  sortBy?:'docuDate'|'docuNo'|'docuType'|'status'|'deliveryDate';sortDirection?:'asc'|'desc';
   status?: string; custId?: string; search?: string; dateFrom?: string; dateTo?: string; page?: number; limit?: number; silent?: boolean;
 }) => {
   const { silent, ...queryParams } = params || {};
@@ -601,7 +608,7 @@ export const fetchAccountingBillDetail = (id: number | string) =>
   req<import('../types').AccountingBillDetail>(`/so/${id}/accounting-detail`);
 
 export const createSO = (payload: Record<string, unknown> | Record<string, unknown>[]) =>
-  req<{ id?: number; ids?: number[]; wfRef?: string; wfRefs?: string[]; needsApproval: boolean }>('/so', {
+  req<{ id?: number; ids?: number[]; wfRef?: string; wfRefs?: string[]; needsApproval: boolean;trip?:{tripId:number;tripCode:string;truckTypeId:string|null;truckCapacityTon:number|null}|null }>('/so', {
     method: 'POST', body: JSON.stringify(payload),
   });
 
@@ -1931,6 +1938,7 @@ export type ReportMeta = {
   basis?: string;
   projects?: import('../utils/budgetPlan').BudgetReportProject[];
   budgetSummary?: {region:string;allocatedAmount:number;estimatedAmount:number}[];
+  branchSummary?: {branchPositionCode:string;branchName:string;estimatedAmount:number}[];
   missingPlanDetailsCount?: number;
   costPendingCount?: number;
   costBasis?: string;
@@ -2533,6 +2541,9 @@ export type TripBooking = {
   memberKind: 'DRAFT' | 'CONFIRMED';
   memberId: string;
   docuNo: string | null;
+  docuDate: string | null;
+  docuType: number | null;
+  createdAt: string | null;
   soPrefix: string | null;
   status: string | null;
   soid: number | null;
@@ -2863,6 +2874,7 @@ export const createTrip = (data: {
   transRegistration?: string | null;
   driverName?: string | null;
   truckCapacityTon?: number;
+  truckTypeId?: string | null;
   orderIds?: (number | string)[];
   scheduledDate?: string;
   deliveryDate?: string;
@@ -2969,6 +2981,7 @@ export const updateLoadPlan = (tripId: number | string, data: {
 
 export const acknowledgeLoadPlan = (tripId: number | string, data: {
   expectedPlanRevision: number;
+  truckTypeId?: string | null;
   note?: string;
 }) => req<{
   tripId: number;

@@ -4,6 +4,15 @@ const {requireAuth}=require('../middleware/auth');
 const {nativeDocument,httpError}=require('../services/native-document-service');
 router.use(requireAuth);
 router.use((_req,res,next)=>{res.set('Cache-Control','no-store');next();});
+router.get('/native116/queue',async(req,res)=>{
+ try{res.json(await require('../services/native-116-recovery').native116Recovery({operation:'queue',user:req.user}));}
+ catch(e){const r=httpError(e);res.status(r.status).json({...r,message:r.code});}
+});
+for(const operation of ['inspect','restore'])router.post('/native116/'+operation,async(req,res)=>{
+ try{res.json(await require('../services/native-116-recovery').native116Recovery({operation,user:req.user,
+  stageId:req.body?.stageId,fingerprint:req.body?.fingerprint,reason:req.body?.reason}));}
+ catch(e){const r=httpError(e);res.status(r.status).json({...r,message:r.code});}
+});
 router.get('/bridge/queue',async(req,res)=>{
  try{res.json(await require('../services/coupon-bridge-service').bridgeOperation({operation:'queue',user:req.user}));}
  catch(e){const r=require('../services/coupon-bridge-service').httpError(e);res.status(r.status).json({...r,message:r.code});}

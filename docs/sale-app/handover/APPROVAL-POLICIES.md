@@ -1,6 +1,11 @@
 # เอกสารตรวจสอบและคู่มือนโยบายการอนุมัติ (Approval Policies — FR-028)
 <!-- เอกสารส่งมอบและผลการตรวจสอบระบบจริง: Sale-App World Fertilizer -->
 
+## ยืนยันเพิ่มเติมจากเจ้าของ — 25 พฤศจิกายน 2569: ยืนยันบิลตั้งแต่ SALES ขึ้นไปโดยไม่ต้องผ่าน Counter-Sales (FR-022)
+
+- ผู้ใช้ตั้งแต่ `SALES` ขึ้นไป (`SALES`, `COUNTER_SALES`, `APPROVER`, `ACCOUNTING`, `MANAGER`, `C_LEVEL`, `ADMIN` ที่มีสิทธิ์ `so.confirm` และอยู่ในขอบเขตของตน) สามารถกดยืนยันบิลและเที่ยวรถได้ทันที ทั้งบิลร่างใหม่ (`wf.SalesOrder`) และบิล WinSpeed ที่ปลดล็อกกลับมาแก้ไข (`wf.SalesOrderExt.IsUnlocked = 1`) โดยไม่ติดเงื่อนไขต้องให้ `COUNTER_SALES` กดตรวจซ้ำก่อน (`FR-022`)
+- เพิ่มสิทธิ์ `so.create`, `so.edit`, `so.confirm` ให้บทบาท `MANAGER` ครบสายงานขาย (`SALES` → `COUNTER_SALES` → `MANAGER` → `C_LEVEL` → `ADMIN`) พร้อม Migration `280_manager_so_permissions.sql` (และ `down/280_manager_so_permissions.down.sql`) สำหรับอัปเดตตาราง `wf.RolePermission` แบบย้อนกลับได้
+
 ## ยืนยันเพิ่มเติมจากเจ้าของ — 23 พฤศจิกายน 2569: Budget Plan และรายงาน
 
 ข้อกำหนดนี้อยู่ใน source candidate ของงานรายงาน **ยังไม่ deploy หรือลง migration 278 บนระบบใช้งานจริง**
@@ -185,7 +190,7 @@ Backend ล่าสุด 1,367/1,367, frontend build และ browser 8/8 ผ
 
 ## 4. รายการชุดทดสอบอัตโนมัติที่ครอบคลุม (Automated Test Traceability)
 
-ทุกนโยบายมีชุดทดสอบอัตโนมัติ (Automated Unit & Integration Tests) ในโฟลเดอร์ `backend/tests/` ซึ่งผ่านการทดสอบ 100%:
+นโยบายมีชุดทดสอบอัตโนมัติ (Automated Unit & Integration Tests) ในโฟลเดอร์ `backend/tests/` ตามรายการด้านล่าง ผลผ่านต้องอ้างอิงหลักฐานของ release ที่ตรวจจริง ไม่ถือว่าร่างที่ยังพัฒนาอยู่ผ่านทั้งหมด:
 
 1. `backend/tests/price-discount-rules.test.js` และ `backend/tests/owner-decisions-20261009.test.js`: ลดไม่เกิน 200 ไม่ต้องอนุมัติ, 200–300 ต้องอนุมัติ, เกิน 300 บันทึกไม่ได้, สเต็ป 100 บาท
 2. `backend/tests/trip-multi-cust-approval.test.js`: ทดสอบ `MULTI_CUST_TRIP` การบล็อกและปลดล็อกเที่ยวรถหลายลูกค้า
@@ -193,3 +198,22 @@ Backend ล่าสุด 1,367/1,367, frontend build และ browser 8/8 ผ
 4. `backend/tests/giveaway-crud-org.test.js`: ทดสอบ `GIVEAWAY_OVERRUN` การเบิกเกินโควตา
 5. `backend/tests/pricelist-costlist.test.js`: ทดสอบ `PRICE_CHANGE` และ `SPECIAL_PRICE` ตรวจสอบร่วมกับ Cost Floor
 6. `backend/tests/rebate-pool.test.js`: ทดสอบ `REBATE_CLAIM` และการตัดจ่าย Rebate FIFO
+
+### Owner instruction, 26 November 2026 — candidate under test
+
+- SALES and higher authorized roles may confirm their own/in-scope bills and trips without the Counter-Sales verification step. This does not grant ticket-selling permission: creating or confirming a control-ticket sale still requires `so.control-ticket` for both the effective and actual actor. Drawing tickets and using the customer's Rebate retain their separate permissions.
+- A role grants actions; business visibility follows the user's active organization position and descendants. An unplaced manager/executive/approver is own-only. Operational cross-team visibility is explicit `RecordScope=GLOBAL`; ADMIN retains administrative visibility. Access As and branch selection may only narrow the intersection of allowed scopes, never expose peers on the same position.
+- Annual Budget Plan review/approval must move upward through active approval positions, with distinct preparer/reviewer/approver and actual actor checks. Employee linkage and structure changes are administrative actions; native employee metadata changes go through an audited `wf` procedure without changing native keys or disabling native triggers.
+- The new-bill screen requests trip and bill creation in one transaction. Repeated create requests use an immutable request receipt with payload/identity/scope checks. Known validation/audit failure must roll back the trip and bills together.
+- Native WinSpeed 116 supports direct recording under its native permission boundary with balance/reservation/audit checks in the v3 candidate. The deployed bridge still requires permits until the reviewed release is rolled out. Native SQL-session identity and document `SaveEmpID` are separate evidence and must not be silently treated as the same human identity. Completed native audit and saved quantities determine success; dismissing an error and seeing print selection does not establish a saved document.
+
+
+### Owner decisions, 26 November 2026 — candidate branch annual budgets and system administrator
+
+Each organization branch prepares its own annual Budget Plan, unique per branch/year/channel. Company forecasts sum only approved, non-deleted plans inside every applicable actual/effective and company scope. The branch is explicit and immutable after first assignment; existing NULL ownership remains visibly legacy and is never inferred from a staff name. Migration 282 is candidate-only. A draft prepared by an administrator for a branch remains visible to that branch; reviewing authority follows the branch's superior positions, followed by an approver above the reviewer. Maker/actual-maker separation still applies.
+
+The owner clarified that the reserved `admin` account is a special WF-SaleApp system account. It is not evidence of a WinSpeed login or permission, and must not be substituted for the operator of a native 116. The earlier request for EMP-00000 remains subject to a reviewed system-employee link; creating employee metadata must not create native login credentials or infer a human identity. Other employees require their actual, unique native links.
+
+Loan directories expose only the minimal counterparty quota under a salesperson's nearest active lead. This does not grant access to a peer's customers or bills. Managers/executives retain their descendant scope; Access As intersects both branches. New requests and decisions recheck the current branch inside the write transaction. Lenders retain personal consent over their own quota. A manager acting for a lender must be above both quota owners; an administrative override remains audited. Old loan balances remain repayable by their current parties.
+
+Development evidence: latest clean backend regression 1,506/1,506; earlier offline 99, organization browser 11, bridge/recovery browser 5, Budget/PDF/synthetic Excel 12 and build passed. Candidate 280–289 and the strict audit hook are active only on the backed-up v3 copy. Both authenticated ZERO/DISCOUNT Sale-App loops passed and their fourteen owned QA accounts were retired. Physical native create/partial edits/cancellation, the explicit failed-save message and both ordering checks passed with exact balances and genuine completion audits. Existing four-line legacy adoption/edit/cancel passed a separate SQL rollback rehearsal. Seven staff profiles, independent territories, system-admin metadata linkage and supervisor correction were configured through audited ADMIN APIs only on v3; ten Access As identities passed the scoped directory/customer/bill/API gate. Actual live staff setup, reviewed cross-company bindings and release gates remain outstanding. No live rollout or Reset. See GO-LIVE-STATUS for the exact gates.

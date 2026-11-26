@@ -13,7 +13,10 @@ function fixture(){
   if(/DB_NAME\(\)/.test(text))return rows([{DatabaseName:'fixture'}]);
   if(/AS HasBorrow/.test(text))return rows([...new Set([p.effective,p.actor])].map(Id=>({Id,IsActive:1,MustChangePassword:0,HasBorrow:1,
    CanManage:[99,199].includes(Id)?1:0,HasAdmin:[99,199].includes(Id)?1:0,HasCLevel:0,HasManager:0,...state.principals?.[Id]})));
-  if(/SELECT Id, EmpId, PositionCode FROM wf.AppUser/.test(text))return rows([{Id:p.id,PositionCode:null}]);
+  if(/SELECT Id, EmpId, PositionCode FROM wf.AppUser/.test(text))return rows([{Id:p.id,PositionCode:'QA-SALES'}]);
+  if(/SELECT PositionCode,ReportsTo,RecordScope/.test(text))return rows([{PositionCode:'QA-SALES',ReportsTo:'QA-MGR',RecordScope:'ORG',IsActive:1}]);
+  if(/;WITH tree AS/.test(text))return rows([{Id:p.id}]);
+  if(/;WITH leads AS/.test(text))return rows((state.counterpartyDenied?[p.loanUser]:[1,2,22]).map(Id=>({Id})));
   if(/SELECT Id FROM wf.GiveawayBudget/.test(text))return rows(state.budgets.filter(r=>r.Id===p.id));
   if(/FROM wf.v_GiveawayBudgetStatus v/.test(text))return rows(state.budgets.filter(r=>[p.a,p.b].includes(r.Id)).map(r=>({...r,RemainingQty:r.BudgetQty-r.WithdrawnQty})));
   if(/SELECT SettingValue/.test(text))return rows([{SettingValue:'100'}]);
@@ -114,4 +117,12 @@ test('revoked permissions, disabled real actors and removed manager roles fail i
    {window:{businessDate:'2026-01-01'}})),{code:'QUOTA_LOAN_FORBIDDEN'});
   assert.equal(f.state.loans.length,0);assert.equal(f.state.audits.length,0);
  }
+});
+
+test('a moved counterparty cannot receive a new loan or approve a stale cross-branch request',async()=>{
+ const f=fixture();f.state.counterpartyDenied=true;
+ await assert.rejects(request(f),{code:'QUOTA_LOAN_COUNTERPARTY_OUTSIDE_BRANCH'});assert.equal(f.state.loans.length,0);
+ f.state.counterpartyDenied=false;await request(f);f.state.counterpartyDenied=true;
+ await assert.rejects(approve(f),{code:'QUOTA_LOAN_COUNTERPARTY_OUTSIDE_BRANCH'});
+ assert.equal(f.state.loans[0].Status,'PENDING');assert.deepEqual(f.state.budgets.map(b=>b.BudgetQty),[100,20]);
 });

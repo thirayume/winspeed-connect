@@ -9,7 +9,7 @@ function fixture(overrides={}){
  const calls=[],events=[];
  const state={applied:false,request:null,receipt:null,scale:{Id:9001,SPID:501,MoveBill:'9900501',CarNo:'UAT2-SCALE',WeightNet:1004,Status:'3'},slipUsed:{},parts:Array.from({length:10},(_,i)=>i===4?'<row><CouponID>701</CouponID><RemaQty>1.0000</RemaQty><GoodQty>1.0000</GoodQty></row>':'delivery:'+i),
   accounts:[{Id:11,Role:'WAREHOUSE'},{Id:22,Role:'ACCOUNTING'},{Id:33,Role:'WAREHOUSE'},{Id:44,Role:'MANAGER'},{Id:99,Role:'ADMIN'}].map(r=>({...r,IsActive:1,MustChangePassword:0,EmpId:String(1000+r.Id)})),...overrides};
- state.parent={SourceSOID:501,DeliverySOID:601,DeliveryNo:'I69-00601',CouponID:701,CouponNo:'C6900701',ContainQty:50,SackQty:20,
+ state.parent={EmpID:1001,SourceSOID:501,DeliverySOID:601,DeliveryNo:'I69-00601',CouponID:701,CouponNo:'C6900701',ContainQty:50,SackQty:20,
   FinanceSOInvID:801,FinancePostID:901,FinanceVATID:1001,PolicyVersion:'O25-DO104-COMPLETE-UAT2-v2',
   SourceNo:'I69-00501',SourceAfterHash:H(['SOHD','SODT','SOHDRemark','SODTRemark'].map(t=>'source:'+t)),DeliveryAfterHash:H(state.parts)};
  const q=async(text,p)=>{
@@ -19,7 +19,9 @@ function fixture(overrides={}){
   if(/sp_getapplock/.test(text))return rows([{LockResult:0}]);
   if(/AS InvoiceReceiptObject/.test(text))return rows([{InvoiceReceiptObject:null}]);
   if(/SELECT r\.\*,h.DocuNo AS SourceNo/.test(text))return rows([state.parent]);
-  if(/SELECT Id, EmpId, PositionCode/.test(text))return rows([{Id:p.id.value,EmpId:'1001',PositionCode:null}]);
+  if(/SELECT PositionCode,ReportsTo,RecordScope,IsActive/.test(text))return rows([{PositionCode:'QA-MANAGER',IsActive:1,RecordScope:'ORG'}]);
+  if(/;WITH tree AS/.test(text))return rows([{Id:44,EmpId:'1044'},{Id:1,EmpId:'1001'},{Id:55,EmpId:null}]);
+  if(/SELECT Id, EmpId, PositionCode/.test(text))return rows([{Id:p.id.value,EmpId:p.id.value===44?'1044':'1001',PositionCode:p.id.value===44?'QA-MANAGER':null}]);
   if(/SELECT DocuNo,DocuType FROM dbo.SOHD/.test(text))return rows([{DocuNo:'I69-00601',DocuType:104}]);
   if(/AS CompleteCouponID/.test(text))return rows([{CompleteCouponID:701}]);
   if(/FOR XML RAW/i.test(text)){

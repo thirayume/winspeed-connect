@@ -9,7 +9,6 @@ const { nativeChainInScope } = require('./native-document-scope');
 
 /** The real actor's scope during Access As on a secondary database, otherwise null. */
 async function secondaryActorScope(user) {
-  if (!user?.identityMapping) return null;
   const actor = actorPerspective(user);
   if (actor === user) return null;
   return getVisibleScope(actor);

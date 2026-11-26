@@ -142,13 +142,34 @@ async function customerMutationSnapshot(tx, id) {
   return r.recordset?.[0] || null;
 }
 
-async function customerMutationScope(tx, user, id, predicate) {
+async function customerMutationScope(tx, user, id) {
+  const queryFn = (text, inputs) => transactionQuery(tx, text, inputs || {});
+  const predicate = await customerPredicate(user, { queryFn });
   const r = await transactionQuery(tx, `SELECT TOP 1 1 AS ok FROM dbo.EMCust c WITH (UPDLOCK,HOLDLOCK)
     LEFT JOIN wf.CustomerExt cx WITH (UPDLOCK,HOLDLOCK) ON cx.CustId=c.CustID
     WHERE c.CustID=@visibilityCustId AND ${predicate.sql}`, {
     ...predicate.inputs, visibilityCustId: { type: sql.Int, value: Number(id) },
   });
   if (!r.recordset?.length) throw Object.assign(new Error('ไม่พบรหัสลูกค้านี้'), { status: 404 });
+}
+
+async function customerAssignmentUser(tx, user, value) {
+  if (value === null || value === '') return null;
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647)
+    throw Object.assign(new Error('ผู้ดูแลลูกค้าไม่ถูกต้อง'), { status: 400 });
+  const queryFn = (text, inputs) => transactionQuery(tx, text, inputs || {});
+  const scope = await getVisibleScope(user, queryFn);
+  if (!require('../services/visible-scope').inScope(scope, { userId: id }))
+    throw Object.assign(new Error('ไม่พบผู้ดูแลลูกค้าในสายงานที่มีสิทธิ์'), { status: 404 });
+  const rows = (await queryFn(`SELECT u.Id,u.DisplayName,u.EmpId FROM wf.AppUser u WITH (UPDLOCK,HOLDLOCK)
+    JOIN dbo.EMEmp employee WITH (HOLDLOCK) ON employee.EmpID=u.EmpId
+    WHERE u.Id=@uid AND u.IsActive=1 AND employee.EmpStatus='1'
+      AND employee.EmpResignDate IS NULL`,
+    { uid: { type: sql.Int, value: id } })).recordset || [];
+  if (rows.length !== 1 || !Number.isSafeInteger(Number(rows[0].EmpId)) || Number(rows[0].EmpId) <= 0)
+    throw Object.assign(new Error('ผู้ดูแลลูกค้ายังไม่มีรหัสพนักงาน WinSpeed ที่ใช้งานได้'), { status: 409 });
+  return rows[0];
 }
 
 async function masterPriceSnapshot(tx, id, listNo, lock = false) {
@@ -294,60 +315,34 @@ router.get('/customer-filters', async (req, res) => {
   try {
     const columns = await getCustomerFilterColumns();
 
-    // 1. Salesperson: Active sales and managers from wf.AppUser (+ count from wf.CustomerExt)
-    const salesperson = await query(`
-      SELECT CONVERT(NVARCHAR(50), u.Id) AS value,
-             u.DisplayName + ' (@' + u.Username + ')' AS label,
-             COUNT(cx.CustId) AS count
-      FROM wf.AppUser u WITH (NOLOCK)
-      LEFT JOIN wf.UserRole ur WITH (NOLOCK) ON ur.UserId = u.Id
-      LEFT JOIN wf.CustomerExt cx WITH (NOLOCK) ON cx.SalespersonUserId = u.Id
-      WHERE (u.Role IN ('SALES', 'COUNTER_SALES', 'MANAGER') 
-             OR u.RoleCode IN ('SALES', 'COUNTER_SALES', 'MANAGER')
-             OR ur.RoleCode IN ('SALES', 'COUNTER_SALES', 'MANAGER'))
-        AND u.IsActive = 1
-      GROUP BY u.Id, u.DisplayName, u.Username
-      ORDER BY u.DisplayName
-    `);
-
-    // 2. Area: The 14 official sale regions from wf.SaleRegion
-    const area = await query(`
-      SELECT r.RegionCode AS value,
-             r.RegionCode + ' ' + r.RegionName AS label,
-             r.RegionCode AS regionCode,
-             r.RegionName AS regionName,
-             COUNT(c.CustID) AS count
-      FROM wf.SaleRegion r WITH (NOLOCK)
-      LEFT JOIN dbo.EMSaleArea a WITH (NOLOCK) ON SUBSTRING(a.SaleAreaCode, 1, 2) = r.RegionCode
-      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON (c.SaleAreaID = a.SaleAreaID OR c.CustID IN (SELECT CustId FROM wf.CustomerExt WHERE RegionCode = r.RegionCode)) AND ISNULL(c.Inactive, 'A') <> 'I'
-      WHERE ISNULL(r.IsActive, 1) = 1
-      GROUP BY r.RegionCode, r.RegionName
-      ORDER BY r.RegionCode
-    `);
-
-    // 3. Group: From dbo.EMCustGroup
-    const group = await query(`
-      SELECT CONVERT(NVARCHAR(50), g.CustGroupID) AS value,
-             g.CustGroupName AS label,
-             COUNT(c.CustID) AS count
-      FROM dbo.EMCustGroup g WITH (NOLOCK)
-      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustGroupID = g.CustGroupID AND ISNULL(c.Inactive, 'A') <> 'I'
-      GROUP BY g.CustGroupID, g.CustGroupName
-      ORDER BY g.CustGroupID
-    `);
-
-    // 4. Regions: From wf.SaleRegion
-    const regions = await query(`
-      SELECT r.RegionCode AS value,
-             r.RegionName AS label,
-             COUNT(c.CustID) AS count
-      FROM wf.SaleRegion r WITH (NOLOCK)
-      LEFT JOIN dbo.EMSaleArea a WITH (NOLOCK) ON SUBSTRING(a.SaleAreaCode, 1, 2) = r.RegionCode
-      LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.SaleAreaID = a.SaleAreaID AND ISNULL(c.Inactive, 'A') <> 'I'
-      WHERE ISNULL(r.IsActive, 1) = 1
-      GROUP BY r.RegionCode, r.RegionName
-      ORDER BY r.RegionCode
-    `);
+    const scopes=await require('../services/secondary-budget-report-access').businessScopes(req.user);
+    const customer=await require('../services/secondary-customer-scope').customerPredicate(req.user,{scopes});
+    const staffFilters=scopes.map((scope,i)=>require('../services/visible-scope').scopeFilter(scope,{userCol:'u.Id',empCol:'u.EmpId',prefix:'customerFilterStaff'+i}));
+    const staffWhere=staffFilters.map(f=>'('+f.sql+')').join(' AND ')||'1=0';
+    const visibleCustomers=`;WITH visibleCustomers AS (
+      SELECT c.CustID,c.SaleAreaID,c.CustGroupID,cx.SalespersonUserId,cx.RegionCode
+      FROM dbo.EMCust c LEFT JOIN wf.CustomerExt cx ON cx.CustId=c.CustID
+      WHERE ISNULL(c.Inactive,'A')<>'I' AND ${customer.sql})`;
+    const salesperson=await query(`${visibleCustomers}
+      SELECT CONVERT(NVARCHAR(50),u.Id) value,u.DisplayName+' (@'+u.Username+')' label,COUNT(DISTINCT c.CustID) count
+      FROM wf.AppUser u LEFT JOIN visibleCustomers c ON c.SalespersonUserId=u.Id
+      WHERE u.IsActive=1 AND ${staffWhere} AND (u.Role IN('SALES','COUNTER_SALES','MANAGER')
+       OR u.RoleCode IN('SALES','COUNTER_SALES','MANAGER') OR EXISTS(SELECT 1 FROM wf.UserRole ur WHERE ur.UserId=u.Id AND ur.RoleCode IN('SALES','COUNTER_SALES','MANAGER')))
+      GROUP BY u.Id,u.DisplayName,u.Username ORDER BY u.DisplayName,u.Id`,{...customer.inputs,...Object.assign({},...staffFilters.map(f=>f.inputs))});
+    const area=await query(`${visibleCustomers}
+      SELECT r.RegionCode value,r.RegionCode+' '+r.RegionName label,r.RegionCode regionCode,r.RegionName regionName,COUNT(DISTINCT c.CustID) count
+      FROM wf.SaleRegion r LEFT JOIN dbo.EMSaleArea a ON SUBSTRING(a.SaleAreaCode,1,2)=r.RegionCode
+      LEFT JOIN visibleCustomers c ON c.SaleAreaID=a.SaleAreaID OR c.RegionCode=r.RegionCode
+      WHERE ISNULL(r.IsActive,1)=1 GROUP BY r.RegionCode,r.RegionName ORDER BY r.RegionCode`,customer.inputs);
+    const group=await query(`${visibleCustomers}
+      SELECT CONVERT(NVARCHAR(50),g.CustGroupID) value,g.CustGroupName label,COUNT(DISTINCT c.CustID) count
+      FROM dbo.EMCustGroup g LEFT JOIN visibleCustomers c ON c.CustGroupID=g.CustGroupID
+      GROUP BY g.CustGroupID,g.CustGroupName ORDER BY g.CustGroupID`,customer.inputs);
+    const regions=await query(`${visibleCustomers}
+      SELECT r.RegionCode value,r.RegionName label,COUNT(DISTINCT c.CustID) count
+      FROM wf.SaleRegion r LEFT JOIN dbo.EMSaleArea a ON SUBSTRING(a.SaleAreaCode,1,2)=r.RegionCode
+      LEFT JOIN visibleCustomers c ON c.SaleAreaID=a.SaleAreaID
+      WHERE ISNULL(r.IsActive,1)=1 GROUP BY r.RegionCode,r.RegionName ORDER BY r.RegionCode`,customer.inputs);
 
     // 5. Employee: mirror of salesperson for backwards compatibility
     const employee = salesperson;
@@ -540,8 +535,9 @@ router.get('/customer-requests', async (req, res) => {
     const actor=actorPerspective(req.user);
     const conditions=['cr.CreatedAt >= @globalStartUtc'];
     const inputs={globalStartUtc:{type:sql.DateTime2,value:dataWindow.utcInstant}};
-    if (!hasRole(req.user,'ADMIN','MANAGER')) { conditions.push('cr.RequestedBy = @uid'); inputs.uid={type:sql.Int,value:ids.effective}; }
-    if (!hasRole(actor,'ADMIN','MANAGER')) { conditions.push('cr.RequestedBy = @actor'); inputs.actor={type:sql.Int,value:ids.actor}; }
+    for(const [i,perspective]of [...new Set([req.user,actor])].entries()){
+      const filter=scopeFilter(await getVisibleScope(perspective),{userCol:'cr.RequestedBy',prefix:'customerRequest'+i});conditions.push(filter.sql);Object.assign(inputs,filter.inputs);
+    }
     const rows = await query(`
       SELECT TOP 200
              cr.*,
@@ -649,6 +645,12 @@ router.patch('/customer-requests/:id/review', requireRole('ADMIN', 'MANAGER'), a
       id: { type: sql.Int, value: id }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant }
     })).recordset?.[0];
     if (!reqRow) throw Object.assign(new Error('ไม่พบคำขอนี้'), { status: 404 });
+    for(const perspective of [...new Set([req.user,actorPerspective(req.user)])]){
+      const q=(text,inputs)=>transactionQuery(tx,text,inputs);
+      const visible=await getVisibleScope(perspective,q);
+      if(!require('../services/visible-scope').inScope(visible,{userId:reqRow.RequestedBy}))throw Object.assign(Error('ไม่พบคำขอในสายงาน'),{status:404});
+      if(!hasRole(perspective,'ADMIN')&&!await require('../services/organization-approval').isSuperior(q,businessIds(perspective).effective,reqRow.RequestedBy))throw Object.assign(Error('ผู้ตรวจต้องเป็นผู้บังคับบัญชาของผู้ยื่น'),{status:403});
+    }
 
     // The first decision stands. Under the row lock a second reviewer sees the status the
     // first one committed and is refused instead of overwriting it. Allowed moves:
@@ -769,10 +771,9 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
 
     const identity = await customerRequestAuditIdentity(req.user);
     await requireCustomerMutationProcs();
-    const predicate = await customerPredicate(req.user);
     await wfTransaction(async tx => {
     const query = async (text, inputs) => (await transactionQuery(tx, text, inputs || {})).recordset || [];
-    await customerMutationScope(tx, req.user, id, predicate);
+    await customerMutationScope(tx, req.user, id);
     const before = await customerMutationSnapshot(tx, id);
     if (!before) throw Object.assign(new Error('ไม่พบรหัสลูกค้านี้'), { status: 404 });
 
@@ -806,13 +807,7 @@ router.patch('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res)
 
     // Lookup salesperson user info if salespersonId provided
     const spId = salespersonId !== undefined ? salespersonId : employeeId;
-    let spUser = null;
-    if (spId) {
-      const uRes = await query(`SELECT Id, DisplayName, EmpId FROM wf.AppUser WITH (UPDLOCK,HOLDLOCK) WHERE Id = @uid AND IsActive=1`, { uid: { type: sql.Int, value: Number(spId) } });
-      spUser = uRes?.[0] || null;
-      if (!spUser || !Number.isSafeInteger(Number(spUser.EmpId)) || Number(spUser.EmpId)<=0)
-        throw Object.assign(new Error('ผู้ดูแลลูกค้ายังไม่มีรหัสพนักงาน WinSpeed ที่ใช้งานได้'), { status: 409 });
-    }
+    const spUser = spId === undefined ? null : await customerAssignmentUser(tx, req.user, spId);
     if (areaId && resolvedAreaId === null) throw Object.assign(new Error('ไม่พบเขตการขาย'), { status: 400 });
     if (groupId && (!Number.isSafeInteger(Number(groupId)) || Number(groupId)<=0)) throw Object.assign(new Error('กลุ่มลูกค้าไม่ถูกต้อง'), { status: 400 });
     if (areaId !== undefined || groupId !== undefined || salespersonId !== undefined || employeeId !== undefined) {
@@ -925,6 +920,7 @@ router.delete('/customers/:id', requireRole('ADMIN', 'C_LEVEL'), async (req, res
     if (Number(ready.recordset?.[0]?.Ready) !== 1)
       return res.status(503).json({ message: 'ฐานข้อมูลยังไม่พร้อมสำหรับการปิดใช้งานลูกค้า กรุณาติดต่อผู้ดูแลระบบ' });
     await wfTransaction(async tx => {
+      await customerMutationScope(tx, req.user, id);
       const params = { id: { type: sql.VarChar(20), value: id } };
       const read = async () => (await transactionQuery(tx, `SELECT CustID, Inactive, InactiveDate
         FROM dbo.EMCust WITH (UPDLOCK,HOLDLOCK) WHERE CustID=@id`, params)).recordset?.[0] || null;
@@ -962,18 +958,11 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
 
     const identity = await customerRequestAuditIdentity(req.user);
     await requireCustomerMutationProcs();
-    const predicate = await customerPredicate(req.user);
     await wfTransaction(async tx => {
     const query = async (text, inputs) => (await transactionQuery(tx, text, inputs || {})).recordset || [];
 
     // Lookup salesperson if provided
-    let spUser = null;
-    if (salespersonUserId) {
-      const uRes = await query(`SELECT Id, DisplayName, EmpId FROM wf.AppUser WITH (UPDLOCK,HOLDLOCK) WHERE Id = @uid AND IsActive=1`, { uid: { type: sql.Int, value: Number(salespersonUserId) } });
-      spUser = uRes?.[0] || null;
-      if (!spUser || !Number.isSafeInteger(Number(spUser.EmpId)) || Number(spUser.EmpId)<=0)
-        throw Object.assign(new Error('ผู้ดูแลลูกค้ายังไม่มีรหัสพนักงาน WinSpeed ที่ใช้งานได้'), { status: 409 });
-    }
+    const spUser = salespersonUserId === undefined ? null : await customerAssignmentUser(tx, req.user, salespersonUserId);
 
     // Lookup area and region if provided (supports both 2-char RegionCode and SaleAreaID)
     let regionCodeVal = null;
@@ -1006,7 +995,7 @@ router.post('/customers/batch-edit', requireRole('ADMIN', 'MANAGER'), async (req
 
     // Process all customers
     for (const custId of cleanCustIds) {
-      await customerMutationScope(tx, req.user, custId, predicate);
+      await customerMutationScope(tx, req.user, custId);
       const before = await customerMutationSnapshot(tx, custId);
       if (!before) throw Object.assign(new Error('ไม่พบรหัสลูกค้านี้'), { status: 404 });
       // Native changes and app-side changes must succeed with the same audit.
@@ -1317,12 +1306,15 @@ router.get('/giveaway-goods', async (req, res) => {
 // GET /api/master/employees — พนักงาน WINSpeed (EMEmp) สำหรับ map EmpId
 router.get('/employees', async (req, res) => {
   try {
+    const scopes=await require('../services/secondary-budget-report-access').businessScopes(req.user);
+    const filters=scopes.map((s,i)=>require('../services/visible-scope').scopeFilter(s,{empCol:'e.EmpID',userCol:'u.Id',prefix:'employeeDirectory'+i}));
     const rows = await query(`
-      SELECT EmpID, EmpCode, EmpName, EmpNameEng,
-             CASE WHEN EmpResignDate IS NULL THEN 1 ELSE 0 END AS IsActive
-      FROM dbo.EMEmp WITH (NOLOCK)
-      ORDER BY EmpCode
-    `);
+      SELECT DISTINCT e.EmpID,e.EmpCode,e.EmpName,e.EmpNameEng,e.EmpHead,e.EmpTitle,
+             CASE WHEN e.EmpStatus='1' AND e.EmpResignDate IS NULL THEN 1 ELSE 0 END AS IsActive
+      FROM dbo.EMEmp e WITH (NOLOCK) LEFT JOIN wf.AppUser u ON u.EmpId=CONVERT(varchar(20),e.EmpID)
+      WHERE ${filters.map(f=>'('+f.sql+')').join(' AND ')||'1=0'}
+      ORDER BY e.EmpCode
+    `,Object.assign({},...filters.map(f=>f.inputs)));
     res.json(rows);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
 });

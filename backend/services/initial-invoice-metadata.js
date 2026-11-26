@@ -75,17 +75,24 @@ async function verifyOperationalMetadata(q,_target,{env=process.env}={}){
  const rows=(await q('EXEC wf.usp_ReadNativeDocumentMetadata')).recordset||[];
  let expected=reviewed.triggers;
  if(env.NATIVE_COUPON_BRIDGE_ENABLED==='true'){
-  const bridge=require('./coupon-bridge-hooks');
+  const protocol=require('./coupon-bridge-protocol'),bridge=protocol.selected(env);
   const contract=(await q(`SELECT Enabled,ModulesHash,
    (SELECT COUNT(*) FROM wf.SchemaMigration WITH(HOLDLOCK) WHERE FileName IN
     ('273_coupon_bridge_native_session.sql','274_coupon_bridge_native_detail_finalize.sql','275_coupon_bridge_native_set_options.sql',
-     '276_native_redemption_id_history.sql')) AS NativeProtocols
+     '276_native_redemption_id_history.sql')) AS NativeProtocols,
+   (SELECT COUNT(*) FROM wf.SchemaMigration WITH(HOLDLOCK) WHERE FileName IN
+    ('281_organization_territory_scope.sql','283_native_116_operator_authority.sql','284_native_116_connection_stage.sql',
+     '285_native_116_audit_admission.sql','286_native_116_metadata_scope.sql','287_native_116_reviewed_recovery.sql',
+     '288_native_116_floor_set_options.sql','289_native_116_retired_id_ranges.sql')) AS NativeDirectProtocols
    FROM wf.CouponBridgeContract WITH(HOLDLOCK) WHERE Version='116-BRIDGE-v1'`)).recordset||[];
   if(contract.length!==1||Number(contract[0].Enabled)!==1||contract[0].ModulesHash!==bridge.moduleHash
    ||Number(contract[0].NativeProtocols)!==4)throw Error('IP_METADATA_UNSUPPORTED');
+  if(protocol.directEnabled(env)&&Number(contract[0].NativeDirectProtocols)!==8)throw Error('IP_METADATA_UNSUPPORTED');
+  await protocol.verifyDirectContract(q,env);
   expected=bridge.expectedTriggers(expected);
  }
  validateOperationalMetadataRows(rows,expected);
+ require('./coupon-bridge-protocol').verifyOrder(rows,env);
 }
 function validateOperationalMetadataRows(rows,expected){
  if(!Array.isArray(rows)||rows.length!==expected.length)throw Error('IP_METADATA_UNSUPPORTED');

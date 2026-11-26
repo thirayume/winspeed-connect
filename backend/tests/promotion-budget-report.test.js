@@ -18,6 +18,17 @@ test('default annual period uses Bangkok date at the UTC year boundary',async()=
  const result=await run({}, {now:new Date('2026-12-31T18:00:00Z'),readGlobalDataWindow:async()=>({businessDate:'2026-01-01'}),queryFn:async(text,inputs)=>{assert.equal(inputs.year.value,2027);return {recordset:[]};}});
  assert.equal(result.meta.periodFrom,'2027-01-01');
 });
+test('company forecast adds each approved branch once and Excel identifies the contributing branches',async()=>{
+ const source=[{PlanId:1,BranchPositionCode:'QA-EAST',BranchName:'QA East',PeriodYear:2569,Channel:'ทั่วไป',Category:'QA',ItemName:'QA bag',Region:'N',Amount:110},
+ {PlanId:2,BranchPositionCode:'QA-WEST',BranchName:'QA West',PeriodYear:2569,Channel:'ทั่วไป',Category:'QA',ItemName:'QA bag',Region:'N',Amount:220}];
+ const queryFn=async text=>({recordset:text.includes('MissingPlanDetailsCount')?[]:text.includes('SUM(a.Amount)')?[{Region:'N',Amount:3000}]:text.includes('p.DocumentJson')?source.map(r=>({...r,DocumentJson:null})):source});
+ const result=await run({year:2569},{queryFn,scopes:[{all:true}],readGlobalDataWindow:async()=>({businessDate:'2026-01-01'})});
+ assert.equal(result.rows.length,1);assert.equal(result.rows[0].Amount,330);assert.equal(result.rows[0].Region0,330);
+ assert.deepEqual(result.meta.branchSummary.map(b=>b.estimatedAmount),[110,220]);
+ const wb=require('../services/promotion-budget-workbook').workbook({title:'QA company forecast',...result});
+ assert.ok(wb.SheetNames.includes('Branch Summary'));assert.match(require('xlsx').utils.sheet_to_csv(wb.Sheets['Branch Summary']),/QA-WEST,QA West,220/);
+ await assert.rejects(run({year:2569,branchPositionCode:'QA-WEST'},{queryFn,scopes:[{all:false,positionCodes:['QA-EAST']}]}),e=>e.status===403);
+});
 test('project report joins JSON metadata once, honors filters and typed Excel keeps all participants and ISO',async()=>{
  const project={key:'P1',title:'QA project',category:'QA category',refDoc:'QA',region:'QA North',budgetAmount:500,validFrom:'2026-01-01',validTo:'2026-12-31',internalParticipants:[{name:'QA staff',role:'QA',dept:'QA'}],externalParticipants:[{custCode:'QA',custName:'QA customer',note:'QA'}]};
  const queryFn=async(text,inputs)=>{

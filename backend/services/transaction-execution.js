@@ -10,6 +10,10 @@ function lockConflictNumber(error) {
   }
   return null;
 }
+function nativeStageConflict(error){
+ return [error,error?.originalError,error?.originalError?.info,...(error?.precedingErrors||[])].some(e=>
+  Number(e?.number)===50000&&/\bNATIVE_116_(?:COUPON|DOCUMENT)_PENDING_REVIEW\b/.test(String(e?.message||'')));
+}
 
 async function setLockTimeout(tx, ms) {
   // A parameterless query may execute under sp_executesql, whose SET scope ends
@@ -60,9 +64,11 @@ async function runTransaction(tx, fn, onRollbackConfirmed, options = {}) {
       throw Object.assign(new Error('มีผู้ใช้อื่นกำลังทำรายการเดียวกันอยู่ กรุณาลองใหม่อีกครั้ง'),
         { status: 409, code: conflict === 1205 ? 'DEADLOCK_RETRY' : 'LOCK_TIMEOUT', number: conflict, originalError: error });
     }
+    if(!commitStarted&&nativeStageConflict(error))throw Object.assign(new Error('WinSpeed กำลังบันทึกใบขนหรือมีรายการค้างตรวจสอบ กรุณารอแล้วโหลดข้อมูลใหม่'),
+      {status:409,code:'COUPON_NATIVE116_PENDING_REVIEW',originalError:error});
     throw error;
   } finally {
     if (connection && typeof tx.removeListener === 'function') tx.removeListener('rollback', onAutoRollback);
   }
 }
-module.exports={runTransaction, lockConflictNumber};
+module.exports={runTransaction, lockConflictNumber, nativeStageConflict};

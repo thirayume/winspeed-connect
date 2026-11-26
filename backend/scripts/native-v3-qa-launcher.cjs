@@ -8,6 +8,7 @@ const file='/review-state/qa-ticket-treatment.json';
 const treatment=fs.existsSync(file)?JSON.parse(fs.readFileSync(file,'utf8')).treatment:'ZERO';
 if(!['ZERO','DISCOUNT'].includes(treatment))throw Error('QA_TREATMENT_INVALID');
 Object.assign(process.env,{DB_MODE:'onprem',NATIVE_DOCUMENT_WRITER_VERSION:'v3',NATIVE_COUPON_BRIDGE_ENABLED:'true',
+ NATIVE_COUPON_BRIDGE_DIRECT_ENABLED:process.env.QA_NATIVE_DIRECT_116==='true'?'true':'false',
  NATIVE_BOOKING_AI_ENABLED:'true',NATIVE_DELIVERY_104_ENABLED:'true',NATIVE_MANUAL_116_ENABLED:'true',NATIVE_INVOICE_107_ENABLED:'true',
  QA_NATIVE_REBATE_PROFILE:'on',REBATE_RESET_DATABASES:QA,REBATE_TICKET_REDEMPTION_TREATMENT:QA+':'+treatment,
  DISABLE_BACKGROUND_WORKERS:'true',ONPREM_CONNECTION_PROFILES_DISABLE:'true',ONPREM_SWITCHABLE_DATABASES:QA,

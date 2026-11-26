@@ -32,7 +32,7 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/COL_LENGTH\('wf\.CouponReservation','ConsumedQty'\)/.test(text)) return [{ConsumedQtyColumn:hasConsumedColumn ? 9 : null,SettlementTable:hasConsumedColumn ? 123 : null}];
   if (/PagingCTE AS/.test(text)) return ticketRows;
   if (/c\.CouponID AS _couponId/.test(text)) return detailRows;
-  if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser/.test(text)) return [{ Id: Number(inputs.id), EmpId: Number(inputs.id) + 1000, PositionCode: null }];
+  const hierarchy=require('./helpers/ownership-hierarchy.cjs').ownershipHierarchy(text,inputs);if(hierarchy)return hierarchy;
   if (/WHERE c\.CustID=@visibilityCustId/.test(text)) return visible ? [{ ok: 1 }] : [];
   if (/SELECT Id, Status, EffectiveMonth/.test(text)) return [{Id:5,Status:'ACTIVE',EffectiveMonth:'2026-11',EffectiveFrom:'2026-11-01',EffectiveTo:'2026-11-30'}];
   return [];
@@ -132,8 +132,8 @@ test('control ticket list on a secondary database applies the scopes of both ide
   assert.equal(r.status, 200);
   const q = ticketQuery();
   assert.ok(q, 'the ticket query ran');
-  assert.match(q.text, /CAST\(h104\.EmpID AS VARCHAR\(20\)\) IN \(@ctE0\)/);
-  assert.match(q.text, /CAST\(h104\.EmpID AS VARCHAR\(20\)\) IN \(@ctaE0\)/);
+  assert.match(q.text, /CAST\(h104\.EmpID AS VARCHAR\(20\)\) IN \(@ctE0(?:, @ctE1)?\)/);
+  assert.match(q.text, /CAST\(h104\.EmpID AS VARCHAR\(20\)\) IN \(@ctaE0(?:, @ctaE1)?\)/);
   assert.equal(q.inputs.ctE0, '1034', 'effective user is the mapped business ID');
   assert.equal(q.inputs.ctaE0, '1047', 'real actor is the mapped business ID');
   // pending bookings and draft bills carry the same pair of filters
@@ -160,11 +160,11 @@ test('a customer filter needs a customer both identities may see', async () => {
 test('ticket detail and draws apply both scopes; alerts stay empty unless both see everything', async () => {
   await app.call('GET', '/api/master/control-tickets/CT-1');
   const detail = db.calls.map(c => c.text).join('\n');
-  assert.match(detail, /IN \(@lsoE0\)/); assert.match(detail, /IN \(@lsoaE0\)/);
+  assert.match(detail, /IN \(@lsoE0(?:, @lsoE1)?\)/); assert.match(detail, /IN \(@lsoaE0(?:, @lsoaE1)?\)/);
   db.calls.length = 0;
   await app.call('GET', '/api/master/control-tickets/CT-1/draws');
   const draws = db.calls.map(c => c.text).join('\n');
-  assert.match(draws, /IN \(@ddvE0\)/); assert.match(draws, /IN \(@ddvaE0\)/);
+  assert.match(draws, /IN \(@ddvE0(?:, @ddvE1)?\)/); assert.match(draws, /IN \(@ddvaE0(?:, @ddvaE1)?\)/);
   db.calls.length = 0;
   const alerts = await app.call('GET', '/api/master/control-tickets/alerts');
   assert.equal(alerts.status, 200); assert.deepEqual(alerts.body, []);
@@ -297,7 +297,7 @@ test('on the primary database customer-filtered ticket reads check visibility', 
   user = { sub: 8, actorSub: 17, role: 'SALES', actorRole: 'ADMIN', isImpersonating: true };
   assert.equal((await app.call('GET', '/api/master/control-tickets')).status, 200);
   const q = ticketQuery();
-  assert.match(q.text, /IN \(@ctE0\)/); assert.doesNotMatch(q.text, /@ctaE0/);
+  assert.match(q.text, /IN \(@ctE0(?:, @ctE1)?\)/); assert.doesNotMatch(q.text, /@ctaE0/);
   assert.equal(q.inputs.ctE0, '1008');
   db.calls.length = 0;
   assert.equal((await app.call('GET', '/api/master/control-tickets?custId=123')).status, 200);
@@ -315,5 +315,5 @@ test('unfiltered primary ticket list intersects actual actor scope during Access
   user = { sub:8, actorSub:17, role:'SALES', actorRole:'SALES', isImpersonating:true };
   assert.equal((await app.call('GET','/api/master/control-tickets')).status,200);
   const q=ticketQuery();assert.equal(q.inputs.ctE0,'1008');assert.equal(q.inputs.ctaE0,'1017');
-  assert.match(q.text,/CAST\(h104\.EmpID AS VARCHAR\(20\)\) IN \(@ctaE0\)/);
+  assert.match(q.text,/CAST\(h104\.EmpID AS VARCHAR\(20\)\) IN \(@ctaE0(?:, @ctaE1)?\)/);
 });

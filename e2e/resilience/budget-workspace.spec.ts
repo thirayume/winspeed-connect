@@ -3,18 +3,20 @@ const require=createRequire(__filename),XLSX=require('../../backend/node_modules
 const template={templateId:1,templateCode:'QA',templateName:'QA',orientation:'portrait',paperSize:'A4',showPageNumber:true,showSignatures:true,version:1,header:{headerId:1,headerCode:'QA',headerName:'QA',companyNameTh:'บริษัททดสอบ',companyNameEn:'QA',addressTh:'QA',taxId:'QA',version:1}};
 const project={key:'P1',title:'QA project',category:'QA promotion',refDoc:'QA-REF',region:'QA North',budgetAmount:500,validFrom:'2026-01-01',validTo:'2026-12-31',objective:'QA objective',goodCodePattern:'15-15-15',returnType:'REBATE',netPrice:15000,note:'QA note',internalParticipants:[{name:'QA staff',role:'QA role',dept:'QA dept'}],externalParticipants:[{custCode:'QA-1',custName:'QA customer',note:'QA external'}]};
 async function mock(page:any,options:any={}){
- const plan:any={PlanId:1,PreparedBy:options.userId||1,PreparedActorId:options.userId||1,AssignedReviewerId:2,AssignedApproverId:3,Title:'QA annual plan',PeriodYear:2569,Channel:'ทั่วไป',Status:'DRAFT',EditVersion:1,document:{version:1,projects:[structuredClone(project)]},allocations:[{Region:'QA North',Amount:1000}],lines:[{ProjectKey:'P1',Region:'QA North',Category:'1.1',ItemName:'QA bags',Quantity:10,UnitPrice:11,Amount:110}]};let saved:any;const requests:string[]=[],errors:string[]=[];page.on('pageerror',(e:any)=>errors.push(e.message));
+ const plan:any={PlanId:1,PreparedBy:options.userId||1,PreparedActorId:options.userId||1,AssignedReviewerId:2,AssignedApproverId:3,Title:'QA annual plan',PeriodYear:2569,Channel:'ทั่วไป',BranchPositionCode:'QA-SALES',Status:'DRAFT',EditVersion:1,document:{version:1,projects:[structuredClone(project)]},allocations:[{Region:'QA North',Amount:1000}],lines:[{ProjectKey:'P1',Region:'QA North',Category:'1.1',ItemName:'QA bags',Quantity:10,UnitPrice:11,Amount:110}]};let saved:any;const requests:string[]=[],errors:string[]=[];page.on('pageerror',(e:any)=>errors.push(e.message));
  const report=()=>({data:{type:'budget-plan-approval',title:'QA คำขออนุมัติงบประมาณ',columns:[{key:'ProjectTitle',label:'โครงการ',type:'text'},{key:'Amount',label:'ประมาณการ',type:'money',aggregation:'sum'}],rows:[{ProjectTitle:'QA project',Amount:110}],isoStamp:{code:'FM-QA-001',revision:'00',effectiveDate:'2026-11-01'},meta:{periodFrom:'2026-01-01',periodTo:'2026-12-31',basis:'SELECTED_PLAN',projects:plan.document.projects,budgetSummary:[{region:'QA North',allocatedAmount:1000,estimatedAmount:110}],signatures:{prepared:'QA sales',preparedAt:null,reviewed:null,reviewedAt:null,approved:null,approvedAt:null}}},template});
  await page.route('**/api/**',async(route:any)=>{const url=new URL(route.request().url()),method=route.request().method(),path=url.pathname;requests.push(method+' '+path);
   if(path.endsWith('/auth/me'))return route.fulfill({json:await page.evaluate(()=>(window as any).budgetFixtureUser)});
   if(path.endsWith('/budget/staff'))return route.fulfill({json:{data:[{Id:7,DisplayName:'QA directory staff',Role:'SALES',PositionCode:'QA position'}]}});
   if(path.endsWith('/budget/customers'))return route.fulfill({json:[{CustID:'7',CustCode:'QA-7',CustName:'QA directory customer'}]});
+  if(path.endsWith('/budget/branches'))return route.fulfill({json:{data:[{PositionCode:'QA-SALES',PositionName:'QA Sales'},{PositionCode:'QA-PROMO',PositionName:'QA Promotion'}],defaultBranch:'QA-SALES'}});
   if(path.endsWith('/budget/approvers'))return route.fulfill({json:{data:[{Id:2,DisplayName:'QA manager',CanReview:1},{Id:3,DisplayName:'QA CLevel',CanApprove:1}]}});
   if(path.endsWith('/budget/plans')&&method==='GET'&&options.denied)return route.fulfill({status:403,json:{message:'QA target permission revoked'}});
-  if(path.endsWith('/budget/plans')&&method==='GET')return route.fulfill({json:{context:{userId:options.userId||1,database:options.database||'QA_PRIMARY',actions:options.actions||['budget.plan.create','budget.plan.review','budget.plan.approve','settings.manage'],canReadAnnual:true},data:plan.DeletedAt&&url.searchParams.get('includeDeleted')!=='true'?[]:[{planId:1,title:plan.Title,periodYear:plan.PeriodYear,channel:plan.Channel,status:plan.Status,deletedAt:plan.DeletedAt}]}});
+  if(path.endsWith('/budget/plans')&&method==='GET')return route.fulfill({json:{context:{userId:options.userId||1,database:options.database||'QA_PRIMARY',actions:options.actions||['budget.plan.create','budget.plan.review','budget.plan.approve','settings.manage'],canReadAnnual:true},data:plan.DeletedAt&&url.searchParams.get('includeDeleted')!=='true'?[]:[{planId:1,title:plan.Title,periodYear:plan.PeriodYear,channel:plan.Channel,branchPositionCode:plan.BranchPositionCode,branchName:'QA Sales',status:plan.Status,deletedAt:plan.DeletedAt}]}});
   if(path.endsWith('/history'))return route.fulfill({json:{data:[{EventId:1,Action:'SAVE',ReasonText:'QA saved',UserId:1,CreatedAt:'2026-11-25T00:00:00Z'}]}});
   if(path.endsWith('/report')||path.endsWith('/reports/annual')||path.endsWith('/reports/projects'))return route.fulfill({json:report()});
   if(path.endsWith('/export'))return route.fulfill({contentType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',body:XLSX.write(workbook(report().data),{type:'buffer',bookType:'xlsx'})});
+  if(path.endsWith('/budget/plans')&&method==='POST'){saved=route.request().postDataJSON();Object.assign(plan,{BranchPositionCode:saved.branchPositionCode,Title:saved.title});return route.fulfill({status:201,json:plan});}
   if(path.endsWith('/budget/plans/1')){
    if(method==='PUT'){saved=route.request().postDataJSON();expect(saved.expectedVersion).toBe(plan.EditVersion);Object.assign(plan,{Title:saved.title,document:saved.document,EditVersion:plan.EditVersion+1});}
    if(method==='DELETE'){plan.DeletedAt='2026-11-25T00:00:00Z';plan.EditVersion++;}
@@ -62,4 +64,20 @@ test('primary admin does not inherit create rights from a read-only secondary pr
 
 test('failed permission refresh clears previous target grants and document selection',async({page})=>{
  const options:any={userId:117,database:'QA_SECONDARY'};await mock(page,options);await page.goto('/tests/budget-workspace.html');await page.getByRole('button',{name:'เปิดแผน 1',exact:true}).click();await expect(page.getByRole('button',{name:'แก้ไขแผน / โครงการ',exact:true})).toBeVisible();options.denied=true;await page.getByRole('button',{name:'โหลดแผนงบประมาณใหม่',exact:true}).click();await expect(page.getByRole('alert')).toContainText('QA target permission revoked');await expect(page.getByRole('button',{name:'แผนใหม่',exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'แก้ไขแผน / โครงการ',exact:true})).toHaveCount(0);
+});
+
+
+test('new annual plan requires a visible owning branch and sends the selected branch to the server',async({page})=>{
+ const m=await mock(page);await page.goto('/tests/budget-workspace.html');await page.getByRole('button',{name:'แผนใหม่',exact:true}).click();
+ const branch=page.getByLabel('สายงานเจ้าของแผน',{exact:true});await expect(branch).toHaveValue('QA-SALES');await branch.selectOption('QA-PROMO');
+ await expect(page.getByText('หนึ่งแผนต่อสายงาน / ปี / ช่องทาง',{exact:false})).toBeVisible();
+ await page.getByLabel('เหตุผลบันทึกงบประมาณ').fill('QA annual promotion branch');await page.getByRole('button',{name:'บันทึกร่าง',exact:true}).click();
+ await expect(page.getByRole('dialog')).toHaveCount(0);expect(m.saved().branchPositionCode).toBe('QA-PROMO');expect(m.saved().expectedDatabase).toBe('QA_PRIMARY');expect(m.errors).toEqual([]);
+});
+
+test('stored branch is immutable and the branch filter hides other annual plans',async({page})=>{
+ await mock(page);await page.goto('/tests/budget-workspace.html');await page.getByRole('button',{name:'เปิดแผน 1',exact:true}).click();await page.getByRole('button',{name:'แก้ไขแผน / โครงการ',exact:true}).click();
+ await expect(page.getByLabel('สายงานเจ้าของแผน',{exact:true})).toHaveValue('QA-SALES');await expect(page.getByLabel('สายงานเจ้าของแผน',{exact:true})).toBeDisabled();
+ await page.getByRole('button',{name:'ปิด',exact:true}).click();await page.getByLabel('กรองสายงานแผน',{exact:true}).selectOption('QA-PROMO');await expect(page.getByRole('button',{name:'เปิดแผน 1',exact:true})).toHaveCount(0);
+ await page.getByLabel('กรองสายงานแผน',{exact:true}).selectOption('QA-SALES');await expect(page.getByRole('button',{name:'เปิดแผน 1',exact:true})).toBeVisible();
 });

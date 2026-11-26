@@ -1748,6 +1748,8 @@ router.post('/claims/:id/reject', async (req, res) => {
 // GET /api/rebate/summary — KPI ภาพรวมต่อพนักงานขาย (wf.RebatePool)
 router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'), async (req, res) => {
   try {
+    const visible=require('../services/visible-scope');
+    const summaryScope=visible.scopeFilter(await visible.getVisibleScope(req.user),{userCol:'p.SalesUserId',prefix:'rebateSummary'});
     const r = await wfQuery(`
       SELECT u.DisplayName AS SalesName,
              SUM(p.AccruedAmt) AS TotalAccrued,
@@ -1774,10 +1776,10 @@ router.get('/summary', requireRole('ACCOUNTING', 'ADMIN', 'MANAGER', 'C_LEVEL'),
         WHERE l.ReversedFlag = 0
         GROUP BY l.PoolId
       ) l_remain ON l_remain.PoolId = p.Id
-      WHERE (p.AccruedAmt > 0 OR p.ClaimedAmt > 0)
+      WHERE (p.AccruedAmt > 0 OR p.ClaimedAmt > 0) AND ${summaryScope.sql}
       GROUP BY u.DisplayName
       ORDER BY TotalAccrued DESC
-    `);
+    `,summaryScope.inputs);
     res.json(r.recordset || []);
   } catch (e) { res.status(500).json({ message: e.message }); }
 });

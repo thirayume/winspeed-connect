@@ -7,11 +7,11 @@ test('native writes require both real and effective ownership scope, using mappe
   const user={sub:5,role:'ACCOUNTING',actorSub:6,actorRole:'MANAGER',actorRoles:['MANAGER'],isImpersonating:true,
     identityMapping:{primaryEffectiveUserId:5,primaryActorUserId:6,businessEffectiveUserId:15,businessActorUserId:16}};
   const calls=[];
-  const q=async(text,p)=>{calls.push(p);return {recordset:/WITH tree AS/.test(text)
-    ?[{Id:16,EmpId:'1016'},{Id:17,EmpId:'1017'}]:[{Id:16,EmpId:'1016',PositionCode:'TEAM'}]};};
+  const q=async(text,p)=>{calls.push(p);return {recordset:text.includes('SELECT PositionCode,ReportsTo,RecordScope,IsActive')?[{PositionCode:'TEAM',RecordScope:'ORG',IsActive:1}]:/WITH tree AS/.test(text)
+    ?[{Id:16,EmpId:'1016'},{Id:17,EmpId:'1017'}]:[{Id:p.id.value,EmpId:String(1000+p.id.value),PositionCode:p.id.value===16?'TEAM':null}]};};
   assert.equal(await nativeOwnerInScope(user,{SalesUserId:17,EmpID:'1017'},q),true);
   assert.equal(await nativeOwnerInScope(user,{SalesUserId:18,EmpID:'1018'},q),false);
-  assert.ok(calls.every(p=>p.id.value===16));
+  assert.ok(calls.filter(p=>p.id).every(p=>[15,16].includes(p.id.value)));
   assert.equal(await nativeOwnerInScope({...user,role:'SALES'},{SalesUserId:18,EmpID:'1018'},q),false);
   assert.equal(await nativeOwnerInScope(user,null,q),false);
 });

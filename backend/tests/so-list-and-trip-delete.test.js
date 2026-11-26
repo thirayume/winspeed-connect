@@ -44,11 +44,12 @@ const db = h.installDbStub(({ text, inputs }) => {
   if (/UPDATE wf\.SalesTrip SET Status = 'DELETED' WHERE TripId = @tripDeleteId/.test(text)) {
     return { recordset: [], rowsAffected: [1] };
   }
-  if (/FROM wf\.SalesTrip t WHERE t\.TripId = @tid/.test(text)) {
+  if (/SELECT 1 AS ok FROM wf\.SalesTrip t/.test(text)) {
     // Trip 88 belongs to user 34; Trip 53 belongs to user 20 only
     const ids = Object.entries(inputs).filter(([k]) => /^t[ea][cm]/.test(k)).map(([, v]) => Number(v));
-    if (Number(inputs.tid) === 88 && ids.includes(34)) return [{ ok: 1 }];
-    if (Number(inputs.tid) === 53 && ids.includes(20)) return [{ ok: 1 }];
+    const tripId=Number(inputs.tid??inputs.scopeTripId);
+    if (tripId === 88 && ids.includes(34)) return [{ ok: 1 }];
+    if (tripId === 53 && ids.includes(20)) return [{ ok: 1 }];
     return [];
   }
   if (/SELECT COUNT\(\*\) AS Cnt\s+FROM \(/i.test(text) && text.includes('wf.SalesOrder so')) {

@@ -1,12 +1,12 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),h=require('./helpers/route-harness.cjs');
-let allowed=true,failPrice=false,failFloor=false,missingFloor=false,ambiguous=false,primary=false;
-const auth=require.resolve('../middleware/auth');require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{requireAuth:(req,_res,next)=>{req.user={sub:8,role:'SALES',...(primary?{}:{identityMapping:{primaryActorUserId:8,primaryEffectiveUserId:8,businessActorUserId:34,businessEffectiveUserId:34}})};next();},requireRole:()=> (_req,_res,next)=>next(),requireCapability:()=> (_req,_res,next)=>next(),requireRebateAmountAccess:(_req,_res,next)=>next(),canViewAllRebateAmounts:()=>false}};
+let allowed=true,failPrice=false,failFloor=false,missingFloor=false,ambiguous=false,primary=false,role='SALES',priceReads=0,floorReads=0;
+const auth=require.resolve('../middleware/auth');require.cache[auth]={id:auth,filename:auth,loaded:true,exports:{requireAuth:(req,_res,next)=>{req.user={sub:8,role,...(primary?{}:{identityMapping:{primaryActorUserId:8,primaryEffectiveUserId:8,businessActorUserId:34,businessEffectiveUserId:34}})};next();},requireRole:()=> (_req,_res,next)=>next(),requireCapability:()=> (_req,_res,next)=>next(),requireRebateAmountAccess:(_req,_res,next)=>next(),canViewAllRebateAmounts:()=>false}};
 h.installDbStub(()=>[]);
-const scope=require.resolve('../services/secondary-customer-scope');require.cache[scope]={id:scope,filename:scope,loaded:true,exports:{secondaryCustomerVisible:async()=>allowed}};
+const scope=require.resolve('../services/secondary-customer-scope');require.cache[scope]={id:scope,filename:scope,loaded:true,exports:{customerVisible:async()=>allowed}};
 const policy=require.resolve('../services/policy-contract');const policyReal=require(policy);require.cache[policy].exports={...policyReal,getSettingValue:async()=>200};
-const price=require.resolve('../services/price-authority');const priceReal=require(price);require.cache[price].exports={...priceReal,resolveAuthoritativePrice:async()=>{if(ambiguous)throw Object.assign(Error('AMBIGUOUS_CUSTOMER_ID'),{code:'AMBIGUOUS_CUSTOMER_ID',status:409});if(failPrice)throw Error('PRICE_UNAVAILABLE');return {hasAnnouncedPrice:true,announcedPrice:1000};}};
-const cost=require.resolve('../services/cost-authority');const costReal=require(cost);require.cache[cost].exports={...costReal,evaluateSellingPriceFloor:async()=>{if(failFloor)throw Error('COST_UNAVAILABLE');return missingFloor?{blocked:false,violations:[],missingCost:[{lineIndex:0}]}:{blocked:true,violations:[{lineIndex:0}]};}};
+const price=require.resolve('../services/price-authority');const priceReal=require(price);require.cache[price].exports={...priceReal,resolveAuthoritativePrice:async()=>{priceReads++;if(ambiguous)throw Object.assign(Error('AMBIGUOUS_CUSTOMER_ID'),{code:'AMBIGUOUS_CUSTOMER_ID',status:409});if(failPrice)throw Error('PRICE_UNAVAILABLE');return {hasAnnouncedPrice:true,announcedPrice:1000};}};
+const cost=require.resolve('../services/cost-authority');const costReal=require(cost);require.cache[cost].exports={...costReal,evaluateSellingPriceFloor:async()=>{floorReads++;if(failFloor)throw Error('COST_UNAVAILABLE');return missingFloor?{blocked:false,violations:[],missingCost:[{lineIndex:0}]}:{blocked:true,violations:[{lineIndex:0}]};}};
 let app;test.before(async()=>{app=await h.startApp([['/api/so','../../routes/so']]);});test.after(async()=>app.close());
 const body={custId:'123',deliveryDate:'2026-01-02',lines:[{key:'one',goodId:'12',pricePerTon:800}]};
 test('secondary price indicator checks customer scope and returns only band and floor decision',async()=>{let r=await app.call('POST','/api/so/price-indicator',{body});assert.equal(r.status,200);const {priceStep,...rest}=r.body;assert.ok(Number.isInteger(priceStep)&&priceStep>0);assert.deepEqual(rest,{lines:[{key:'one',level:'BELOW_STANDARD',belowThreshold:true}],belowThreshold:true});allowed=false;r=await app.call('POST','/api/so/price-indicator',{body});assert.equal(r.status,404);allowed=true;});
@@ -14,3 +14,9 @@ test('secondary price indicator rejects old dates and unavailable price or floor
 test('missing cost warns for the selected line without blocking or exposing values',async()=>{missingFloor=true;const r=await app.call('POST','/api/so/price-indicator',{body});assert.equal(r.status,200);assert.equal(r.body.belowThreshold,false);assert.equal(r.body.lines[0].missingCost,true);assert.equal(r.body.lines[0].belowThreshold,false);assert.ok(!JSON.stringify(r.body).includes('costPrice'));missingFloor=false;});
 
 test('primary price indicator returns 409 for ambiguous customer rather than hiding the error',async()=>{primary=true;ambiguous=true;try{const r=await app.call('POST','/api/so/price-indicator',{body});assert.equal(r.status,409);}finally{primary=false;ambiguous=false;}});
+
+test('primary sales and manager cannot inspect pricing for an out-of-branch customer',async()=>{
+ primary=true;allowed=false;
+ try{for(const nextRole of ['SALES','MANAGER']){role=nextRole;priceReads=0;floorReads=0;const r=await app.call('POST','/api/so/price-indicator',{body});assert.equal(r.status,404);assert.equal(priceReads,0);assert.equal(floorReads,0);}}
+ finally{primary=false;allowed=true;role='SALES';}
+});

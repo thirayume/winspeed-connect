@@ -4,6 +4,7 @@ export type TripContext = {
   tripId?: number;
   tripCode?: string;
   truckPlate?: string;
+  truckTypeId?: string;
   deliveryDate: string;
   isControlTicket?: boolean;
   pSling?: boolean;

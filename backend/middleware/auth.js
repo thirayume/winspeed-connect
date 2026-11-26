@@ -154,6 +154,7 @@ function requireAuth(req, res, next) {
       // cross-database binding. Only middleware may attach a fresh mapping.
       identityMapping: undefined,
       secondaryModuleAccess: undefined,
+      budgetRecordScopes:undefined,
       isImpersonating: Boolean(payload.impersonating || Number(actorId) !== Number(effectiveId)),
     };
     if (blockWriteWhenPasswordStale(req, res)) return;
@@ -305,6 +306,13 @@ function requireAuth(req, res, next) {
           req.auditBusinessDatabase = require('../db').getDbName() || await activeDb.systemActiveDatabase();
         }
         if (blockWriteWhenPasswordStale(req,res)) return;
+        const branch=String(req.get('X-Org-Branch')||'').trim();
+        if(branch && !/^[A-Z0-9_-]{1,30}$/.test(branch))return res.status(400).json({code:'ORG_BRANCH_INVALID',message:'รหัสสายงานไม่ถูกต้อง'});
+        req.user.orgBranch=branch||null;
+        if(branch){
+          try{await require('../services/request-context').runWithUser(req.user,()=>require('../services/visible-scope').getVisibleScope(req.user));}
+          catch(e){if(e.code==='ORG_BRANCH_NOT_VISIBLE')return res.status(403).json({code:e.code,message:'สายงานที่เลือกอยู่นอกขอบเขตสิทธิ์'});throw e;}
+        }
         require('../services/request-context').runWithUser(req.user, () => next());
       } catch(e) {if(process.env.NODE_ENV!=='production')console.error('[auth error]',e);res.status(e.status||503).json({code:e.status===401?'SESSION_REVOKED':'ROLE_UNAVAILABLE',message:'สิทธิ์หรือข้อมูลเข้าสู่ระบบเปลี่ยน กรุณาเข้าสู่ระบบใหม่'});}
     };

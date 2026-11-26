@@ -84,7 +84,7 @@ export function OrgHierarchyView() {
   const companyInfo = useCompanyStore(s => s.companyInfo);
   const fetchCompanyInfo = useCompanyStore(s => s.fetchCompanyInfo);
   const session = useAuthStore(s => s.user);
-  const canEdit = Boolean(session?.capabilities?.actions.includes("users.manage")) && !session?.isImpersonating;
+  const canEdit = Boolean(session?.role==='ADMIN'||session?.roles?.includes('ADMIN')) && !session?.isImpersonating;
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [positions, setPositions] = useState<OrgPosition[]>([]);
   const [, setHints] = useState<Map<number, OrgHintUser>>(new Map());
@@ -127,6 +127,7 @@ export function OrgHierarchyView() {
     tier: number;
     defaultRole: string;
     canApprove: boolean;
+    recordScope:'ORG'|'GLOBAL';
     isActive: boolean;
     note: string;
     saving: boolean;
@@ -141,6 +142,7 @@ export function OrgHierarchyView() {
     tier: 1,
     defaultRole: '',
     canApprove: false,
+    recordScope:'ORG',
     isActive: true,
     note: '',
     saving: false,
@@ -326,6 +328,7 @@ export function OrgHierarchyView() {
       tier,
       defaultRole,
       canApprove,
+      recordScope:'ORG',
       isActive: true,
       note: '',
       saving: false,
@@ -344,6 +347,7 @@ export function OrgHierarchyView() {
       tier: p.Tier,
       defaultRole: p.DefaultRole || '',
       canApprove: p.CanApprove,
+      recordScope:p.RecordScope||'ORG',
       isActive: p.IsActive,
       note: p.Note || '',
       saving: false,
@@ -375,7 +379,7 @@ export function OrgHierarchyView() {
 
     if (posModal.mode === 'edit') {
       const previous = positions.find(p => p.PositionCode === posModal.code);
-      const affectsPolicy = previous && ((previous.ReportsTo || '') !== posModal.reportsTo || (previous.DefaultRole || '') !== posModal.defaultRole || Boolean(previous.CanApprove) !== posModal.canApprove || Boolean(previous.IsActive) !== posModal.isActive);
+      const affectsPolicy = previous && ((previous.ReportsTo || '') !== posModal.reportsTo || (previous.DefaultRole || '') !== posModal.defaultRole || Boolean(previous.CanApprove) !== posModal.canApprove || Boolean(previous.IsActive) !== posModal.isActive || (previous.RecordScope||'ORG')!==posModal.recordScope);
       if (affectsPolicy) {
         const oldManager = positions.find(p => p.PositionCode === previous.ReportsTo)?.PositionName || 'ไม่มี';
         const newManager = positions.find(p => p.PositionCode === posModal.reportsTo)?.PositionName || 'ไม่มี';
@@ -394,6 +398,7 @@ export function OrgHierarchyView() {
           tier: posModal.tier,
           defaultRole: posModal.defaultRole || null,
           canApprove: posModal.canApprove,
+          recordScope:posModal.recordScope,
           note: posModal.note.trim() || null
         });
       } else {
@@ -404,6 +409,7 @@ export function OrgHierarchyView() {
           tier: posModal.tier,
           defaultRole: posModal.defaultRole || null,
           canApprove: posModal.canApprove,
+          recordScope:posModal.recordScope,
           isActive: posModal.isActive,
           note: posModal.note.trim() || null
         });
@@ -1720,6 +1726,11 @@ export function OrgHierarchyView() {
 
                 {/* Toggles */}
                 <div className="flex flex-col justify-center space-y-2 pt-2">
+                  <label className="text-xs font-semibold text-slate-700">ขอบเขตข้อมูลตำแหน่ง
+                    <select aria-label="ขอบเขตข้อมูลตำแหน่ง" disabled={!session?.roles?.includes('ADMIN')&&session?.role!=='ADMIN'} value={posModal.recordScope} onChange={e=>setPosModal(s=>({...s,recordScope:e.target.value as 'ORG'|'GLOBAL'}))} className="ml-2 rounded border bg-white p-2">
+                      <option value="ORG">ตนเองและผู้ใต้บังคับบัญชา</option><option value="GLOBAL">ปฏิบัติการข้ามสายงานทั้งบริษัท</option>
+                    </select>
+                  </label>
                   <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-slate-700">
                     <input
                       type="checkbox"

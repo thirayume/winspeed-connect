@@ -11,6 +11,7 @@ let rebateModeFixture = false;
 let sourceCollisionFixture = false;
 let bookingSnapshotFixture = false;
 const db = h.installDbStub(({ text, inputs }) => {
+  if (/SELECT PositionCode,ReportsTo,RecordScope,IsActive FROM wf.OrgPosition/.test(text))return [{PositionCode:inputs.pos,RecordScope:'ORG',IsActive:1}];
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser WHERE Id = @id/.test(text) && [2,10].includes(Number(inputs.id)))
     return [{Id:Number(inputs.id),EmpId:`E${inputs.id}`,PositionCode:`P${inputs.id}`}];
   if (/WITH tree AS/.test(text) && /^P(?:2|10)$/.test(String(inputs.pos))) {

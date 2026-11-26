@@ -93,7 +93,9 @@ async function requestLoan(q,user,input,options={}){
  if(Number(borrower.PeriodYear)<Number(window.businessDate.slice(0,4))+543)fail('QUOTA_LOAN_BEFORE_DATA_START',400);
  if(!lender.OwnerActive||!borrower.OwnerActive)fail('QUOTA_LOAN_OWNER_INACTIVE');
  await visibleOwner(q,user,borrower.SalesUserId);
+ await require('./giveaway-loan-organization').requireCounterparty(q,user,lender.SalesUserId);
  if(!party(user,ids,Number(borrower.SalesUserId)))fail('QUOTA_LOAN_FORBIDDEN',403);
+ await require('./giveaway-loan-organization').requireSuperiorOverride(q,user,borrower.SalesUserId);
  const row=(await q(`INSERT wf.GiveawayQuotaLoan(RequestId,Fingerprint,LenderBudgetId,BorrowerBudgetId,LenderUserId,BorrowerUserId,
  Quantity,Reason,RequestedById,RequesterActorId,RequesterPrimaryId,RequesterActorPrimaryId)
  OUTPUT INSERTED.* VALUES(@requestId,@fingerprint,@a,@b,@lender,@borrower,CAST(@qty AS decimal(12,2)),@note,@user,@actor,@primary,@actorPrimary)`,
@@ -112,8 +114,10 @@ async function decideLoan(q,user,input){
  const owner=Number(action==='cancel'?row.BorrowerUserId:row.LenderUserId);
  if(!party(user,ids,owner))fail('QUOTA_LOAN_FORBIDDEN',403);
  await visibleOwner(q,user,owner);
+ await require('./giveaway-loan-organization').requireSuperiorOverride(q,user,owner,action==='approve'?row.BorrowerUserId:null);
  if(row.Status!=='PENDING'||Number(row.Revision)!==revision)fail('QUOTA_LOAN_STALE');
  if(action==='approve'){
+  await require('./giveaway-loan-organization').requireCounterparty(q,user,row.BorrowerUserId);
   const {lender,borrower}=await lockBudgets(q,Number(row.LenderBudgetId),Number(row.BorrowerBudgetId));assertParties(row,lender,borrower);
   if(!lender.OwnerActive||!borrower.OwnerActive)fail('QUOTA_LOAN_OWNER_INACTIVE');
   const setting=(await q("SELECT SettingValue FROM wf.SystemSetting WITH(HOLDLOCK) WHERE SettingKey='GIVEAWAY_BORROW_MAX_PCT'")).recordset?.[0]?.SettingValue;
@@ -140,6 +144,7 @@ async function repayLoan(q,user,input){
  if(!row)fail('QUOTA_LOAN_NOT_FOUND',404);
  if(!party(user,ids,Number(row.BorrowerUserId)))fail('QUOTA_LOAN_FORBIDDEN',403);
  await visibleOwner(q,user,row.BorrowerUserId);
+ await require('./giveaway-loan-organization').requireSuperiorOverride(q,user,row.BorrowerUserId);
  const returned=Math.round(Number(row.ReturnedQty)*100),issued=units(row.Quantity);
  if(row.Status!=='APPROVED'||qty>issued-returned)fail('QUOTA_LOAN_RETURN_EXCEEDS_OUTSTANDING');
  const {lender,borrower}=await lockBudgets(q,Number(row.LenderBudgetId),Number(row.BorrowerBudgetId));assertParties(row,lender,borrower);
@@ -157,4 +162,4 @@ async function repayLoan(q,user,input){
  await audit(q,ids,id,'RETURN',{returnedQty:decimal(returned)},{returnedQty:decimal(returned+qty),quantity:decimal(qty),status},note);
  return {id,status,quantity:decimal(qty),returnedQty:decimal(returned+qty),replayed:false};
 }
-module.exports={units,decimal,requestLoan,decideLoan,repayLoan,party,identity,protectLoanBudget};
+module.exports={units,decimal,requestLoan,decideLoan,repayLoan,party,identity,lockPrincipals,protectLoanBudget};

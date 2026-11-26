@@ -366,6 +366,8 @@ export type SalesOrderLine = {
 };
 
 export type SalesOrder = {
+  docuDate?:string|null;
+  docuType?:number;
   awaitingAi?: boolean;
   /** set by the bill list; null when the stage could not be read */
   docStage?: DocStage | null;
@@ -1069,6 +1071,7 @@ export type Quotation = {
 
 // ── Paper Trail (Kanban) ──────────────────────────────────────
 export type PaperCard = {
+  docuDate?:string|null;
   id: string | number;
   docStage?: DocStage | null;
   wfRef: string;

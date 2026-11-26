@@ -29,6 +29,7 @@ const reportsTo = { 'SALES-LEAD': 'MGR-03', 'SALES-A': 'SALES-LEAD', 'SALES-B': 
 const below = pos => Object.keys(reportsTo).filter(p => reportsTo[p] === pos).flatMap(p => [p, ...below(p)]);
 
 const db = h.installDbStub(({ text, inputs }) => {
+  if (/SELECT PositionCode,ReportsTo,RecordScope,IsActive FROM wf.OrgPosition/.test(text))return [{PositionCode:inputs.pos,RecordScope:'ORG',IsActive:1}];
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser WHERE Id = @id/.test(text)) return appUsers[inputs.id] ? [appUsers[inputs.id]] : [];
   if (/;WITH tree AS/.test(text)) {
     const codes = below(inputs.pos);
@@ -92,13 +93,13 @@ test('resolver: a salesperson without subordinates sees only own records, not a 
   assert.equal(b.basis, 'OWN'); assert.deepEqual(b.userIds, [20]);
 });
 
-test('resolver: MANAGER on the org chart sees its team; one not yet placed sees all', async () => {
+test('resolver: MANAGER on the org chart sees its team; one not yet placed sees own records', async () => {
   const placed = await getVisibleScope({ sub: 31, role: 'MANAGER' });
   assert.equal(placed.basis, 'ORG');
   assert.deepEqual(placed.userIds.sort((a, b) => a - b), [10, 11, 12, 13, 31]);
   const unplaced = await getVisibleScope({ sub: 30, role: 'MANAGER' });
-  assert.equal(unplaced.all, true);
-  assert.equal(unplaced.basis, 'MANAGER_UNMAPPED');
+  assert.equal(unplaced.all, false);
+  assert.equal(unplaced.basis, 'OWN');assert.deepEqual(unplaced.userIds,[30]);
 });
 
 test('MANAGER on the org chart cannot open a bill outside its team', async () => {
@@ -108,11 +109,12 @@ test('MANAGER on the org chart cannot open a bill outside its team', async () =>
   assert.notEqual(team.status, 404);
 });
 
-test('resolver: ACCOUNTING (and ADMIN/C_LEVEL, operational roles) see all', async () => {
-  for (const role of ['ACCOUNTING', 'ADMIN', 'C_LEVEL', 'WAREHOUSE', 'COUNTER_SALES', 'APPROVER', 'WEIGHBRIDGE']) {
+test('resolver: operational roles see all; unplaced executives and approvers remain own-only', async () => {
+  for (const role of ['ACCOUNTING', 'ADMIN', 'WAREHOUSE', 'COUNTER_SALES', 'WEIGHBRIDGE']) {
     assert.equal((await getVisibleScope({ sub: 40, role })).all, true, role);
   }
   assert.equal(scopeFilter({ all: true }, { userCol: 'x' }).sql, '1=1');
+  for(const role of ['C_LEVEL','APPROVER'])assert.equal((await getVisibleScope({sub:40,role})).all,false);
   assert.equal(scopeFilter({ all: false, userIds: [], empIds: [] }, { userCol: 'x' }).sql, '1=0');
 });
 
@@ -174,15 +176,15 @@ test('under Access As the scope follows the impersonated user', async () => {
   assert.equal(r.status, 404);
 });
 
-test('reports: a team-scoped MANAGER or SALES is refused company-wide reports; unplaced MANAGER and ACCOUNTING may run them', async () => {
+test('reports: own-team sales reports are available while company ledgers require all-record scope', async () => {
   const m = await app.call('GET', '/api/reports/so-status', { user: { sub: 31, role: 'MANAGER' } });
-  assert.equal(m.status, 403);
+  assert.equal(m.status, 200);
   const types = await app.call('GET', '/api/reports/types', { user: { sub: 31, role: 'MANAGER' } });
-  assert.deepEqual(types.body, []);
+  assert.ok(types.body.some(r=>r.key==='so-status'));assert.ok(!types.body.some(r=>r.key==='gl-sales-journal'));
   const s = await app.call('GET', '/api/reports/types', { user: { sub: 20, role: 'SALES' } });
-  assert.deepEqual(s.body, []);
+  assert.ok(s.body.some(r=>r.key==='so-status'));assert.ok(!s.body.some(r=>r.key==='daily-invoice'));
   const unplaced = await app.call('GET', '/api/reports/types', { user: { sub: 30, role: 'MANAGER' } });
-  assert.ok(unplaced.body.length > 0);
+  assert.ok(!unplaced.body.some(r=>r.key==='gl-sales-journal'));
   const a = await app.call('GET', '/api/reports/types', { user: { sub: 40, role: 'ACCOUNTING' } });
   assert.ok(a.body.length > 0);
 });

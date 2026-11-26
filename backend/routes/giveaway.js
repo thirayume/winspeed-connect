@@ -38,7 +38,7 @@ async function requireBudgetAuditIdentity(user) {
 
 async function budgetTxQuery(tx, text, inputs = {}) {
   const request = tx.request();
-  for (const [key, input] of Object.entries(inputs)) request.input(key, input.type, input.value);
+  for (const [key, input] of Object.entries(require('../services/rebate-sql').normalizeInputs(sql,inputs))) request.input(key, input.type, input.value);
   return request.query(text);
 }
 
@@ -989,17 +989,20 @@ router.get('/available-lenders', async (req, res) => {
     const { brand, itemName } = req.query;
     const year = YEAR(req.query.year);
     if (!brand || !itemName) return res.status(400).json({ message: 'brand and itemName are required' });
+    const loanScopes=await require('../services/giveaway-loan-organization').counterpartyScopes(wfQuery,req.user),loanInputs={};
+    const loanFilters=loanScopes.map((s,i)=>{const f=scopeFilter(s,{userCol:'v.SalesUserId',prefix:'legacyLender'+i});Object.assign(loanInputs,f.inputs);return '('+f.sql+')';});
     const r = await wfQuery(`
       SELECT v.SalesUserId, v.EmpId, v.EmpCode, v.Region, v.RemainingQty, u.DisplayName
       FROM wf.v_GiveawayBudgetStatus v
       JOIN wf.AppUser u ON u.Id = v.SalesUserId
       WHERE v.Brand = @b AND v.ItemName = @i AND v.PeriodYear = @y AND v.RemainingQty > 0 AND v.SalesUserId != @u
+       AND u.IsActive=1 AND ${loanFilters.join(' AND ')}
       ORDER BY v.RemainingQty DESC
     `, {
       b: { type: sql.NVarChar(50), value: brand },
       i: { type: sql.NVarChar(100), value: itemName },
       y: { type: sql.Int, value: year },
-      u: { type: sql.Int, value: req.user.id }
+      u: { type: sql.Int, value: businessIds(req.user).effective },...loanInputs
     });
     res.json(r.recordset || []);
   } catch (e) { console.error(e); res.status(500).json({ message: e.message }); }
@@ -1017,6 +1020,9 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
     if (Number(businessIds(req.user).effective) === Number(lenderId)) {
       return res.status(400).json({ message: 'ไม่สามารถขอยืมโควตาจากตนเองได้' });
     }
+    if(!Number.isSafeInteger(Number(lenderId))||Number(lenderId)<=0||Number(lenderId)>2147483647)
+      return res.status(400).json({message:'รหัสผู้ให้ยืมไม่ถูกต้อง'});
+    await require('../services/giveaway-loan-organization').requireCounterparty(wfQuery,req.user,Number(lenderId));
 
     const year = YEAR(req.body.periodYear);
     const borrowQty = Number(qty);
@@ -1063,6 +1069,9 @@ router.post('/borrow-requests', requireCapability('giveaway.borrow'), async (req
       await requireBudgetAuditIdentity(req.user);
       const txQuery = (text, inputs = {}) => budgetTxQuery(tx, text, inputs);
       let inserted;
+      const loans=require('../services/giveaway-quota-loans');
+      await loans.lockPrincipals(txQuery,req.user,loans.identity(req.user));
+      await require('../services/giveaway-loan-organization').requireCounterparty(txQuery,req.user,Number(lenderId));
     if (hasRegionCols) {
       inserted = await txQuery(`
         INSERT INTO wf.GiveawayBorrowRequest (RequesterId, LenderId, Region, RequesterRegion, LenderRegion, PeriodYear, Brand, ItemName, Qty, Reason, Status)
@@ -1171,6 +1180,9 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
         const inputs = { id: { type: sql.Int, value: reqId }, globalStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant } };
         const cur = (await txQuery('SELECT RequesterId, LenderId, Status FROM wf.GiveawayBorrowRequest WITH (UPDLOCK,HOLDLOCK) WHERE Id=@id AND RequestedAt >= @globalStartUtc', inputs)).recordset?.[0];
         if (!cur) throw Object.assign(new Error('ไม่พบข้อมูลคำขอยืมโควตา'), { status: 404 });
+        const loans=require('../services/giveaway-quota-loans');await loans.lockPrincipals(txQuery,req.user,loans.identity(req.user));
+        for(const p of [req.user,actorPerspective(req.user)])if(!inScope(await getVisibleScope(p,txQuery),{userId:cur.RequesterId,extraUserIds:[cur.LenderId]}))
+          throw Object.assign(Error('ไม่พบข้อมูลคำขอยืมโควตา'),{status:404});
         if (!canResolveBorrow(req.user, cur, false)) throw Object.assign(new Error('คุณไม่มีสิทธิ์ปฏิเสธคำขอนี้'), { status: 403 });
         if (cur.Status !== 'PENDING') throw Object.assign(new Error('คำขอนี้ถูกดำเนินการไปแล้ว'), { status: 409 });
         const update = await txQuery(`UPDATE wf.GiveawayBorrowRequest SET Status='REJECTED', ApproverId=@u, Note=@n, ResolvedAt=GETUTCDATE() WHERE Id=@id AND Status='PENDING' AND RequestedAt >= @globalStartUtc`, { ...inputs, u: { type: sql.Int, value: businessIds(req.user).effective }, n: { type: sql.NVarChar(500), value: note || null } });
@@ -1200,6 +1212,11 @@ router.patch('/borrow-requests/:id/resolve', requireBorrowRequestInScope, async 
       if (!canResolveBorrow(req.user, bReq, true)) {
         throw Object.assign(new Error('คุณไม่มีสิทธิ์อนุมัติคำขอนี้'), { status: 403 });
       }
+      const txQuery=(text,inputs={})=>budgetTxQuery(tx,text,inputs),loans=require('../services/giveaway-quota-loans');
+      await loans.lockPrincipals(txQuery,req.user,loans.identity(req.user));
+      const org=require('../services/giveaway-loan-organization');
+      await org.requireSuperiorOverride(txQuery,req.user,bReq.LenderId,bReq.RequesterId);
+      await org.requireCounterparty(txQuery,req.user,bReq.RequesterId);
 
       // 2. Resolve lender region and requester region
       let lenderRegion = bReq.LenderRegion || null;

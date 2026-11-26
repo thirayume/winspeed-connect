@@ -21,6 +21,7 @@ function fixture(overrides = {}) {
     if (/SELECT Id,Role,IsActive/.test(text)) return rows(state.accounts);
     if (/sp_getapplock/.test(text)) return rows([{ LockResult: state.lockResult ?? 0 }]);
     if (/SELECT h.SOID/.test(text)) return rows(state.head ? [state.head] : []);
+    if (/SELECT PositionCode,ReportsTo,RecordScope,IsActive FROM wf.OrgPosition/.test(text))return rows([{PositionCode:'MGR-N',RecordScope:'ORG',IsActive:1}]);
     if (/SELECT Id, EmpId, PositionCode/.test(text)) return rows([{ Id: 11, EmpId: '202', PositionCode: 'MGR-N' }]);
     if (/WITH tree AS/.test(text)) return rows([{ Id: 11, EmpId: '202' }, { Id: 12, EmpId: '101' }]);
     if (/FROM wf.NativeApproverEmployee/.test(text)) return rows(state.approverListed ? [{ IsEnabled: 1 }] : []);

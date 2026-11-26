@@ -13,8 +13,10 @@ const h = require('./helpers/route-harness.cjs');
 
 const state = { remaining: 300, failAudit: false, ambiguousPrice: false, ambiguousDerive: false, rollbacks: 0 };
 let nextSoId = 4001;
-const db = h.installDbStub(({ kind, text }) => {
+const db = h.installDbStub(({ kind, text,inputs }) => {
   if (state.ambiguousPrice && /FROM dbo\.EMCust WITH/.test(text)) return [{CustID:1},{CustID:2}];
+  if(text.includes('WHERE CustID=@scopeCustomerId')&&inputs.scopeCustomerCode==='1141')return [{CustID:1141,CustCode:'QA-1141'}];
+  if(text.includes('WHERE c.CustID=@visibilityCustId')&&Number(inputs.visibilityCustId)===1141)return [{ok:1}];
   if (/INSERT INTO wf\.SalesOrderAudit/.test(text)) {
     assert.equal(kind, 'tx');
     if (state.failAudit) throw new Error('TEST_SO_AUDIT_FAILURE');
@@ -97,9 +99,9 @@ test('a bill creation audit failure aborts the transaction and does not return s
   } finally {state.failAudit=false;}
 });
 
-test('ambiguous price customer aborts bill creation and rolls back', async () => {
+test('ambiguous price customer is refused before credit or a write transaction', async () => {
   state.ambiguousPrice=true;const rollbacks=state.rollbacks;const b={...order(1),lines:[{goodId:'3',goodCode:'P',goodName:'Synthetic',qtyTon:1,qtyBag:20,pricePerTon:100,isGiveaway:false}]};
-  try {const r=await app.call('POST','/api/so',{body:b,user:{sub:34,role:'SALES'}});assert.equal(r.status,409,JSON.stringify(r.body));assert.equal(r.body.code,'AMBIGUOUS_CUSTOMER_ID');assert.equal(state.rollbacks,rollbacks+1);} finally {state.ambiguousPrice=false;}
+  try {const r=await app.call('POST','/api/so',{body:b,user:{sub:34,role:'SALES'}});assert.equal(r.status,409,JSON.stringify(r.body));assert.equal(r.body.code,'AMBIGUOUS_CUSTOMER_ID');assert.equal(state.rollbacks,rollbacks);} finally {state.ambiguousPrice=false;}
 });
 
 test('ambiguous customer during derived net-price lookup rolls back bill creation', async () => {

@@ -6,6 +6,7 @@ const access=require('../services/secondary-budget-report-access');
 const {hasPermission,hasRole}=access;
 
 router.use(requireAuth);
+router.use(async(req,res,next)=>{try{req.user.budgetRecordScopes=await access.businessScopes(req.user);next();}catch(e){res.status(e.status||503).json({message:'ตรวจขอบเขตแผนงบประมาณไม่สำเร็จ'});}});
 
 const camel = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 const camelizeRow = (row) => {
@@ -20,6 +21,7 @@ const camelizeRows = (rows) => (rows || []).map(camelizeRow);
 router.get('/expenditure', requireRole('ADMIN', 'MANAGER', 'C_LEVEL', 'ACCOUNTING'), async (req, res) => {
   try {
     if(!access.perspectives(req.user,true).every(p=>require('../services/role-capabilities').hasRole(p.user,'ADMIN','MANAGER','C_LEVEL','ACCOUNTING')))return res.status(403).json({message:'ไม่มีสิทธิ์ดูค่าใช้จ่ายรวม'});
+    if(!req.user.budgetRecordScopes.every(s=>s.all===true))return res.status(403).json({message:'ข้อมูลค่าใช้จ่ายรวมจำกัดตามสิทธิ์บัญชี ใช้รายงานแผนในสายงานแทน'});
     const { year, channel } = req.query;
     const start = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
     // Annual plans can use BE years; older giveaway budgets can use CE years.
@@ -58,20 +60,23 @@ router.get('/plans', async (req, res) => {
     if(!access.mayUseBudget(req.user))return res.status(403).json({message:'ไม่มีสิทธิ์ดูแผนงบประมาณ'});
     const ids=require('../services/business-identity').businessIds(req.user);
     const all=access.canReadAllBudget(req.user);
+    const scopeFilter=require('../services/budget-record-scope').predicate(req.user.budgetRecordScopes);
     const start = (await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;
     const result = await wfQuery(`
       SELECT p.*,
              prep.DisplayName AS PreparedByName,
              rev.DisplayName AS ReviewedByName,
              appr.DisplayName AS ApprovedByName
+             ,branch.PositionName AS BranchName
       FROM wf.BudgetPlan p
       LEFT JOIN wf.AppUser prep ON prep.Id = p.PreparedBy
       LEFT JOIN wf.AppUser rev ON rev.Id = p.ReviewedBy
       LEFT JOIN wf.AppUser appr ON appr.Id = p.ApprovedBy
+      LEFT JOIN wf.OrgPosition branch ON branch.PositionCode=p.BranchPositionCode
       WHERE (@includeDeleted=1 OR p.DeletedAt IS NULL) AND CASE WHEN p.PeriodYear BETWEEN 2400 AND 3000 THEN p.PeriodYear-543 ELSE p.PeriodYear END >= @startYear
-        AND (@all=1 OR p.PreparedBy=@uid OR p.PreparedActorId=@uid OR p.AssignedReviewerId=@uid OR p.AssignedApproverId=@uid)
-      ORDER BY p.PeriodYear DESC, p.Channel
-    `, { startYear: { type: sql.Int, value: Number(start.slice(0, 4)) },all:{type:sql.Bit,value:all},uid:{type:sql.Int,value:ids.effective},includeDeleted:{type:sql.Bit,value:req.query.includeDeleted==='true'} });
+        AND (p.BranchPositionCode IS NOT NULL OR @all=1 OR p.PreparedBy=@uid OR p.PreparedActorId=@uid OR p.AssignedReviewerId=@uid OR p.AssignedApproverId=@uid) AND ${scopeFilter.sql}
+      ORDER BY p.PeriodYear DESC, p.BranchPositionCode, p.Channel,p.PlanId
+    `, { ...scopeFilter.inputs,startYear: { type: sql.Int, value: Number(start.slice(0, 4)) },all:{type:sql.Bit,value:all},uid:{type:sql.Int,value:ids.effective},includeDeleted:{type:sql.Bit,value:req.query.includeDeleted==='true'} });
     res.json({ data: camelizeRows((result.recordset || []).filter(p=>budget.canRead(req.user,p))),context:access.context(req.user,require('../db').getDbName?.()||require('../services/active-database').primaryDatabase()||'') });
   } catch (error) {
     console.error('[budget]', error);
@@ -79,6 +84,16 @@ router.get('/plans', async (req, res) => {
   }
 });
 
+router.get('/branches',async(req,res)=>{
+ try{
+  if(!access.mayUseBudget(req.user))return res.status(403).json({message:'ไม่มีสิทธิ์ดูสายงานแผนงบประมาณ'});
+  const filter=require('../services/budget-record-scope').branchPredicate(req.user.budgetRecordScopes,'p.PositionCode','budgetDirectory');
+  const rows=(await wfQuery(`SELECT p.PositionCode,p.PositionName,p.ReportsTo FROM wf.OrgPosition p WHERE p.IsActive=1 AND ${filter.sql} ORDER BY p.PositionName,p.PositionCode`,filter.inputs)).recordset||[];
+  const uid=require('../services/business-identity').businessIds(req.user).effective;
+  const own=(await wfQuery('SELECT PositionCode FROM wf.AppUser WHERE Id=@id AND IsActive=1',{id:{type:sql.Int,value:uid}})).recordset?.[0]?.PositionCode;
+  res.json({data:rows,defaultBranch:rows.some(p=>p.PositionCode===own)?own:null});
+ }catch(e){res.status(e.status||500).json({message:e.message,code:e.code});}
+});
 router.get('/staff',async(req,res)=>{
  try{
   const {actorPerspective}=require('../services/business-identity'),{getVisibleScope,scopeFilter}=require('../services/visible-scope');
@@ -102,7 +117,15 @@ router.get('/customers',async(req,res)=>{
 router.get('/approvers',async(req,res)=>{
  try{
   if(!['budget.plan.create','budget.plan.review','budget.plan.approve'].some(k=>hasPermission(req.user,k)))return res.status(403).json({message:'ไม่มีสิทธิ์'});
-  const result=await wfQuery(`SELECT Id,DisplayName,wf.fn_UserHasPermission(Id,'budget.plan.review') CanReview,wf.fn_UserHasPermission(Id,'budget.plan.approve') CanApprove FROM wf.AppUser WHERE IsActive=1 AND (wf.fn_UserHasPermission(Id,'budget.plan.review')=1 OR wf.fn_UserHasPermission(Id,'budget.plan.approve')=1) ORDER BY DisplayName,Id`);
+  const branch=String(req.query.branchPositionCode||'');
+  if(!branch)return res.json({data:[]});
+  if(!require('../services/budget-record-scope').branchVisible(req.user.budgetRecordScopes,branch))return res.status(403).json({message:'สายงานอยู่นอกสิทธิ์'});
+  const reviewer=Number(req.query.reviewerId||0);if(!Number.isSafeInteger(reviewer)||reviewer<0)return res.status(400).json({message:'ผู้ตรวจไม่ถูกต้อง'});
+  const result=await wfQuery(`SELECT Id,DisplayName,
+   CASE WHEN wf.fn_UserHasPermission(Id,'budget.plan.review')=1 AND wf.fn_IsUserAbovePosition(Id,@branch)=1 THEN 1 ELSE 0 END CanReview,
+   CASE WHEN wf.fn_UserHasPermission(Id,'budget.plan.approve')=1 AND wf.fn_IsUserAbovePosition(Id,@branch)=1 AND (@reviewer=0 OR wf.fn_IsOrganizationSuperior(Id,@reviewer)=1) THEN 1 ELSE 0 END CanApprove
+   FROM wf.AppUser WHERE IsActive=1 AND wf.fn_IsUserAbovePosition(Id,@branch)=1
+   AND (wf.fn_UserHasPermission(Id,'budget.plan.review')=1 OR wf.fn_UserHasPermission(Id,'budget.plan.approve')=1) ORDER BY DisplayName,Id`,{branch:{type:sql.VarChar(30),value:branch},reviewer:{type:sql.Int,value:reviewer}});
   res.json({data:result.recordset||[]});
  }catch(e){res.status(e.status||500).json({message:e.message});}
 });
@@ -130,7 +153,7 @@ async function report(req,key,id){
  const data=await require('../db').wfTransaction(async tx=>{
   const q=budget.query(tx,sql);let p;
   if(id){p=await budget.load(q,id,true);if(!budget.canRead(req.user,p))throw Object.assign(Error('ไม่มีสิทธิ์ในแผนนี้'),{status:403});const start=(await require('../services/global-data-window-store').readGlobalDataWindow()).businessDate;if(budget.year(p.PeriodYear)<Number(start.slice(0,4)))throw Object.assign(Error('แผนอยู่ก่อนวันเริ่มข้อมูล'),{status:404});}
-  const r=await require('../services/promotion-budget-report').run({...req.query,planId:id||undefined,year:p?.PeriodYear||req.query.year},{queryFn:q,register:key==='budget-project-register'});
+  const r=await require('../services/promotion-budget-report').run({...req.query,planId:id||undefined,year:p?.PeriodYear||req.query.year},{queryFn:q,register:key==='budget-project-register',scopes:req.user.budgetRecordScopes});
   return {type:key,title:key==='budget-plan-approval'?'คำขออนุมัติงบส่งเสริมการขาย '+p.Title:key==='budget-project-register'?'ทะเบียนโครงการส่งเสริมการขาย':'ประมาณการค่าใช้จ่ายส่งเสริมการขายรายปี',columns:require('../services/promotion-budget-report').columns,...r,isoStamp:config.isoStamps?.[key]||null};
  },{isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE});
  return {data,template:await reports.resolveReportTemplate(key)};

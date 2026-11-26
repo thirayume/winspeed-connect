@@ -23,7 +23,9 @@ function validate(payload){
  const allocations=payload.allocations.map(a=>{if(!a||typeof a!=='object')throw bad('วงเงินรายภาคไม่ถูกต้อง');const region=text(a.region,100,true),amount=Number(a.amount);if(!Number.isFinite(amount)||amount<0||amount>999999999999||Math.abs(amount*100-Math.round(amount*100))>.0001)throw bad('วงเงินไม่ถูกต้อง');return {region,amount};});
  if(new Set(allocations.map(a=>a.region)).size!==allocations.length)throw bad('ภาคในวงเงินรายปีซ้ำ');
  if([...lines,...allocations].reduce((s,l)=>s+Math.round(l.amount*100),0)>99999999999900)throw bad('วงเงินรวมเกินขอบเขต');
- return {periodYear,channel,title:text(payload.title,200,true),note:text(payload.note,500),assignedReviewerId:positive(payload.assignedReviewerId),assignedApproverId:positive(payload.assignedApproverId),document,lines,allocations};
+ const branchPositionCode=payload.branchPositionCode==null?null:text(payload.branchPositionCode,30,true);
+ if(branchPositionCode&&!/^[A-Za-z0-9_-]+$/.test(branchPositionCode))throw bad('รหัสสายงานไม่ถูกต้อง');
+ return {periodYear,channel,branchPositionCode,title:text(payload.title,200,true),note:text(payload.note,500),assignedReviewerId:positive(payload.assignedReviewerId),assignedApproverId:positive(payload.assignedApproverId),document,lines,allocations};
 }
 function actor(user){return require('./business-identity').businessIds(user);}
 function query(tx,sql){return async(s,values={})=>{const r=tx.request();for(const [k,v]of Object.entries(values))r.input(k,v.type,v.value);return r.query(s);};}
@@ -37,9 +39,14 @@ async function load(q,id,lock=false,includeDeleted=false){
  return {...p,document:require('./promotion-budget-document').parse(p.DocumentJson),lines,allocations};
 }
 function canRead(user,p){const ids=actor(user);
+ if(p.BranchPositionCode&&!user.budgetRecordScopes)return false;
+ if(user.budgetRecordScopes){
+  if(!require('./budget-record-scope').visible(user.budgetRecordScopes,p))return false;
+  if(p.BranchPositionCode)return require('./secondary-budget-report-access').mayUseBudget(user);
+ }
  const allowed=id=>[p.PreparedBy,p.PreparedActorId,p.AssignedReviewerId,p.AssignedApproverId].map(Number).includes(id);
- return (require('./secondary-budget-report-access').canReadAllBudget(user)||allowed(ids.effective))&&
- (!user.isImpersonating||require('./secondary-budget-report-access').canReadAllBudget(require('./business-identity').actorPerspective(user))||allowed(ids.actor));
+ return (user.budgetRecordScopes&&require('./secondary-budget-report-access').canReadAllBudget(user)||allowed(ids.effective))&&
+ (!user.isImpersonating||user.budgetRecordScopes&&require('./secondary-budget-report-access').canReadAllBudget(require('./business-identity').actorPerspective(user))||allowed(ids.actor));
 }
 async function write(db,user,input,id,action,reason,ip){
  if(id!=null&&!positive(id))throw bad('เลขแผนไม่ถูกต้อง');
@@ -51,7 +58,10 @@ async function write(db,user,input,id,action,reason,ip){
  const {businessDate}=await require('./global-data-window-store').readGlobalDataWindow();
  if(body&&year(body.periodYear)<Number(businessDate.slice(0,4)))throw bad('ปีอยู่ก่อนวันเริ่มข้อมูล');
  return db.wfTransaction(async tx=>{
-  const q=query(tx,db.sql),before=id?await load(q,id,true,action==='restore'):null;
+  const q=query(tx,db.sql);
+  const localScopes=await Promise.all([...new Set([user,require('./business-identity').actorPerspective(user)])].map(u=>require('./visible-scope').getVisibleScope(u,q,{includePositions:true})));
+  user={...user,budgetRecordScopes:[...(user.budgetRecordScopes||[]),...localScopes]};
+  const before=id?await load(q,id,true,action==='restore'):null;
   if(before&&year(before.PeriodYear)<Number(businessDate.slice(0,4)))throw bad('แผนอยู่ก่อนวันเริ่มข้อมูล',404);
   if(before&&!canRead(user,before))throw bad('ไม่มีสิทธิ์ในแผนนี้',403);
   if(before&&Number(input.expectedVersion)!==Number(before.EditVersion))throw bad('แผนเปลี่ยนแล้ว กรุณาโหลดใหม่',409);
@@ -59,16 +69,22 @@ async function write(db,user,input,id,action,reason,ip){
   const requirePermission=key=>{if(!hasPermission(user,key)||user.isImpersonating&&!hasPermission(perspective(user),key))throw bad('ไม่มีสิทธิ์ดำเนินการขั้นนี้',403);};
   if(action==='save'){
    requirePermission('budget.plan.create');
+   body.branchPositionCode=body.branchPositionCode||before?.BranchPositionCode||null;
+   if(!body.branchPositionCode)throw bad('กรุณาเลือกสายงานเจ้าของแผน');
+   if(before?.BranchPositionCode&&before.BranchPositionCode!==body.branchPositionCode)throw bad('เปลี่ยนสายงานเจ้าของแผนที่บันทึกแล้วไม่ได้',409);
+   if(!require('./budget-record-scope').branchVisible(user.budgetRecordScopes,body.branchPositionCode))throw bad('สายงานเจ้าของแผนอยู่นอกสิทธิ์',403);
+   const branch=(await q('SELECT PositionCode FROM wf.OrgPosition WITH(HOLDLOCK) WHERE PositionCode=@branch AND IsActive=1',{branch:{type:db.sql.VarChar(30),value:body.branchPositionCode}})).recordset;
+   if(!branch?.length)throw bad('สายงานเจ้าของแผนไม่มีอยู่หรือปิดใช้งานแล้ว');
    if(before&&require('./promotion-budget-document').parse(before.DocumentJson).projects.length&&input.document===undefined)throw bad('กรุณาโหลดหน้าจอรุ่นใหม่ก่อนแก้แผนที่มีข้อมูลโครงการ',409);
    if(before&&!['DRAFT','REJECTED'].includes(before.Status))throw bad('แก้ได้เฉพาะร่างหรือแผนที่ส่งคืน',409);
    if(before&&![before.PreparedBy,before.PreparedActorId].map(Number).includes(ids.effective)&&!hasPermission(user,'settings.manage'))throw bad('แก้แผนของผู้จัดทำอื่นไม่ได้',403);
-   const found=(await q('SELECT PlanId FROM wf.BudgetPlan WITH(UPDLOCK,HOLDLOCK) WHERE CASE WHEN PeriodYear>=2400 THEN PeriodYear-543 ELSE PeriodYear END=@year AND Channel=@channel AND (@id IS NULL OR PlanId<>@id)',{year:{type:db.sql.Int,value:year(body.periodYear)},channel:{type:db.sql.NVarChar(30),value:body.channel},id:{type:db.sql.Int,value:id}})).recordset;
-   if(found?.length)throw bad('มีแผนของปีและช่องทางนี้แล้ว',409);
+   const found=(await q('SELECT PlanId FROM wf.BudgetPlan WITH(UPDLOCK,HOLDLOCK) WHERE CASE WHEN PeriodYear>=2400 THEN PeriodYear-543 ELSE PeriodYear END=@year AND Channel=@channel AND BranchPositionCode=@branch AND (@id IS NULL OR PlanId<>@id)',{year:{type:db.sql.Int,value:year(body.periodYear)},channel:{type:db.sql.NVarChar(30),value:body.channel},branch:{type:db.sql.VarChar(30),value:body.branchPositionCode},id:{type:db.sql.Int,value:id}})).recordset;
+   if(found?.length)throw bad('มีแผนของสายงาน ปี และช่องทางนี้แล้ว (รวมร่างที่ลบหรือยกเลิก)',409);
    if(!id){
-    id=(await q(`INSERT INTO wf.BudgetPlan(PeriodYear,Channel,Title,Status,PreparedBy,PreparedActorId,Note) OUTPUT INSERTED.PlanId VALUES(@periodYear,@channel,@title,'DRAFT',@preparedBy,@preparedActorId,@note)`,params(db.sql,{...Object.fromEntries(['periodYear','channel','title','note'].map(k=>[k,body[k]])),preparedBy:ids.effective,preparedActorId:ids.actor}))).recordset[0].PlanId;
+    id=(await q(`INSERT INTO wf.BudgetPlan(PeriodYear,Channel,BranchPositionCode,Title,Status,PreparedBy,PreparedActorId,Note) OUTPUT INSERTED.PlanId VALUES(@periodYear,@channel,@branchPositionCode,@title,'DRAFT',@preparedBy,@preparedActorId,@note)`,params(db.sql,{...Object.fromEntries(['periodYear','channel','branchPositionCode','title','note'].map(k=>[k,body[k]])),preparedBy:ids.effective,preparedActorId:ids.actor}))).recordset[0].PlanId;
    }
-   const values=params(db.sql,{id,title:body.title,note:body.note,periodYear:body.periodYear,channel:body.channel,reviewer:body.assignedReviewerId,approver:body.assignedApproverId,document:JSON.stringify(body.document)});
-   await q(`UPDATE wf.BudgetPlan SET PeriodYear=@periodYear,Channel=@channel,Title=@title,Note=@note,DocumentJson=@document,AssignedReviewerId=@reviewer,AssignedApproverId=@approver,Status='DRAFT',ReviewedBy=NULL,ReviewedActorId=NULL,ReviewedAt=NULL,ApprovedBy=NULL,ApprovedActorId=NULL,ApprovedAt=NULL,RejectNote=NULL,EditVersion=EditVersion+1,UpdatedAt=GETUTCDATE() WHERE PlanId=@id`,values);
+   const values=params(db.sql,{id,title:body.title,note:body.note,periodYear:body.periodYear,channel:body.channel,branchPositionCode:body.branchPositionCode,reviewer:body.assignedReviewerId,approver:body.assignedApproverId,document:JSON.stringify(body.document)});
+   await q(`UPDATE wf.BudgetPlan SET PeriodYear=@periodYear,Channel=@channel,BranchPositionCode=@branchPositionCode,Title=@title,Note=@note,DocumentJson=@document,AssignedReviewerId=@reviewer,AssignedApproverId=@approver,Status='DRAFT',ReviewedBy=NULL,ReviewedActorId=NULL,ReviewedAt=NULL,ApprovedBy=NULL,ApprovedActorId=NULL,ApprovedAt=NULL,RejectNote=NULL,EditVersion=EditVersion+1,UpdatedAt=GETUTCDATE() WHERE PlanId=@id`,values);
    await q('DELETE FROM wf.PromotionBudgetLine WHERE PlanId=@id',params(db.sql,{id}));
    await q('DELETE FROM wf.PromotionBudgetAllocation WHERE PlanId=@id',params(db.sql,{id}));
    for(const a of body.allocations)await q('INSERT INTO wf.PromotionBudgetAllocation(PlanId,Region,Amount) VALUES(@id,@region,@amount)',params(db.sql,{id,...a}));
@@ -87,6 +103,7 @@ async function write(db,user,input,id,action,reason,ip){
      const ok=(await q(`SELECT Id FROM wf.AppUser WHERE Id=@uid AND IsActive=1 AND wf.fn_UserHasPermission(Id,@permission)=1`,{uid:{type:db.sql.Int,value:uid},permission:{type:db.sql.NVarChar(100),value:permission}})).recordset;
      if(!ok?.length)throw bad('ผู้พิจารณาไม่มีสิทธิ์หรือปิดใช้งานแล้ว');
     }
+    await require('./organization-approval').requireChain(q,[before.PreparedBy],before.AssignedReviewerId,before.AssignedApproverId,before.BranchPositionCode);
    }else if(action==='review'||action==='approve'){
     requirePermission(action==='review'?'budget.plan.review':'budget.plan.approve');
     if(before.Status!=='PENDING'||action==='review'&&before.ReviewedAt||action==='approve'&&!before.ReviewedAt)throw bad('สถานะแผนเปลี่ยนแล้ว',409);
@@ -94,6 +111,7 @@ async function write(db,user,input,id,action,reason,ip){
     if(ids.effective!==Number(assigned))throw bad('ไม่ใช่ผู้พิจารณาที่กำหนด',403);
     const prohibited=[before.PreparedBy,before.PreparedActorId,...(action==='approve'?[before.ReviewedBy,before.ReviewedActorId]:[])].map(Number);
     if(prohibited.includes(ids.effective)||prohibited.includes(ids.actor))throw bad('ผู้จัดทำ ผู้ตรวจ และผู้อนุมัติต้องแยกตัวตน',403);
+    await require('./organization-approval').requireChain(q,[before.PreparedBy],before.AssignedReviewerId,before.AssignedApproverId,before.BranchPositionCode);
    }else if(action==='reject'){
     const step=before.ReviewedAt?'approve':'review';requirePermission('budget.plan.'+step);
     if(before.Status!=='PENDING'||ids.effective!==Number(step==='review'?before.AssignedReviewerId:before.AssignedApproverId))throw bad('ไม่ใช่ผู้พิจารณาในขั้นนี้',403);

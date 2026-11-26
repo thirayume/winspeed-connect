@@ -42,17 +42,18 @@ const common=[col('CustCode','รหัสลูกค้า','identifier'),col(
 const dailyColumns=[col('DocBook','ชุดเอกสาร'),...common,col('PricePerTon','ราคาต่อตัน','money'),col('BillDiscount','ส่วนลดท้ายใบจัดสรร','money',true),col('Amount','ยอดสุทธิไม่รวม VAT','money',true),col('VATAmount','VAT','money',true),col('InvoiceAmount','ยอดรวม VAT','money',true),col('CostAmount','ต้นทุนตัดสต็อก','money'),col('GrossProfit','กำไรหลังส่วนลด','money'),col('CostState','สถานะต้นทุน'),col('BookingRefs','ใบจอง / วันที่'),col('SaleRefs','ใบสั่งขาย / วันที่'),col('DebtRefs','ใบตั้งหนี้ / วันที่'),col('TicketRefs','ตั๋วปุ๋ย'),col('SlipRefs','ใบขนย้าย / วันที่'),col('TruckPlates','ทะเบียนรถ'),col('TraceState','ผลจับคู่'),col('DetailState','รายการสินค้า')];
 const netColumns=[...common,col('DocumentKind','ประเภท'),col('SaleAmount','ยอดขายหลังส่วนลด','money',true),col('CreditAmount','ลดหนี้ไม่คืนสินค้า','money',true),col('ReturnAmount','รับคืนสินค้า','money',true),col('DebitAmount','เพิ่มหนี้','money',true),col('Amount','ยอดขายสุทธิไม่รวม VAT','money',true),col('VATAmount','VAT สุทธิ','money',true),col('RefNo','เอกสารอ้างอิง','identifier'),col('DetailState','รายการสินค้า')];
 async function run(kind,params={},options={}){
+ const organization=require('./report-organization-scope').predicate(options.scopes,{empCol:'h.EmpID'},'invoiceOrg');
  const q=options.queryFn||wfQuery,{businessDate}=await(options.readGlobalDataWindow||require('./global-data-window-store').readGlobalDataWindow)();
  const f=filters(params,options.now),daily=kind==='daily-invoice';
  const cap=params.exportAll==='true'?50000:1000;
  if(!daily&&f.book)throw fail('รายงานสุทธิไม่กรองเล่ม J/N เพราะเอกสารปรับปรุงใช้เล่มต่างกัน');
- const inputs={from:{type:sql.Date,value:f.from},to:{type:sql.Date,value:f.to},globalStartDate:{type:sql.Date,value:businessDate}};
+ const inputs={...organization.inputs,from:{type:sql.Date,value:f.from},to:{type:sql.Date,value:f.to},globalStartDate:{type:sql.Date,value:businessDate}};
  inputs.maxDocumentsPlusOne={type:sql.Int,value:cap+1};
  for(const k of ['book','docFrom','docTo','custCode','empCode'])inputs[k]={type:sql.NVarChar(100),value:f[k]};
  const data=(await q(`WITH headers AS (
  SELECT TOP (@maxDocumentsPlusOne) h.* FROM dbo.SOInvHD h
  LEFT JOIN dbo.EMCust c ON c.CustID=h.CustID LEFT JOIN dbo.EMEmp e ON e.EmpID=h.EmpID
- WHERE h.DocuType IN (${daily?'107':kind==='credit-returns'?'109':'107,108,109,110'}) AND ISNULL(h.DocuStatus,'N')<>'C' AND ISNULL(h.Revflag,'N')<>'Y'
+ WHERE (${organization.sql}) AND h.DocuType IN (${daily?'107':kind==='credit-returns'?'109':'107,108,109,110'}) AND ISNULL(h.DocuStatus,'N')<>'C' AND ISNULL(h.Revflag,'N')<>'Y'
  AND h.DocuDate>=@from AND h.DocuDate<DATEADD(day,1,@to) AND h.DocuDate>=@globalStartDate
  AND (@book='' OR LEFT(h.DocuNo,1)=@book) AND (@docFrom='' OR h.DocuNo>=@docFrom) AND (@docTo='' OR h.DocuNo<=@docTo)
  AND (@custCode='' OR c.CustCode=@custCode) AND (@empCode='' OR e.EmpCode=@empCode)

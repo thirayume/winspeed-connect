@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Package, Truck, Clock, Trash2, FileText, Gift, Settings, Activity, Download } from 'lucide-react';
 import { SOStatusBadge } from './SOStatusBadge';
 import { DocStageChip } from './DocStageChip';
+import {DocumentDate} from '../common/DocumentDate';
 import { bulkCancelDeleteSO, deleteTrip } from '../../services/api';
 import { appAlert, appPrompt } from '../ui/AppAlert';
 import { useExport } from '../../hooks/useExport';
@@ -244,6 +245,7 @@ export function SaleTripManager({
                     </div>
                     {/* which WinSpeed document this bill has reached: 103, 104 and tickets, 116, 107 */}
                     <DocStageChip stage={order.docStage} className="mb-1" />
+                    <DocumentDate date={order.docuDate} draftDate={order.createdAt} isDraft={order.docuType === 0}/>
                     <div className="flex items-center justify-between text-xs text-gray-500">
                       <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1 font-medium">

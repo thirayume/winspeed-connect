@@ -156,8 +156,11 @@ const db = h.installDbStub((call) => {
 
   // User scope checks
   if (/SELECT Id, EmpId, PositionCode FROM wf\.AppUser WHERE Id = @id/i.test(text)) {
-    return [{ Id: inputs.id, EmpId: null, PositionCode: null }];
+    return [{ Id: inputs.id, EmpId: null, PositionCode:Number(inputs.id)===25?'QA-PRICING-MGR':Number(inputs.id)===99?'QA-PRICING-SALES':null }];
   }
+
+  if(text.includes('SELECT PositionCode,ReportsTo,RecordScope,IsActive'))return [{PositionCode:inputs.pos,RecordScope:'ORG',IsActive:1}];
+  if(text.includes(';WITH tree AS'))return [{Id:Number(inputs.id),EmpId:null},...(inputs.pos==='QA-PRICING-MGR'?[{Id:99,EmpId:null}]:[])];
 
   // Master lookup
   if (/FROM dbo\.EMGoodGroup/i.test(text) || /FROM dbo\.EMGood\b/i.test(text)) {

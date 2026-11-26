@@ -20,6 +20,9 @@ let scaleRows = [event];
 let tripStatus = 'WAREHOUSE_ACK';
 const incidents = [];
 const db = h.installDbStub(({ text, inputs }) => {
+  if(text.includes('SELECT Id, EmpId, PositionCode'))return [{Id:inputs.id,EmpId:null,PositionCode:'QA-SCALE-MGR'}];
+  if(text.includes('SELECT PositionCode,ReportsTo,RecordScope,IsActive'))return [{PositionCode:'QA-SCALE-MGR',RecordScope:'ORG',IsActive:1}];
+  if(text.includes(';WITH tree AS'))return [{Id:inputs.id,EmpId:null},{Id:43,EmpId:null}];
   if (/FROM wf\.v_AllSalesOrders WHERE CAST\(Id AS INT\) = @id/.test(text)) return [current];
   if (/NativeBookingApproval/.test(text)) return [{ HasAiReceipts: 0 }];
   if (/FROM dbo\.WGHD w WITH \(NOLOCK\)/.test(text) && /TOP 1/.test(text)) return scaleRows;

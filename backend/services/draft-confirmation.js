@@ -10,6 +10,7 @@ const {matchGiveawayItem,findMatchingQuota}=require('./giveaway-matcher');
 const {linePieces}=require('./giveaway-quota');
 const {captureBookingOrigin}=require('./initial-booking-ai');
 const {assertPricesAboveCost,assertPriceBookLinesSellable}=require('./cost-authority');
+const {hasRole,canConfirmWithoutCounterVerify}=require('./role-capabilities');
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status});};
 function assertLegacyRebateAllowed(so,env=process.env){
  const rebateDiscountAmt=Number(so.RebateDiscountAmt)||0;
@@ -50,9 +51,13 @@ async function confirmDraft({tx:confirmationTx,draftId,user,ip,expectedRevision,
  await require('./coupon-authorization-hold').assertCarrierHasNoActiveAuthorization(confirmationTx,so.Id,so.WfRef);
  if(expectedTripId!==undefined && Number(so.TripId||0)!==Number(expectedTripId||0)) fail('Trip membership changed; reload',409);
  if(expectedRevision!==undefined && Number(so.DocumentRevision)!==Number(expectedRevision)) fail('SO revision changed; reload',409);
- if(user.role==='SALES' && Number(so.SalesUserId)!==Number(user.sub)) fail('Cannot confirm another salesperson document',403);
- if(user.role!=='ADMIN' && !so.VerifiedAt) fail('ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (FR-022)');
+ if(!hasRole(user,'COUNTER_SALES','APPROVER','ACCOUNTING','MANAGER','C_LEVEL','ADMIN') && hasRole(user,'SALES') && Number(so.SalesUserId)!==Number(user.sub)) fail('Cannot confirm another salesperson document',403);
+ if(!canConfirmWithoutCounterVerify(user) && !so.VerifiedAt) fail('ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (FR-022)');
  const isControlTicket = Boolean(so.IsControlTicket) || so.TruckPlate === 'ตั๋วคุม' || so.SoPrefix === 'AI';
+ if(isControlTicket){
+  const roles=require('./role-capabilities'),actor=require('./business-identity').actorPerspective(user);
+  if(!roles.hasPermission(user,'so.control-ticket')||!roles.hasPermission(actor,'so.control-ticket'))fail('เฉพาะ Counter Sale และผู้มีสิทธิ์เท่านั้นที่จำหน่ายตั๋วปุ๋ยได้',403);
+ }
  const isNoTruck = Boolean(so.NoTruckRequired) || isControlTicket;
  if (isControlTicket) {
    so.TruckPlate = 'ตั๋วคุม';

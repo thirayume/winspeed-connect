@@ -39,6 +39,12 @@ const readInputVal = (inputs, key) => {
 };
 
 const db = h.installDbStub(({ kind, text, inputs, proc }) => {
+  if(text.includes('SELECT a.TripId, a.RequestedBy')){const row=state.approvals.find(a=>a.Id===Number(inputs.id));return row?[{...row,TripCreatedBy:state.trip.CreatedBy}]:[];}
+  if(text.includes('AS ForeignMember')){const allowed=Object.entries(inputs).filter(([k])=>k.startsWith('tripApprovalOutside_')).map(([,v])=>Number(v));return state.members.some(m=>!allowed.includes(Number(m.SalesUserId)))?[{ForeignMember:1}]:[];}
+  if(text.includes('SELECT Id, EmpId, PositionCode'))return [{Id:Number(inputs.id),EmpId:null,PositionCode:[20,31].includes(Number(inputs.id))?'QA-TRIP-MANAGER':Number(inputs.id)===43?'QA-TRIP-SALES':null}];
+  if(text.includes('SELECT PositionCode,ReportsTo,RecordScope,IsActive'))return [{PositionCode:inputs.pos,IsActive:1,RecordScope:'ORG'}];
+  if(text.includes(';WITH tree AS'))return inputs.pos==='QA-TRIP-MANAGER'?[{Id:Number(inputs.id),EmpId:null},{Id:43,EmpId:null}]:[{Id:Number(inputs.id),EmpId:null}];
+
   if (kind === 'proc' || /sp_ConfirmSalesOrder/i.test(String(proc || text))) {
     const soId = Number(readInputVal(inputs, 'SoId') || 1);
     return { recordset: [], rowsAffected: [1], output: { NewSoid: String(90000 + soId) } };
@@ -108,7 +114,7 @@ const db = h.installDbStub(({ kind, text, inputs, proc }) => {
     return tid === state.trip.TripId ? [{ ...state.trip }] : [];
   }
 
-  if (/FROM wf\.v_TripMember/i.test(text)) {
+  if (/FROM wf\.v_TripMember/i.test(text)&&!/FROM wf\.TripMultiCustomerApproval/i.test(text)) {
     return state.members.map(m => ({ ...m }));
   }
 
@@ -246,6 +252,15 @@ test.after(async () => {
 const sales = { sub: 43, role: 'SALES' };
 const approver = { sub: 20, role: 'APPROVER' };
 const manager = { sub: 31, role: 'MANAGER' };
+
+test('a mixed trip cannot be approved through one in-scope requester when another member belongs to a different branch',async()=>{
+ resetState();clearSettingCache();
+ const requested=await app.call('POST','/api/trips/10/multi-cust-approval',{body:{reason:'QA mixed branch'},user:sales});
+ assert.equal(requested.status,201);
+ state.members.push({...state.members[0],MemberId:103,SalesUserId:99,CustId:'QA-OUTSIDE'});
+ const result=await app.call('PATCH',`/api/edit-requests/trip-approvals/${requested.body.id}/approve`,{body:{note:'QA must reject'},user:manager});
+ assert.equal(result.status,404);assert.equal(state.approvals[0].Status,'PENDING');
+});
 
 test('unit: distinct customer snapshot counts multiple bills for same customer as 1 customer and excludes cancelled bills', () => {
   const singleCustTwoBills = computeTripCustomerSnapshot([

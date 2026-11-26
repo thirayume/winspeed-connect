@@ -475,14 +475,18 @@ router.get('/access-as/candidates', requireAuth, requireCapability('access-as'),
     const actor = await onIdentityDatabase(() => loadAppUserById(req.user.actorSub || req.user.sub));
     if (!actor || !actor.IsActive || !hasPermission({role:actor.Role,roles:req.user.actorRoles,permissions:req.user.isImpersonating?req.user.actorPermissions:req.user.permissions},'access-as')) return res.json([]);
 
-    const result = await onIdentityDatabase(() => wfQuery(
+    const result = await onIdentityDatabase(async() => {
+      const actual=require('../services/business-identity').actorPerspective(req.user);
+      const scope=await require('../services/visible-scope').getVisibleScope({...actual,identityMapping:undefined});
+      const filter=require('../services/visible-scope').scopeFilter(scope,{userCol:'u.Id',empCol:'u.EmpId',prefix:'accessCandidate'});
+      return wfQuery(
       `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.RoleCode, u.EmpId, u.IsActive,
               e.EmpCode, e.EmpName
        FROM wf.AppUser u
        LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = u.EmpId
-       WHERE u.IsActive = 1
-       ORDER BY u.DisplayName`
-    ));
+       WHERE u.IsActive = 1 AND ${filter.sql}
+       ORDER BY u.DisplayName`,filter.inputs);
+    });
     const actorId = getUserId(actor);
     const rows = (result.recordset || [])
       .filter(u => getUserId(u) !== actorId && canAccessAs(actor.Role, u.Role))
@@ -517,6 +521,7 @@ router.post('/access-as', requireAuth, requireCapability('access-as'), async (re
       return res.json({ accessToken, user: toClientUser(actor) });
     }
     if (!canAccessAs(actor.Role, target.Role)) return res.status(403).json({ message: 'Access As is not allowed for this role' });
+    if(!await onIdentityDatabase(()=>require('../services/visible-scope').canViewSalesUser(require('../services/business-identity').actorPerspective(req.user),targetId)))return res.status(403).json({message:'บัญชีเป้าหมายอยู่นอกสายงานที่มีสิทธิ์'});
 
     // R12 item 4: switching directly from one target to another closes the previous session first
     const currentEffective = Number(req.user.sub);
@@ -799,6 +804,7 @@ router.post('/users', requireAuth, requireCapability('users.manage'), requireCap
     const newRole = codes ? null : String(role || '').toUpperCase();
     if(!codes && !Object.keys(ACCESS_AS_ROLE_RANK).includes(newRole))return res.status(400).json({message:'Role ไม่ถูกต้อง'});
     if(req.user.isImpersonating)return res.status(403).json({message:'ออกจาก Access As ก่อนสร้างผู้ใช้'});
+    if(empId&&callerRole!=='ADMIN')return res.status(403).json({message:'เฉพาะ ADMIN เท่านั้นที่ผูก Employee ให้บัญชีใหม่ได้'});
     const targetRank = roleRank(newRole);
 
     // Only ADMIN may create users with role ADMIN or C_LEVEL
@@ -814,6 +820,7 @@ router.post('/users', requireAuth, requireCapability('users.manage'), requireCap
     const result = await wfTransaction(async tx=>{
       await roleWrite.lockPolicy(tx,req.user.id,'roles.manage');
       await roleWrite.lockPolicy(tx,req.user.id,'users.manage');
+      if(empId)await require('../services/employee-link').validateEmployeeLink(tx,null,empId);
       const primary=codes?await roleWrite.validateAssignment(tx,codes,callerRole):{BaseRole:newRole};
       const execute=async(text,inputs)=>{const q=tx.request();for(const [k,v] of Object.entries(inputs))q.input(k,v.type,v.value);return q.query(text);};
       const result = await execute(
@@ -854,6 +861,7 @@ router.post('/users', requireAuth, requireCapability('users.manage'), requireCap
 // GET /api/auth/users (ADMIN/MANAGER/ACCOUNTING)
 router.get('/users', requireAuth, requireCapability('users.manage'), async (req, res) => {
   try {
+    const accessFilter=await organizationUserFilter(req.user);
     const result = await wfQuery(
       `SELECT u.Id, u.Username, u.DisplayName, u.Role, u.RoleCode, u.EmpId, u.IsActive, u.CreatedAt,
               u.Address, u.Phone, u.Email, u.IdCardNo, u.TaxId, u.SignatureFile,
@@ -866,7 +874,7 @@ router.get('/users', requireAuth, requireCapability('users.manage'), async (req,
        LEFT JOIN dbo.EMEmp e WITH (NOLOCK) ON e.EmpID = u.EmpId
        LEFT JOIN wf.OrgPosition p ON p.PositionCode = u.PositionCode
        LEFT JOIN wf.v_NearestApprover na ON na.PositionCode = u.PositionCode
-       ORDER BY u.DisplayName`
+       WHERE ${accessFilter.sql} ORDER BY u.DisplayName`,accessFilter.inputs
     );
     const memberships = (await wfQuery('SELECT r.UserId, r.RoleCode, p.BaseRole FROM wf.vUserRole r JOIN wf.RoleProfile p ON p.Code = r.RoleCode')).recordset;
     res.json(result.recordset.map(u => {
@@ -921,6 +929,7 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
     if (!targetUser) return res.status(404).json({ message: 'ไม่พบผู้ใช้นี้' });
     const targetRole = String(targetUser.Role).toUpperCase();
     const targetRank = roleRank(targetRole);
+    if(callerRole!=='ADMIN'&&(req.body.empId!==undefined||req.body.positionCode!==undefined))return res.status(403).json({message:'เฉพาะ ADMIN เท่านั้นที่แก้ Employee หรือย้ายสายบังคับบัญชาได้'});
 
     if (callerRole !== 'ADMIN') {
       // Only ADMIN may edit users with role ADMIN or C_LEVEL
@@ -1008,13 +1017,15 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
       if (hasPos >= 0) sets[hasPos] = 'PositionCode = NULL';
       else sets.push('PositionCode = NULL');
     }
-    const securityChanged = codes || (role!==undefined && role!==targetUser.Role)
+    const securityChanged = (empId!==undefined && String(empId||'')!==String(targetUser.EmpId||'')) || positionCode!==undefined || codes || (role!==undefined && role!==targetUser.Role)
       || (isActive!==undefined && isActive!==Boolean(targetUser.IsActive))
       || password || (lineUserId!==undefined && (lineUserId||null)!==(targetUser.LineUserId||null));
     if(securityChanged) sets.push('AuthVersion = AuthVersion + 1');
     sets.push('UpdatedAt = GETUTCDATE()');
     const __r = await wfTransaction(async tx=>{
       await roleWrite.lockPolicy(tx,callerId,'users.manage');
+      await assertManagedUserInScope(req.user,targetId,(text,inputs)=>{const r=tx.request();for(const[k,v]of Object.entries(inputs||{}))r.input(k,v.type,v.value);return r.query(text);});
+      if(empId!==undefined)await require('../services/employee-link').validateEmployeeLink(tx,targetId,empId,req.body.expectedEmpId,req.body.expectedEmpId!==undefined);
       if(codes){
         await roleWrite.lockPolicy(tx,callerId,'roles.manage');
         await roleWrite.validateAssignment(tx,codes,callerRole);
@@ -1076,15 +1087,58 @@ router.patch('/users/:id', requireAuth, requireCapability('users.manage'), async
 // คืนจำนวนคนที่ถือแต่ละตำแหน่งมาด้วย เพราะบางตำแหน่งมีได้คนเดียว (ผจก.ฝ่าย)
 // แต่บางตำแหน่งมีได้หลายคน (พนักงานขายเขต) — หน้าจอต้องเห็นก่อนตัดสินใจ
 function mayViewOrganization(req,res,next) {
-  if (hasPermission(req.user,'users.manage') || hasRole(req.user,'ADMIN','MANAGER','ACCOUNTING')) return next();
+  if (hasPermission(req.user,'users.manage') || hasRole(req.user,'ADMIN','C_LEVEL','MANAGER','ACCOUNTING')) return next();
   return res.status(403).json({message:'ไม่มีสิทธิ์ดูผังองค์กร'});
 }
 
 function mayManageOrganization(req, res, next) {
   if (req.user?.isImpersonating) return res.status(403).json({ message: 'ไม่อนุญาตให้แก้ไขผังองค์กรขณะจำลองสิทธิ์' });
-  if (hasPermission(req.user, 'users.manage') || hasRole(req.user, 'ADMIN')) return next();
+  if (hasRole(req.user, 'ADMIN')) return next();
   return res.status(403).json({ message: 'ไม่มีสิทธิ์จัดการผังองค์กร' });
 }
+
+router.get('/native-employees/:code',requireAuth,mayManageOrganization,async(req,res)=>{
+ try{const data=await require('../services/organization-employee').read(require('../db'),req.params.code);res.json({data,database:require('../db').getDbName?.()||require('../services/active-database').primaryDatabase()});}
+ catch(e){res.status(e.status||500).json({message:e.message});}
+});
+router.put('/native-employees/:code',requireAuth,mayManageOrganization,async(req,res)=>{
+ try{res.json(await require('../services/organization-employee').save(require('../db'),req.user,{...req.body,code:req.params.code}));}
+ catch(e){res.status(e.status||500).json({message:e.message});}
+});
+
+async function organizationUserFilter(user,queryFn=wfQuery){
+ const {getVisibleScope,scopeFilter}=require('../services/visible-scope'),{actorPerspective}=require('../services/business-identity');
+ const filters=await Promise.all([...new Set([user,actorPerspective(user)])].map(async(u,i)=>scopeFilter(await getVisibleScope(u,queryFn),{userCol:'u.Id',empCol:'u.EmpId',prefix:'directory'+i})));
+ return {sql:filters.map(f=>'('+f.sql+')').join(' AND '),inputs:Object.assign({},...filters.map(f=>f.inputs))};
+}
+async function assertManagedUserInScope(user,id,queryFn=wfQuery){
+ const f=await organizationUserFilter(user,queryFn);if(f.sql==='(1=1)')return;
+ const row=(await queryFn(`SELECT u.Id FROM wf.AppUser u WHERE u.Id=@managedId AND ${f.sql}`,{...f.inputs,managedId:{type:sql.Int,value:id}})).recordset?.[0];
+ if(!row)throw Object.assign(Error('ไม่พบผู้ใช้ในสายงาน'),{status:404});
+}
+
+router.get('/scope-groups',requireAuth,async(req,res)=>{
+ try{
+  const context=require('../services/request-context'),access=require('../services/secondary-budget-report-access');
+  const scopes=await context.runWithUser({...req.user,orgBranch:null},()=>access.businessScopes(req.user));
+  const filters=scopes.map((s,i)=>require('../services/visible-scope').scopeFilter(s,{userCol:'u.Id',prefix:'groups'+i}));
+  const rows=(await wfQuery(`SELECT DISTINCT p.PositionCode,p.PositionName,p.ReportsTo,p.Tier FROM wf.AppUser u
+   JOIN wf.OrgPosition p ON p.PositionCode=u.PositionCode AND p.IsActive=1
+   WHERE ${filters.map(f=>'('+f.sql+')').join(' AND ')} ORDER BY p.Tier,p.PositionCode`,Object.assign({},...filters.map(f=>f.inputs)))).recordset||[];
+  res.json({groups:rows,database:require('../db').getDbName?.()||require('../services/active-database').primaryDatabase(),all:scopes.every(s=>s.all===true)});
+ }catch(e){res.status(e.status||503).json({message:'โหลดขอบเขตสายงานไม่สำเร็จ'});}
+});
+router.get('/sales-territories',requireAuth,async(req,res)=>{
+ try{res.json({data:await require('../services/organization-territories').list(req.user),database:require('../db').getDbName?.()||require('../services/active-database').primaryDatabase()});}
+ catch(e){res.status(e.status||503).json({message:e.message});}
+});
+router.put('/sales-territories/:code',requireAuth,mayManageOrganization,async(req,res)=>{
+ try{
+  const database=require('../db').getDbName?.()||require('../services/active-database').primaryDatabase();
+  if(String(req.body.expectedDatabase||'').toLowerCase()!==String(database).toLowerCase())return res.status(409).json({message:'ฐานข้อมูลเปลี่ยน กรุณาโหลดพื้นที่ใหม่'});
+  res.json(await require('../services/organization-territories').save(req.user,{...req.body,code:req.params.code}));
+ }catch(e){res.status(e.status||500).json({message:e.message});}
+});
 
 async function wouldCreateCycle(positionCode, newReportsTo) {
   if (!newReportsTo) return false;
@@ -1107,21 +1161,35 @@ async function wouldCreateCycle(positionCode, newReportsTo) {
 
 router.get('/org-users', requireAuth, mayViewOrganization, async (req,res) => {
   try {
+    const filter=await organizationUserFilter(req.user);
     const result = await wfQuery(`SELECT u.Id,u.Username,u.DisplayName,u.Role,u.IsActive,u.EmpId,u.PositionCode,e.EmpCode,e.EmpName
-      FROM wf.AppUser u LEFT JOIN dbo.EMEmp e ON e.EmpID=u.EmpId ORDER BY u.DisplayName`);
+      FROM wf.AppUser u LEFT JOIN dbo.EMEmp e ON e.EmpID=u.EmpId WHERE ${filter.sql} ORDER BY u.DisplayName`,filter.inputs);
     res.json(result.recordset || []);
   } catch { res.status(503).json({message:'โหลดรายชื่อในผังองค์กรไม่สำเร็จ'}); }
 });
 router.get('/org-positions', requireAuth, mayViewOrganization, async (req, res) => {
   try {
+    const scopes=await require('../services/secondary-budget-report-access').businessScopes(req.user);
+    const inputs={},conditions=[];
+    for(const [index,scope] of scopes.entries()){
+      if(scope.all)continue;
+      const codes=[...new Set(scope.positionCodes||[])];
+      if(!codes.length){conditions.push('1=0');continue;}
+      const keys=codes.map((code,n)=>{const key=`orgPosition${index}P${n}`;inputs[key]={type:sql.VarChar(30),value:code};return '@'+key;});
+      conditions.push(`p.PositionCode IN (${keys.join(',')})`);
+    }
+    if(!scopes.length)conditions.push('1=0');
+    const people=await organizationUserFilter(req.user);
+    Object.assign(inputs,people.inputs);
     const r = await wfQuery(`
       SELECT p.PositionCode, p.PositionName, p.ReportsTo, p.OrgUnit, p.Tier,
-             p.DefaultRole, p.CanApprove, p.IsActive, p.Note,
+             p.DefaultRole, p.CanApprove, p.IsActive, p.Note,p.RecordScope,
              mgr.PositionName AS ReportsToName,
-             (SELECT COUNT(*) FROM wf.AppUser u WHERE u.PositionCode = p.PositionCode) AS AssignedCount
+             (SELECT COUNT(*) FROM wf.AppUser u WHERE u.PositionCode = p.PositionCode AND ${people.sql}) AS AssignedCount
       FROM   wf.OrgPosition p
       LEFT   JOIN wf.OrgPosition mgr ON mgr.PositionCode = p.ReportsTo
-      ORDER  BY p.OrgUnit, p.Tier, p.PositionName`);
+      ${conditions.length?'WHERE '+conditions.map(c=>'('+c+')').join(' AND '):''}
+      ORDER  BY p.OrgUnit, p.Tier, p.PositionName`,inputs);
     res.json(r.recordset);
   } catch (e) {
     console.error(e);
@@ -1139,6 +1207,8 @@ router.post('/org-positions', requireAuth, mayManageOrganization, async (req, re
     const reportsTo = req.body.reportsTo ? String(req.body.reportsTo).trim().toUpperCase() : null;
     const defaultRole = req.body.defaultRole ? String(req.body.defaultRole).trim() : null;
     const canApprove = Boolean(req.body.canApprove);
+    const recordScope=req.body.recordScope||'ORG';
+    if(!['ORG','GLOBAL'].includes(recordScope)||recordScope==='GLOBAL'&&!hasRole(req.user,'ADMIN'))return res.status(403).json({message:'เฉพาะ ADMIN กำหนดขอบเขตข้ามสายงานได้'});
     const note = req.body.note ? String(req.body.note).trim() : null;
 
     if (!code || !/^[A-Z0-9_-]{2,30}$/.test(code)) {
@@ -1168,8 +1238,8 @@ router.post('/org-positions', requireAuth, mayManageOrganization, async (req, re
     }
 
     await require('../services/organization-audit-write').writeOrganizationChange({ statement: `
-      INSERT INTO wf.OrgPosition (PositionCode, PositionName, ReportsTo, OrgUnit, Tier, DefaultRole, CanApprove, IsActive, Note)
-      VALUES (@code, @name, @reportsTo, @unit, @tier, @defaultRole, @canApprove, 1, @note)
+      INSERT INTO wf.OrgPosition (PositionCode, PositionName, ReportsTo, OrgUnit, Tier, DefaultRole, CanApprove, IsActive, Note,RecordScope)
+      VALUES (@code, @name, @reportsTo, @unit, @tier, @defaultRole, @canApprove, 1, @note,@recordScope)
     `, parameters: {
       code: { type: sql.VarChar(30), value: code },
       name: { type: sql.NVarChar(150), value: name },
@@ -1178,9 +1248,9 @@ router.post('/org-positions', requireAuth, mayManageOrganization, async (req, re
       tier: { type: sql.TinyInt, value: tier },
       defaultRole: { type: sql.VarChar(20), value: defaultRole },
       canApprove: { type: sql.Bit, value: canApprove ? 1 : 0 },
-      note: { type: sql.NVarChar(300), value: note }
+      note: { type: sql.NVarChar(300), value: note },recordScope:{type:sql.VarChar(8),value:recordScope}
     }, user: req.user, action: 'POSITION_CREATE', target: code,
-      detail: { code, name, reportsTo, unit, tier, defaultRole, canApprove, note } });
+      detail: { code, name, reportsTo, unit, tier, defaultRole, canApprove, note,recordScope } });
 
     res.status(201).json({
       ok: true,
@@ -1195,6 +1265,7 @@ router.post('/org-positions', requireAuth, mayManageOrganization, async (req, re
         IsActive: true,
         Note: note,
         AssignedCount: 0
+        ,RecordScope:recordScope
       }
     });
   } catch (e) {
@@ -1224,6 +1295,8 @@ router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (re
     const tier = req.body.tier !== undefined ? Math.max(1, Math.min(5, parseInt(req.body.tier, 10) || current.Tier)) : current.Tier;
     const defaultRole = req.body.defaultRole !== undefined ? (req.body.defaultRole ? String(req.body.defaultRole).trim() : null) : current.DefaultRole;
     const canApprove = req.body.canApprove !== undefined ? Boolean(req.body.canApprove) : Boolean(current.CanApprove);
+    const recordScope=req.body.recordScope||current.RecordScope||'ORG';
+    if(!['ORG','GLOBAL'].includes(recordScope)||recordScope!==current.RecordScope&&!hasRole(req.user,'ADMIN'))return res.status(403).json({message:'เฉพาะ ADMIN เปลี่ยนขอบเขตข้อมูลข้ามสายงานได้'});
     const isActive = req.body.isActive !== undefined ? Boolean(req.body.isActive) : Boolean(current.IsActive);
     const note = req.body.note !== undefined ? (req.body.note ? String(req.body.note).trim() : null) : current.Note;
 
@@ -1255,7 +1328,7 @@ router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (re
           DefaultRole = @defaultRole,
           CanApprove = @canApprove,
           IsActive = @isActive,
-          Note = @note
+          Note = @note,RecordScope=@recordScope
       WHERE PositionCode = @code
     `, parameters: {
       code: { type: sql.VarChar(30), value: code },
@@ -1266,9 +1339,9 @@ router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (re
       defaultRole: { type: sql.VarChar(20), value: defaultRole },
       canApprove: { type: sql.Bit, value: canApprove ? 1 : 0 },
       isActive: { type: sql.Bit, value: isActive ? 1 : 0 },
-      note: { type: sql.NVarChar(300), value: note }
+      note: { type: sql.NVarChar(300), value: note },recordScope:{type:sql.VarChar(8),value:recordScope}
     }, user: req.user, action: 'POSITION_UPDATE', target: code, expected: current,
-      detail: { before: current, after: { name, reportsTo, unit, tier, defaultRole, canApprove, isActive, note } } });
+      detail: { before: current, after: { name, reportsTo, unit, tier, defaultRole, canApprove, isActive, note,recordScope } } });
 
     res.json({
       ok: true,
@@ -1281,7 +1354,7 @@ router.put('/org-positions/:code', requireAuth, mayManageOrganization, async (re
         DefaultRole: defaultRole,
         CanApprove: canApprove,
         IsActive: isActive,
-        Note: note
+        Note: note,RecordScope:recordScope
       }
     });
   } catch (e) {
@@ -1364,18 +1437,18 @@ const DEPT_TO_UNIT = {
 
 router.get('/org-hints', requireAuth, mayViewOrganization, async (req, res) => {
   try {
-    // จับคู่ AppUser กับทะเบียนพนักงานด้วยชื่อ — ทางเดียวที่ใช้ได้จริง
-    // (EmpID / EmpCode / EMEmp.username จับคู่ไม่ได้เลยสักคน ตรวจแล้ว 3 ทาง)
+    // Employee IDs are the identity link; names may be shortened or duplicated.
+    const filter=await organizationUserFilter(req.user);
     const users = (await wfQuery(`
       SELECT u.Id, u.Username, u.DisplayName, u.Role, u.PositionCode,
              RTRIM(d.DeptName) AS WsDept,
              RTRIM(po.PostName) AS WsPost
       FROM   wf.AppUser u
-      LEFT   JOIN dbo.EMEmp  e  ON RTRIM(e.EmpName) = u.DisplayName
+      LEFT   JOIN dbo.EMEmp  e  ON e.EmpID=u.EmpId
       LEFT   JOIN dbo.EMDept d  ON d.DeptID = e.DeptID
       LEFT   JOIN dbo.EMPost po ON po.PostID = e.PostID
-      WHERE  u.IsActive = 1
-      ORDER  BY u.Id`)).recordset;
+      WHERE  u.IsActive = 1 AND ${filter.sql}
+      ORDER  BY u.Id`,filter.inputs)).recordset;
 
     const positions = (await wfQuery(`
       SELECT PositionCode, PositionName, OrgUnit, Tier, DefaultRole, CanApprove
@@ -1461,6 +1534,7 @@ router.delete('/users/:id', requireAuth, requireCapability('users.manage'), asyn
 
     const __r = await wfTransaction(async tx=>{
       await roleWrite.lockPolicy(tx,callerId,'users.manage');
+      await assertManagedUserInScope(req.user,targetId,(text,inputs)=>{const r=tx.request();for(const[k,v]of Object.entries(inputs||{}))r.input(k,v.type,v.value);return r.query(text);});
       const result=await roleWrite.query(tx,'DELETE FROM wf.AppUser WHERE Id=@id',{id:targetId});
       if (Number(result.rowsAffected?.[0]) !== 1) throw roleWrite.error('ไม่พบรายการที่ระบุ',404);
       await roleWrite.assertAdministrator(tx);

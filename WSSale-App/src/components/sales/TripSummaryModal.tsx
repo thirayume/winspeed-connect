@@ -1,13 +1,14 @@
 import { useCan } from '../../utils/capabilities';
+import { DocumentDate } from '../common/DocumentDate';
 import { useState, useEffect, useRef } from 'react';
 import { X, Truck, Package, Clock, FileText, CheckCircle2, ShieldAlert, Printer, Edit, AlertTriangle, Plus, Send, Users, Check, Undo2 } from 'lucide-react';
-import type { SalesOrder, EMGood } from '../../types';
+import type { SalesOrder, EMGood, TruckType } from '../../types';
 import { useErpStore } from '../../store/erp-store';
 import { useTripStore } from '../../store/trip-store';
 import { useAppStore } from '../../store/app-store';
 import {
   cancelSO, confirmSO, moveToPicking, createUnlockRequest, createQuotationFromSoTrip,
-  confirmTrip, submitTripPlan, createTrip, updateTrip, fetchTrip, fetchTruckPlates, updateLoadPlan, acknowledgeLoadPlan,
+  confirmTrip, submitTripPlan, createTrip, updateTrip, fetchTrip, fetchTruckPlates, fetchTruckTypes, updateLoadPlan, acknowledgeLoadPlan,
   fetchLoadingPlan, fetchSystemSettings, fetchGoods,
   requestTripMultiCustApproval, cancelTripMultiCustApproval, approveTripApproval, rejectTripApproval,
   type MultiCustTripApprovalSummary,
@@ -73,6 +74,8 @@ export function TripSummaryModal({
   const [warehouseAckAt, setWarehouseAckAt] = useState<string | null>(null);
   const [loadPlanLines, setLoadPlanLines] = useState<any[]>([]);
   const [capacityInfo, setCapacityInfo] = useState<any>(null);
+  const [truckTypesList, setTruckTypesList] = useState<TruckType[]>([]);
+  const [warehouseTruckTypeId, setWarehouseTruckTypeId] = useState<string>('');
   const [serverCustCodeByOrderId, setServerCustCodeByOrderId] = useState<Record<string, string>>({});
   const idempotencyKeyRef = useRef<string>('');
 
@@ -83,7 +86,12 @@ export function TripSummaryModal({
         setLoadPlanRevision(Number(planRes.trip.loadPlanRevision || 1));
         setWarehouseAckAt(planRes.trip.warehouseAckAt || null);
       }
-      if (planRes.capacityInfo) setCapacityInfo(planRes.capacityInfo);
+      if (planRes.capacityInfo) {
+        setCapacityInfo(planRes.capacityInfo);
+        if (planRes.capacityInfo.truckTypeId) {
+          setWarehouseTruckTypeId(String(planRes.capacityInfo.truckTypeId));
+        }
+      }
       if (planRes.plan) setLoadPlanLines(planRes.plan);
     }).catch(err => {
       console.warn('fetchLoadingPlan failed', err);
@@ -109,6 +117,9 @@ export function TripSummaryModal({
         .catch(() => {});
       fetchGoods({ forSale: true })
         .then(res => { if (!disposed) setGoodsList(Array.isArray(res) ? res : []); })
+        .catch(() => {});
+      fetchTruckTypes()
+        .then(types => { if (!disposed) setTruckTypesList((types || []).filter(t => t.IsActive !== false)); })
         .catch(() => {});
       const draftIds = trip.orders
         .filter(o => o.status === 'DRAFT' && o.id && String(o.id) !== 'undefined')
@@ -167,11 +178,18 @@ export function TripSummaryModal({
     const effectiveTripId = (trip as any)?.tripId || (trip?.orders[0] as any)?.tripId;
     if (!effectiveTripId) return;
 
+    const chosenTypeId = warehouseTruckTypeId || capacityInfo?.truckTypeId || '';
+    if (capacityInfo?.status !== 'VERIFIED' && !chosenTypeId && truckTypesList.length > 0) {
+      await appAlert('กรุณาเลือกและยืนยันชนิดรถขนส่งก่อนรับทราบแผนจัดของ (เนื่องจากฝ่ายขายยังไม่ได้ระบุชนิดรถไว้)', 'warning');
+      return;
+    }
+
     setBusy(true);
     try {
       const ackRes = await acknowledgeLoadPlan(effectiveTripId, {
         expectedPlanRevision: loadPlanRevision,
-        note: 'คลังรับทราบแผนจัดของผ่านหน้าจอสรุปเที่ยวรถ'
+        truckTypeId: chosenTypeId || undefined,
+        note: 'คลังรับทราบแผนจัดของและยืนยันชนิดรถผ่านหน้าจอสรุปเที่ยวรถ'
       });
       setLoadPlanStatus('WAREHOUSE_ACK');
       setWarehouseAckAt(ackRes.warehouseAckAt || new Date().toISOString());
@@ -1124,21 +1142,47 @@ export function TripSummaryModal({
                 </div>
               )}
 
-              {/* Capacity info banner */}
+              {/* Capacity info banner & Warehouse Truck Type Confirmation */}
               {capacityInfo && (
-                <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-[#0C447C]">
-                  <div>
-                    <span className="font-bold">พิกัดรถ: </span>
-                    <span>{capacityInfo.truckTypeName || 'รถพ่วงบรรทุก'}</span>
-                    {capacityInfo.maxWeightMain != null && (
-                      <span className="ml-1 text-gray-600">
-                        (ตัวแม่ {capacityInfo.maxWeightMain} ตัน + ตัวลูก {capacityInfo.maxWeightTrailer} ตัน = พิกัดบรรทุก {capacityInfo.ratedCapacityTon} ตัน)
-                      </span>
-                    )}
+                <div className="flex flex-col gap-2 p-2.5 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-[#0C447C]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="font-bold">พิกัดรถ: </span>
+                      <span>{capacityInfo.truckTypeName || 'ยังไม่ระบุชนิดรถ'}</span>
+                      {capacityInfo.maxWeightMain != null && (
+                        <span className="ml-1 text-gray-600">
+                          (ตัวแม่ {capacityInfo.maxWeightMain} ตัน + ตัวลูก {capacityInfo.maxWeightTrailer} ตัน = พิกัดบรรทุก {capacityInfo.ratedCapacityTon} ตัน)
+                        </span>
+                      )}
+                    </div>
+                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                      capacityInfo.status === 'VERIFIED' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {({ VERIFIED: 'ยืนยันชนิดรถแล้ว', UNVERIFIED: 'รอยืนยันชนิดรถโดยคลังสินค้า', UNKNOWN: 'รอยืนยันชนิดรถโดยคลังสินค้า' } as Record<string, string>)[capacityInfo.status] || capacityInfo.status}
+                    </span>
                   </div>
-                  <span className="text-[10px] bg-blue-100 text-[#0C447C] px-2 py-0.5 rounded font-bold">
-                    {({ VERIFIED: 'ตรงกับข้อมูลรถ', UNVERIFIED: 'ยังไม่ยืนยันประเภทรถ' } as Record<string, string>)[capacityInfo.status] || capacityInfo.status}
-                  </span>
+
+                  {capacityInfo.status !== 'VERIFIED' && isWarehouseOrElevated && (
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-blue-100">
+                      <div className="flex items-center gap-1.5 text-amber-800 font-semibold">
+                        <AlertTriangle size={14} className="shrink-0 text-amber-600" />
+                        <span>ฝ่ายขายยังไม่ได้ระบุชนิดรถ — กรุณาเลือกและยืนยันชนิดรถโดยงานคลังสินค้า:</span>
+                      </div>
+                      <select
+                        data-testid="warehouse-confirm-truck-type"
+                        value={warehouseTruckTypeId}
+                        onChange={e => setWarehouseTruckTypeId(e.target.value)}
+                        className="border border-amber-300 rounded-lg px-2.5 py-1 text-xs font-bold bg-white text-gray-800 focus:border-[#0C447C] outline-none"
+                      >
+                        <option value="">-- เลือกชนิดรถเพื่อยืนยัน --</option>
+                        {truckTypesList.map(t => (
+                          <option key={t.Id} value={String(t.Id)}>
+                            {t.Name} (แม่ {t.MaxWeightMain || 0}t{t.MaxWeightTrailer ? ` + ลูก ${t.MaxWeightTrailer}t` : ''})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1261,7 +1305,7 @@ export function TripSummaryModal({
                               />
                             )}
                             <FileText size={16} />
-                            {order.wfRef || (order as any).docuNo || (order as any).importedDocuNo || `#${order.id}`}
+                            <span>{order.wfRef || (order as any).docuNo || (order as any).importedDocuNo || `#${order.id}`}<DocumentDate date={order.docuDate} draftDate={order.createdAt} isDraft={order.docuType === 0}/></span>
                             {order.truckPlate === 'ตั๋วคุม' && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold">ตั๋วคุม</span>}
                             {pendingReq && <ShieldAlert size={14} className="text-red-500" />}
                           </div>

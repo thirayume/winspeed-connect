@@ -20,8 +20,12 @@ require.cache[authPath] = { id: authPath, filename: authPath, loaded: true, expo
   canViewAllRebateAmounts: () => true,
 } };
 const db = h.installDbStub(({ text, inputs }) => {
+  if (/SELECT Id, EmpId, PositionCode/.test(text)) return [{ Id: inputs.id, EmpId: null, PositionCode: Number(inputs.id) === 102 ? 'QA-TRIP-MANAGER' : 'QA-TRIP-SALES' }];
+  if (/SELECT PositionCode,ReportsTo,RecordScope,IsActive/.test(text)) return [{ PositionCode: inputs.pos, IsActive: 1, RecordScope: 'ORG' }];
+  if (/;WITH tree AS/.test(text)) return Number(inputs.id) === 102 ? [{ Id: 102 }, { Id: 103 }] : [{ Id: inputs.id }];
   if (boardFixture && /SELECT t\.\*, u\.DisplayName AS CreatedByName/.test(text))
     return [{ TripId: 3, Status: 'DRAFT' }];
+  if (boardFixture && /FROM wf\.v_TripMember m/.test(text)) return boardFixture.members || [];
   if (boardFixture && /JOIN dbo\.WGHD w/.test(text)) return boardFixture.weigh || [];
   if (boardFixture && /FROM wf\.EditRequest r/.test(text)) return boardFixture.hold || [];
   if (boardFixture && /FROM wf\.TripMultiCustomerApproval a/.test(text)) return boardFixture.approval || [];
@@ -74,8 +78,9 @@ test('Access As must satisfy the real actor trip scope as well as the effective 
     assert.equal(query.inputs.tacU0, 102);
     assert.equal(query.inputs.tamU0, 102);
     assert.equal(query.inputs.taoutsideU0, 102);
-    assert.match(query.text, /t\.CreatedBy IN \(@tacU0\)/);
-    assert.match(query.text, /CASE WHEN \(outsideMember\.SalesUserId IN \(@taoutsideU0\)\) THEN 0 ELSE 1 END = 1/);
+    assert.equal(query.inputs.tacU1, 103);
+    assert.match(query.text, /t\.CreatedBy IN \(@tacU0, @tacU1\)/);
+    assert.match(query.text, /CASE WHEN \(outsideMember\.SalesUserId IN \(@taoutsideU0, @taoutsideU1\)\) THEN 0 ELSE 1 END = 1/);
     checkWindow(query);
   } finally { currentUser = { sub: 12, id: 12, role: 'ADMIN' }; }
 });
@@ -124,5 +129,30 @@ test('board fails closed for old or undated child evidence rather than showing a
     assert.equal(weight.inputs.tripStartDate, '2026-01-01');
     assert.equal(calls.find(c => /FROM wf\.EditRequest r/.test(c.text)).inputs.tripStartUtc.toISOString(), '2025-12-31T17:00:00.000Z');
     assert.ok(!JSON.stringify(response.body).includes('WindowEligible'));
+  } finally { boardFixture = null; }
+});
+
+test('board retains actual native dates and explicitly distinguishes draft creation dates', async () => {
+  boardFixture = { members: [
+    { TripId: 3, MemberKind: 'CONFIRMED', MemberId: '91', SOID: 91, DocuNo: 'QA-SAME', CustId: '1', DocuDate: '2026-10-31', DocuType: 103 },
+    { TripId: 3, MemberKind: 'DRAFT', MemberId: 'draft-1', DocuNo: 'QA-SAME', CustId: '1', DocuType: 0, CreatedAt: '2026-11-26T02:00:00Z' },
+    { TripId: 3, MemberKind: 'CONFIRMED', MemberId: '92', SOID: 92, DocuNo: 'QA-UNDATED', CustId: '1' },
+  ] };
+  try {
+    const start = db.calls.length;
+    const response = await app.call('GET', '/api/trips/board');
+    assert.equal(response.status, 200);
+    const bookings = response.body.data[0].customers.flatMap(c => c.bookings);
+    assert.equal(bookings[0].docuDate, '2026-10-31');
+    assert.equal(bookings[0].docuType, 103);
+    assert.equal(bookings[1].docuDate, null);
+    assert.equal(bookings[1].createdAt, '2026-11-26T02:00:00Z');
+    assert.equal(bookings[1].docuType, 0);
+    assert.equal(bookings[2].docuDate, null);
+    assert.equal(bookings[2].docuType, null);
+    const query = db.calls.slice(start).find(c => /FROM wf\.v_TripMember m/.test(c.text));
+    assert.match(query.text, /document\.SOID = m\.SOID/);
+    assert.match(query.text, /document\.DocuType = 103/);
+    assert.doesNotMatch(query.text, /(?:JOIN|ON)[^\n]*DocuNo\s*=/);
   } finally { boardFixture = null; }
 });

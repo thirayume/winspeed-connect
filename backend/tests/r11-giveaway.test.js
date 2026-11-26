@@ -25,6 +25,12 @@ const state = {
 };
 
 const db = h.installDbStub(({ text, inputs }) => {
+  if(text.includes('AS HasBorrow'))return [...new Set([inputs.effective,inputs.actor])].map(Id=>({Id,IsActive:1,MustChangePassword:0,HasBorrow:1,HasAdmin:0,HasCLevel:0,HasManager:Number(Id)===25?1:0,CanManage:Number(Id)===25?1:0}));
+  if(text.includes('fn_IsOrganizationSuperior'))return [{Allowed:Number(inputs.supervisor)===25&&[34,40,41].includes(Number(inputs.employee))?1:0}];
+  if(text.includes('SELECT Id, EmpId, PositionCode'))return [{Id:inputs.id,EmpId:null,PositionCode:Number(inputs.id)===25?'QA-GIVEAWAY-MGR':[34,40,41].includes(Number(inputs.id))?'QA-GIVEAWAY-SALES':null}];
+  if(text.includes('SELECT PositionCode,ReportsTo,RecordScope,IsActive'))return [{PositionCode:inputs.pos,ReportsTo:inputs.pos==='QA-GIVEAWAY-MGR'?null:'QA-GIVEAWAY-MGR',RecordScope:'ORG',IsActive:1}];
+  if(text.includes(';WITH tree AS'))return (Number(inputs.id)===25?[25,34,40,41]:[inputs.id]).map(Id=>({Id,EmpId:null}));
+  if(text.includes(';WITH leads AS'))return [25,34,40,41].map(Id=>({Id}));
   // shared
   if (/GIVEAWAY_BORROW_MAX_PCT/.test(text)) return state.borrowPct == null ? [] : [{ SettingValue: String(state.borrowPct) }];
   if (/GIVEAWAY_ALLOW_NEGATIVE_QUOTA/.test(text)) return state.allowNegativeQuota == null ? [] : [{ SettingValue: String(state.allowNegativeQuota) }];
@@ -153,7 +159,7 @@ test('U-6: a second approve of the same request → 409', async () => {
 test('U-6: an unrelated SALES user cannot reject someone else\'s request', async () => {
   state.borrow = pendingBorrow();
   const r = await app.call('PATCH', '/api/giveaway/borrow-requests/5/resolve', { body: { approve: false }, user: { sub: 99, role: 'SALES' } });
-  assert.equal(r.status, 403);
+  assert.equal(r.status, 404);
   const own = await app.call('PATCH', '/api/giveaway/borrow-requests/5/resolve', { body: { approve: false }, user: { sub: 41, role: 'SALES' } });
   assert.equal(own.status, 200, 'the requester may withdraw their own request');
   assert.ok(db.calls.some(c => c.kind === 'tx' && /INSERT INTO wf\.ChangeEvent/.test(c.text) && c.inputs.entityType === 'GIVEAWAY_BORROW_REQUEST'));

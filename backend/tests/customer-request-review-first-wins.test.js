@@ -13,6 +13,10 @@ require.cache[auth] = { id: auth, filename: auth, loaded: true, exports: {
   requireRole: () => (_req, _res, next) => next(), requireCapability: () => (_req, _res, next) => next(),
 } };
 const db = h.installDbStub(({ text, inputs }) => {
+  if(text.includes('SELECT Id, EmpId, PositionCode'))return [{Id:inputs.id,EmpId:null,PositionCode:'QA-CUSTOMER-MGR'}];
+  if(text.includes('SELECT PositionCode,ReportsTo,RecordScope,IsActive'))return [{PositionCode:'QA-CUSTOMER-MGR',IsActive:1,RecordScope:'ORG'}];
+  if(text.includes(';WITH tree AS'))return [{Id:inputs.id,EmpId:null},{Id:7,EmpId:null}];
+  if(text.includes('wf.fn_IsOrganizationSuperior'))return [{Allowed:inputs.employee===7?1:0}];
   if (text.includes("COL_LENGTH('wf.ChangeEvent'")) return [{ HasCol: 1 }];
   if (text.includes('SELECT * FROM wf.CustomerRequest WITH')) { assert.match(text, /UPDLOCK, HOLDLOCK/); return state.request ? [state.request] : []; }
   if (text.includes('UPDATE wf.CustomerRequest')) { state.updates++; state.request.Status = inputs.status; state.request.ReviewedBy = inputs.uid; return { rowsAffected: [1] }; }
@@ -24,7 +28,7 @@ db.stub.wfTransaction = async fn => { const before = structuredClone(state); try
 let app;
 test.before(async () => { app = await h.startApp([['/api/master', '../../routes/master']]); });
 test.after(async () => app.close());
-test.beforeEach(() => { state = { request: { Id: 42, Status: 'PENDING', WinspeedCustId: '12' }, updates: 0, synced: 0, audits: [] };
+test.beforeEach(() => { state = { request: { Id: 42, Status: 'PENDING', RequestedBy: 7, WinspeedCustId: '12' }, updates: 0, synced: 0, audits: [] };
   user = { sub: 8, actorSub: 8, role: 'MANAGER', actorRole: 'MANAGER', isImpersonating: false }; });
 const review = body => app.call('PATCH', '/api/master/customer-requests/42/review', { body });
 

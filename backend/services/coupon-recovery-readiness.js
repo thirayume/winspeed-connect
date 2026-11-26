@@ -35,12 +35,23 @@ async function resolveRecoverySupport(query) {
   if ((!legacyRecovery && !currentRecovery) || (!legacyEdit && !currentEdit) ||
       (currentEdit && !currentRecovery)) throw unavailable();
   const bridge=bridgeSchema.available(metadata);
+  const direct=bridgeSchema.directAvailable(metadata);
   if(bridge&&(!currentRecovery||!currentEdit))throw unavailable();
-  return { currentRecovery, currentEdit, bridge };
+  return { currentRecovery, currentEdit, bridge, direct };
 }
 
 async function assertRecoveryReadiness(query, { pendingOnly = false } = {}) {
-  const { currentRecovery, currentEdit, bridge } = await resolveRecoverySupport(query);
+  const { currentRecovery, currentEdit, bridge, direct } = await resolveRecoverySupport(query);
+  if(direct){
+    let rows;
+    try{
+      const policy=(await query("SELECT Enabled,wf.fn_Native116HooksReady() HooksReady FROM wf.Native116Contract WITH(HOLDLOCK) WHERE Version='NATIVE-116-DIRECT-v1'"))?.recordset;
+      if(!Array.isArray(policy)||policy.length!==1||![0,1,false,true].includes(policy[0].Enabled)||(Number(policy[0].Enabled)===1&&Number(policy[0].HooksReady)!==1))throw unavailable();
+    }catch(_){throw unavailable();}
+    try{rows=(await query("SELECT TOP 1 1 AS PendingNative116 FROM wf.Native116Stage WITH(HOLDLOCK) WHERE State='PENDING'"))?.recordset;}catch(_){throw unavailable();}
+    if(!Array.isArray(rows))throw unavailable();
+    if(rows.length)throw Object.assign(Error('WinSpeed กำลังบันทึกใบขนหรือมีรายการค้างตรวจสอบ กรุณารอแล้วโหลดข้อมูลใหม่'),{code:'COUPON_NATIVE116_PENDING_REVIEW',status:409});
+  }
   if(bridge){
     let rows;
     try{rows=(await query(`SELECT TOP 1 1 AS PendingCouponBridge FROM wf.CouponBridgePermit WITH(HOLDLOCK)

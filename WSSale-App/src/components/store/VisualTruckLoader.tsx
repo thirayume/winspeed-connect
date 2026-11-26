@@ -25,9 +25,9 @@ const getColorForProduct = (goodCode: string) => {
 
 import { appAlert, appPrompt } from '../ui/AppAlert';
 
-export const VisualTruckLoader = ({ 
-  order, onConfirm, onCancel 
-}: { 
+export const VisualTruckLoader = ({
+  order, onConfirm, onCancel
+}: {
   order: SalesOrder; onConfirm: (sequences: Record<number, number>, overloadReason?: string) => void; onCancel: () => void;
 }) => {
   const linesWithId = useMemo(() => {
@@ -39,17 +39,20 @@ export const VisualTruckLoader = ({
   const [truckTypesList, setTruckTypesList] = useState<TruckType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(true);
   const [truckType, setTruckType] = useState<TruckType | null>(null);
+  const [warehouseTypeConfirmed, setWarehouseTypeConfirmed] = useState<boolean>(false);
 
   useEffect(() => {
     fetchTruckTypes().then(types => {
       const activeTypes = types.filter(t => t.IsActive !== false);
       setTruckTypesList(activeTypes);
-      const category = predictTruckCategory(order.truckPlate);
-      const found = activeTypes.find(t => t.Id === category);
+      const explicitTypeId = (order as any).truckTypeId || (order as any).TruckTypeId;
+      const category = explicitTypeId || predictTruckCategory(order.truckPlate);
+      const found = activeTypes.find(t => String(t.Id) === String(category));
       setTruckType(found || activeTypes.find(t => t.Id === '10w') || activeTypes[0] || null);
+      setWarehouseTypeConfirmed(Boolean(explicitTypeId));
       setLoadingTypes(false);
     }).catch(e => { console.error(e); setLoadingTypes(false); });
-  }, [order.truckPlate]);
+  }, [order]);
 
   const [unassigned, setUnassigned] = useState<typeof linesWithId>([]);
   const [assigned, setAssigned] = useState<{main: typeof linesWithId, trailer: typeof linesWithId}>({ main: [], trailer: [] });
@@ -115,11 +118,11 @@ export const VisualTruckLoader = ({
 
     setUnassigned(prev => prev.filter(l => String(l.uid) !== uid));
     setAssigned(prev => {
-      const next = { 
+      const next = {
          main: prev.main.filter(l => String(l.uid) !== uid),
          trailer: prev.trailer.filter(l => String(l.uid) !== uid)
       };
-      
+
       if (targetIdx !== undefined) {
          next[zone].splice(targetIdx, 0, line);
       } else {
@@ -135,6 +138,10 @@ export const VisualTruckLoader = ({
       await appAlert('กรุณาจัดวางสินค้าให้ครบทุกรายการ', 'warning');
       return;
     }
+    if (!warehouseTypeConfirmed) {
+      await appAlert('กรุณาตรวจสอบและกดยืนยันชนิดรถขนส่งก่อนบันทึกการโหลดสินค้า (เนื่องจากฝ่ายขายยังไม่ได้ระบุชนิดรถไว้)', 'warning');
+      return;
+    }
 
     const mainWeight = assigned.main.reduce((acc, curr) => acc + curr.qtyTon, 0);
     const trailerWeight = assigned.trailer.reduce((acc, curr) => acc + curr.qtyTon, 0);
@@ -148,14 +155,14 @@ export const VisualTruckLoader = ({
     }
 
     const seqMapping: Record<number, number> = {};
-    
+
     assigned.main.forEach((l, idx) => {
       if (l.lineNum) seqMapping[l.lineNum] = idx + 101; // 101 to 199
     });
     assigned.trailer.forEach((l, idx) => {
       if (l.lineNum) seqMapping[l.lineNum] = idx + 201; // 201 to 299
     });
-    
+
     onConfirm(seqMapping, reason);
   };
 
@@ -165,7 +172,7 @@ export const VisualTruckLoader = ({
     const isOverloaded = totalWeight > maxWeight;
 
     return (
-      <div 
+      <div
          className={cn(
            "flex flex-col border-[3px] rounded-lg shadow-inner overflow-hidden shrink-0 w-[260px] sm:w-[280px] transition-all",
            isOverloaded ? "border-red-400 bg-red-50/30" : "border-slate-700 bg-slate-50",
@@ -192,9 +199,9 @@ export const VisualTruckLoader = ({
            {lines.map((line, idx) => {
              const color = getColorForProduct(line.goodCode || line.uid);
              return (
-               <motion.div 
+               <motion.div
                  layoutId={`line-${line.uid}`}
-                 key={line.uid} 
+                 key={line.uid}
                  draggable
                  onDragStartCapture={e => {
                    e.dataTransfer.setData('uid', String(line.uid));
@@ -229,7 +236,7 @@ export const VisualTruckLoader = ({
            })}
            </AnimatePresence>
            {selectedLine && !draggedUid && (
-              <button 
+              <button
                  onClick={() => { handleDropToZone(zone, String(selectedLine.uid)); }}
                  className="w-full py-3 border-2 border-dashed border-blue-400 bg-blue-50 hover:bg-blue-100 rounded-lg text-blue-700 font-bold text-sm transition-colors flex items-center justify-center gap-2"
               >
@@ -258,7 +265,7 @@ export const VisualTruckLoader = ({
         </div>
 
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
-          <div 
+          <div
             className="w-full lg:w-80 lg:h-full h-[40%] lg:border-r border-b lg:border-b-0 border-slate-200 bg-white flex flex-col shrink-0"
             onDragOver={e => e.preventDefault()}
             onDrop={e => {
@@ -310,19 +317,44 @@ export const VisualTruckLoader = ({
           </div>
 
           <div className="flex-1 bg-slate-200/50 flex flex-col items-center justify-start p-3 sm:p-6 overflow-hidden min-h-0 relative">
-            <div className="w-full flex justify-center mb-4 shrink-0">
-               <select 
-                 value={truckType?.Id || ''}
-                 onChange={e => {
-                   const t = truckTypesList.find(x => x.Id === e.target.value);
-                   if (t) setTruckType(t);
-                 }}
-                 className="w-full max-w-xs px-4 py-2.5 rounded-lg border border-slate-300 bg-white shadow-sm text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23475569%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[length:1.25em_1.25em] bg-[right_0.5rem_center] bg-no-repeat pr-10"
-               >
-                 {truckTypesList.map(t => (
-                   <option key={t.Id} value={t.Id}>{t.Name}</option>
-                 ))}
-               </select>
+            <div className="w-full flex flex-col items-center gap-2 mb-4 shrink-0">
+               <div className="flex flex-wrap items-center justify-center gap-2 w-full">
+                 <select
+                   data-testid="visual-loader-truck-type"
+                   value={truckType?.Id || ''}
+                   onChange={e => {
+                     const t = truckTypesList.find(x => x.Id === e.target.value);
+                     if (t) {
+                       setTruckType(t);
+                       setWarehouseTypeConfirmed(true);
+                     }
+                   }}
+                   className="w-full max-w-xs px-4 py-2.5 rounded-lg border border-slate-300 bg-white shadow-sm text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2224%22%20height%3D%2224%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23475569%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-[length:1.25em_1.25em] bg-[right_0.5rem_center] bg-no-repeat pr-10"
+                 >
+                   {truckTypesList.map(t => (
+                     <option key={t.Id} value={t.Id}>{t.Name}</option>
+                   ))}
+                 </select>
+                 {!warehouseTypeConfirmed ? (
+                   <button
+                     type="button"
+                     data-testid="btn-confirm-warehouse-truck-type"
+                     onClick={() => setWarehouseTypeConfirmed(true)}
+                     className="px-3 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-sm transition-colors"
+                   >
+                     ✓ ยืนยันชนิดรถนี้ (คลังสินค้า)
+                   </button>
+                 ) : (
+                   <span className="px-2.5 py-1.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-bold border border-emerald-200">
+                     ✓ ยืนยันชนิดรถแล้ว ({truckType?.Name})
+                   </span>
+                 )}
+               </div>
+               {!warehouseTypeConfirmed && (
+                 <div className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 text-center">
+                   ⚠️ บิลนี้ยังไม่ได้ระบุชนิดรถไว้ก่อนหน้า — กรุณาเลือกชนิดรถหรือกด <strong>"ยืนยันชนิดรถนี้ (คลังสินค้า)"</strong>
+                 </div>
+               )}
             </div>
 
             <div className="w-full h-full flex flex-col items-center justify-start pt-2 overflow-auto pb-8">
@@ -339,7 +371,7 @@ export const VisualTruckLoader = ({
                     </div>
                     {renderBed('main', truckType.Id === 'container' ? 'Container' : 'ตัวแม่ (Main)', truckType.MaxWeightMain || 15)}
                   </div>
-                  
+
                   {/* Trailer Bed */}
                   {(truckType.MaxWeightTrailer || 0) > 0 && (
                     <div className="flex flex-col items-center relative mt-16 sm:mt-0">

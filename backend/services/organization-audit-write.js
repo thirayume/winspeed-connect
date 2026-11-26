@@ -17,7 +17,7 @@ async function writeOrganizationChange({ statement, parameters, user, action, ta
     const current = rows.find(row => key(row.PositionCode) === key(target));
     if (action === 'POSITION_CREATE' && current) throw Object.assign(Error('ORG_POSITION_CHANGED'), { status: 409 });
     if (expected) {
-      const fields = ['PositionName', 'ReportsTo', 'OrgUnit', 'Tier', 'DefaultRole', 'CanApprove', 'IsActive', 'Note'];
+      const fields = ['PositionName', 'ReportsTo', 'OrgUnit', 'Tier', 'DefaultRole', 'CanApprove', 'IsActive', 'Note','RecordScope'];
       if (!current || fields.some(k => String(current[k] ?? '') !== String(expected[k] ?? '')))
         throw Object.assign(Error('ORG_POSITION_CHANGED'), { status: 409 });
     }

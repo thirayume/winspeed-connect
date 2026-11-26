@@ -35,7 +35,7 @@ test('stale database, missing binding, inactive target and attempt audit failure
 });
 test('report list and financial report require both company roles and all-record scopes',async()=>{
  let r=await call('/api/reports/types');assert.equal(r.status,200);assert.equal(r.body.length,38);
- targetRole='SALES';r=await call('/api/reports/types');assert.equal(r.status,200);assert.equal(r.body.length,0);assert.equal((await call('/api/reports/daily-invoice/export')).status,403);
+ targetRole='SALES';r=await call('/api/reports/types');assert.equal(r.status,200);assert.ok(r.body.some(v=>v.key==='so-status'));assert.ok(!r.body.some(v=>v.key==='daily-invoice'));assert.equal((await call('/api/reports/daily-invoice/export')).status,403);
  targetRole='ACCOUNTING';targetPermissions=[];assert.equal((await call('/api/reports/costlist_sheet')).status,403);assert.equal((await call('/api/reports/daily-invoice/template')).status,503,'allowed role reaches native template resolution; none is seeded in this fixture');
 });
 test('different permitted roles retain budget read while target cannot acquire admin create rights',async()=>{
@@ -43,7 +43,7 @@ test('different permitted roles retain budget read while target cannot acquire a
 });
 test('both Access As parties need mapping/profiles; effective privilege cannot widen actor report scope',async()=>{
  const r=await call('/api/budget/plans','GET',undefined,{actorSub:8,actorRole:'ADMIN',impersonating:true});assert.equal(r.status,200);assert.equal(r.body.ids.actor,108);assert.equal(attempts.at(-1).actor,8);assert.equal(attempts.at(-1).businessActor,108);
- targetRole='SALES';const reports=await call('/api/reports/types','GET',undefined,{actorSub:8,actorRole:'ADMIN',impersonating:true});assert.equal(reports.status,200);assert.deepEqual(reports.body,[]);
+ targetRole='SALES';const reports=await call('/api/reports/types','GET',undefined,{actorSub:8,actorRole:'ADMIN',impersonating:true});assert.equal(reports.status,200);assert.ok(reports.body.some(v=>v.key==='so-status'));assert.ok(!reports.body.some(v=>v.key==='gl-sales-journal'));
 });
 test('unreviewed methods and routes remain closed and forged JWT authorization is ignored',async()=>{
  for(const [m,p]of [['PUT','/api/reports/catalog-config'],['POST','/api/reports/daily-invoice'],['PATCH','/api/budget/plans/111'],['POST','/api/budget/plans/111/unknown']])assert.equal((await call(p,m,{expectedDatabase:'secondary'})).status,409,p);

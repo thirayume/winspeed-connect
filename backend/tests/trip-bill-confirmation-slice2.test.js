@@ -16,7 +16,7 @@ const { requireRole } = require('../middleware/auth');
 test('R13 (Q1): Single bill confirm for a bill in an active trip returns 409', async () => {
   // Simulate logic in PATCH /api/so/:id/confirm
   function handleConfirm({ so, trip, userRole }) {
-    const allowed = ['SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'];
+    const allowed = ['SALES', 'COUNTER_SALES', 'MANAGER', 'ADMIN', 'C_LEVEL'];
     if (!allowed.includes(userRole)) {
       return { status: 403, body: { message: 'Forbidden' } };
     }

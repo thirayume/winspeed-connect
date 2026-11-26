@@ -6,6 +6,7 @@ const { retryOnDeadlock } = require('../services/db-retry');
 // The board only reads, so a read that loses a deadlock to a writer can simply run again
 const readQuery = (text, inputs) => retryOnDeadlock(() => wfQuery(text, inputs));
 const { requireAuth, requireRole, requireCapability, canViewAllRebateAmounts } = require('../middleware/auth');
+const { hasRole, canConfirmWithoutCounterVerify } = require('../services/role-capabilities');
 const { broadcast } = require('../services/socket');
 const {
   getBaseCustCode,
@@ -23,48 +24,7 @@ router.use(requireAuth);
 const { getVisibleScope, scopeFilter } = require('../services/visible-scope');
 const { actorPerspective, businessIds } = require('../services/business-identity');
 const { readGlobalDataWindow } = require('../services/global-data-window-store');
-async function tripScopeSql(user, alias = 't') {
-  const dataWindow = await readGlobalDataWindow();
-  const actor = actorPerspective(user);
-  const effectiveScope = await getVisibleScope(user);
-  const actorScope = actor === user ? effectiveScope : await getVisibleScope(actor);
-  const visibility = (scope, prefix) => {
-    if (scope.all) return { sql: '1=1', inputs: {} };
-    const created = scopeFilter(scope, { userCol: `${alias}.CreatedBy`, prefix: `${prefix}c` });
-    const member = scopeFilter(scope, { userCol: 'm.SalesUserId', prefix: `${prefix}m` });
-    // Board responses include every member and line of a selected trip. On a
-    // secondary database, don't expose a mixed trip just because one member is
-    // in scope. NULL owners are also treated as out of scope.
-    const foreignMember = scopeFilter(scope, { userCol: 'outsideMember.SalesUserId', prefix: `${prefix}outside` });
-    const fullTripScope = user.identityMapping ? ` AND NOT EXISTS (
-      SELECT 1 FROM wf.v_TripMember outsideMember WHERE outsideMember.TripId = ${alias}.TripId
-        AND CASE WHEN ${foreignMember.sql} THEN 0 ELSE 1 END = 1)` : '';
-    return {
-      sql: `((${created.sql} OR EXISTS (SELECT 1 FROM wf.v_TripMember m WHERE m.TripId = ${alias}.TripId AND ${member.sql}))${fullTripScope})`,
-      inputs: { ...created.inputs, ...member.inputs, ...(user.identityMapping ? foreignMember.inputs : {}) },
-    };
-  };
-  const effective = visibility(effectiveScope, 'te');
-  const realActor = visibility(actorScope, 'ta');
-  // A mixed trip must not silently omit older members: its loading plan and
-  // approval totals are computed from the complete trip. Hide the whole trip
-  // until it is reviewed rather than exposing or operating on old documents.
-  const windowSql = `${alias}.CreatedAt >= @tripStartUtc AND NOT EXISTS (
-    SELECT 1 FROM wf.v_TripMember tw
-    LEFT JOIN wf.SalesOrder draft ON tw.MemberKind='DRAFT' AND CAST(draft.Id AS VARCHAR(50))=tw.MemberId
-    LEFT JOIN dbo.SOHD native ON tw.MemberKind='CONFIRMED' AND native.SOID=tw.SOID AND native.DocuType=103
-    WHERE tw.TripId=${alias}.TripId AND (
-      (tw.MemberKind='DRAFT' AND (draft.Id IS NULL OR draft.CreatedAt IS NULL OR draft.CreatedAt < @tripStartUtc)) OR
-      (tw.MemberKind='CONFIRMED' AND (native.SOID IS NULL OR native.DocuDate IS NULL OR native.DocuDate < @tripStartDate)) OR
-      tw.MemberKind IS NULL OR tw.MemberKind NOT IN ('DRAFT','CONFIRMED')
-    ))`;
-  return {
-    sql: `(${windowSql}) AND (${effective.sql}) AND (${realActor.sql})`,
-    inputs: { ...effective.inputs, ...realActor.inputs,
-      tripStartUtc: { type: sql.DateTime2, value: dataWindow.utcInstant },
-      tripStartDate: { type: sql.Date, value: dataWindow.businessDate } },
-  };
-}
+const {tripScopeSql,assertTripScopeInTransaction}=require('../services/trip-record-scope');
 
 // Actions by trip id obey the same scope as the detail view (out of scope → 404)
 async function requireTripInScope(req, res, next) {
@@ -162,7 +122,15 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
     const idList = trips.map(t => Number(t.tripId)).filter(Number.isInteger).join(',');
 
     const [membersRes, draftLinesRes, confLinesRes, weighRes, holdRes, tripApprovalsRes, minCustThreshold] = await Promise.all([
-      readQuery(`SELECT * FROM wf.v_TripMember WHERE TripId IN (${idList})`),
+      readQuery(`SELECT m.*, document.DocuDate,
+          CASE WHEN m.MemberKind = 'DRAFT' THEN 0 ELSE document.DocuType END AS DocuType,
+          draft.CreatedAt
+        FROM wf.v_TripMember m
+        LEFT JOIN dbo.SOHD document ON document.SOID = m.SOID
+          AND m.MemberKind = 'CONFIRMED' AND document.DocuType = 103
+        LEFT JOIN wf.SalesOrder draft ON CONVERT(VARCHAR(50), draft.Id) = m.MemberId
+          AND m.MemberKind = 'DRAFT'
+        WHERE m.TripId IN (${idList})`),
 
       readQuery(`
         SELECT o.TripId, 'DRAFT' AS MemberKind, CAST(l.SoId AS VARCHAR(50)) AS MemberId,
@@ -376,6 +344,9 @@ router.get('/board', requireCapability('trip.view'), async (req, res) => {
           memberKind: m.memberKind,
           memberId: m.memberId,
           docuNo: m.docuNo,
+          docuDate: m.docuDate || null,
+          docuType: m.docuType ?? null,
+          createdAt: m.createdAt || null,
           soPrefix: m.soPrefix,
           status: m.status,
           soid: m.soid,
@@ -440,7 +411,7 @@ router.get('/:id', requireCapability('trip.view'), async (req, res) => {
     if (!trip.recordset[0]) return res.status(404).json({ message: 'ไม่พบ Trip นี้' });
 
     const orders = await wfQuery(`
-      SELECT o.Id, o.WfRef, o.SoPrefix, o.CustId, RTRIM(co.CustCode) AS CustCode, o.CustName, o.TruckPlate, o.Status, o.CreatedAt, o.NoTruckRequired, o.PSling, o.DeliveryDate, o.TripId
+      SELECT o.Id, o.WfRef, o.SoPrefix, o.CustId, RTRIM(co.CustCode) AS CustCode, o.CustName, o.TruckPlate, o.Status, o.CreatedAt, o.NoTruckRequired, o.PSling, o.DeliveryDate, o.TripId,CAST(NULL AS DATETIME) AS DocuDate,CAST(NULL AS SMALLINT) AS DocuType
       FROM wf.SalesOrder o
       LEFT JOIN dbo.EMCust co WITH (NOLOCK)
         ON co.CustID = CASE
@@ -453,7 +424,7 @@ router.get('/:id', requireCapability('trip.view'), async (req, res) => {
         END
       WHERE o.TripId = @id
       UNION ALL
-      SELECT soe.SOID AS Id, ISNULL(soe.WfRef, soh.DocuNo) AS WfRef, soe.SoPrefix, soh.CustID AS CustId, RTRIM(c.CustCode) AS CustCode, soh.CustName, soh.TransRegistration AS TruckPlate, 'CONFIRMED' AS Status, soh.DocuDate AS CreatedAt, soe.NoTruckRequired, soe.PSling, soe.DeliveryDate, soe.TripId
+      SELECT soe.SOID AS Id, ISNULL(soe.WfRef, soh.DocuNo) AS WfRef, soe.SoPrefix, soh.CustID AS CustId, RTRIM(c.CustCode) AS CustCode, soh.CustName, soh.TransRegistration AS TruckPlate, 'CONFIRMED' AS Status, soh.DocuDate AS CreatedAt, soe.NoTruckRequired, soe.PSling, soe.DeliveryDate, soe.TripId,soh.DocuDate,soh.DocuType
       FROM wf.SalesOrderExt soe
       JOIN dbo.SOHD soh ON soh.SOID = soe.SOID
       LEFT JOIN dbo.EMCust c WITH (NOLOCK) ON c.CustID = soh.CustID
@@ -549,7 +520,15 @@ router.get('/:id/loading-plan', requireCapability('trip.view'), requireTripInSco
     if (!tripRes.recordset[0]) return res.status(404).json({ message: 'ไม่พบ Trip นี้' });
     const trip = camelizeRow(tripRes.recordset[0]);
 
-    const membersRes = await wfQuery(`SELECT * FROM wf.v_TripMember WHERE TripId = @id`, { id });
+    const membersRes = await wfQuery(`SELECT m.*, document.DocuDate,
+        CASE WHEN m.MemberKind = 'DRAFT' THEN 0 ELSE document.DocuType END AS DocuType,
+        draft.CreatedAt
+      FROM wf.v_TripMember m
+      LEFT JOIN dbo.SOHD document ON document.SOID = m.SOID
+        AND m.MemberKind = 'CONFIRMED' AND document.DocuType = 103
+      LEFT JOIN wf.SalesOrder draft ON CONVERT(VARCHAR(50), draft.Id) = m.MemberId
+        AND m.MemberKind = 'DRAFT'
+      WHERE m.TripId = @id`, { id });
     const members = camelizeRows(membersRes.recordset || []);
 
     const [draftRes, confRes] = await Promise.all([
@@ -620,6 +599,9 @@ router.get('/:id/loading-plan', requireCapability('trip.view'), requireTripInSco
         return {
           ...l,
           docuNo: m.docuNo,
+          docuDate: m.docuDate || null,
+          docuType: m.docuType ?? null,
+          createdAt: m.createdAt || null,
           soPrefix: m.soPrefix,
           custId: m.custId,
           custName: m.custName,
@@ -701,7 +683,7 @@ router.get('/:id/loading-plan', requireCapability('trip.view'), requireTripInSco
 });
 
 // PUT /api/trips/:id/load-plan — Transactional Load Plan Confirmation (SO-07)
-router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
+router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'MANAGER', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
   const tripId = Number(req.params.id);
   if (!Number.isInteger(tripId) || tripId <= 0) {
     return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
@@ -727,6 +709,7 @@ router.put('/:id/load-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_L
         throw err;
       }
 
+      await assertTripScopeInTransaction(tx,req.user,tripId);
       const currentRevision = Number(trip.LoadPlanRevision || 1);
       if (expectedPlanRevision != null && Number(expectedPlanRevision) !== currentRevision) {
         const err = new Error(`เวอร์ชันแผนจัดของไม่ตรงกัน (Expected: ${expectedPlanRevision}, Current: ${currentRevision}) กรุณารีเฟรชเพื่อโหลดแผนล่าสุด`);
@@ -910,7 +893,8 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
     return res.status(400).json({ message: 'รหัส Trip ไม่ถูกต้อง' });
   }
 
-  const { expectedPlanRevision, note } = req.body || {};
+  const { expectedPlanRevision, truckTypeId, note } = req.body || {};
+  if(truckTypeId!=null&&(typeof truckTypeId!=='string'||!truckTypeId.trim()||truckTypeId.length>50))return res.status(400).json({message:'ชนิดรถไม่ถูกต้อง'});
   if (expectedPlanRevision == null) {
     return res.status(400).json({ message: 'กรุณาระบุ expectedPlanRevision เพื่อป้องกันการรับทราบแผนที่ตกรุ่น' });
   }
@@ -935,6 +919,7 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
         throw err;
       }
 
+      await assertTripScopeInTransaction(tx,req.user,tripId);
       const currentRevision = Number(trip.LoadPlanRevision || 1);
       if (Number(expectedPlanRevision) !== currentRevision) {
         const err = new Error(`เวอร์ชันแผนจัดของไม่ตรงกัน (Expected: ${expectedPlanRevision}, Current: ${currentRevision}) กรุณารีเฟรชเพื่อโหลดแผนล่าสุด`);
@@ -942,24 +927,41 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
         throw err;
       }
 
+      const resolvedTypeId = truckTypeId ? String(truckTypeId).trim() : (trip.TruckTypeId || null);
+      let resolvedCapacity = trip.TruckCapacityTon || null;
+      if (!resolvedTypeId) throw Object.assign(Error('กรุณาเลือกชนิดรถและพิกัดบรรทุกก่อนรับทราบแผน'),{status:400});
+      {
+        const type=(await tx.request().input('id',sql.NVarChar(50),resolvedTypeId).query('SELECT Id,MaxWeightMain,MaxWeightTrailer FROM wf.TruckType WITH(HOLDLOCK) WHERE Id=@id AND IsActive=1')).recordset?.[0];
+        if(!type)throw Object.assign(Error('ชนิดรถไม่มีอยู่หรือปิดใช้งานแล้ว กรุณาโหลดใหม่'),{status:409});
+        resolvedCapacity=Number(type.MaxWeightMain||0)+Number(type.MaxWeightTrailer||0);
+        if(!Number.isFinite(resolvedCapacity)||resolvedCapacity<=0)throw Object.assign(Error('ชนิดรถยังไม่กำหนดพิกัดบรรทุก'),{status:409});
+      }
+      const nextRevision=currentRevision+(String(resolvedTypeId||'')!==String(trip.TruckTypeId||'')||Number(resolvedCapacity||0)!==Number(trip.TruckCapacityTon||0)?1:0);
+
       await tx.request()
         .input('tripId', sql.Int, tripId)
         .input('userId', sql.Int, ids.effective)
+        .input('truckTypeId', sql.NVarChar(50), resolvedTypeId)
+        .input('cap', sql.Decimal(18, 2), resolvedCapacity)
+        .input('revision',sql.Int,nextRevision)
         .query(`
           UPDATE wf.SalesTrip
           SET LoadPlanStatus = 'WAREHOUSE_ACK',
               WarehouseAckAt = GETUTCDATE(),
-              WarehouseAckBy = @userId
+              WarehouseAckBy = @userId,
+              TruckTypeId = COALESCE(@truckTypeId, TruckTypeId),
+              TruckCapacityTon = COALESCE(@cap, TruckCapacityTon),LoadPlanRevision=@revision
           WHERE TripId = @tripId
         `);
 
       await require('../services/trip-transaction-audit').logTripChange(tx,{tripId,action:'LOAD_PLAN_ACK',
-        before:{status:trip.LoadPlanStatus,revision:currentRevision},
-        after:{status:'WAREHOUSE_ACK',revision:currentRevision},effectiveId:ids.effective});
+        before:{status:trip.LoadPlanStatus,revision:currentRevision,truckTypeId:trip.TruckTypeId,capacityTon:trip.TruckCapacityTon},
+        after:{status:'WAREHOUSE_ACK',revision:nextRevision,truckTypeId:resolvedTypeId,capacityTon:resolvedCapacity,note},effectiveId:ids.effective});
       return {
         tripId,
         loadPlanStatus: 'WAREHOUSE_ACK',
-        loadPlanRevision: currentRevision,
+        loadPlanRevision: nextRevision,
+        truckTypeId:resolvedTypeId,truckCapacityTon:resolvedCapacity,
         warehouseAckAt: new Date().toISOString(),
         warehouseAckBy: ids.effective,
         message: 'ฝ่ายคลังรับทราบแผนจัดของเรียบร้อยแล้ว'
@@ -974,7 +976,7 @@ router.post('/:id/load-plan/ack', requireRole('WAREHOUSE', 'MANAGER', 'ADMIN', '
 });
 
 // POST /api/trips
-router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), async (req, res) => {
+router.post('/', requireRole('SALES', 'COUNTER_SALES', 'MANAGER', 'ADMIN', 'C_LEVEL'), async (req, res) => {
   try {
     validateBookingNotes(req.body, ['remark']);
     const { tripCode, transRegistration, driverName, truckCapacityTon, orderIds, scheduledDate, deliveryDate } = req.body || {};
@@ -1104,7 +1106,7 @@ router.post('/', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), asyn
 });
 
 // PUT /api/trips/:id
-router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
+router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'MANAGER', 'ADMIN', 'C_LEVEL'), requireTripInScope, async (req, res) => {
   try {
     const body = validateBookingNotes(req.body || {}, ['remark']);
     const tripId = Number(req.params.id);
@@ -1123,7 +1125,8 @@ router.put('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'C_LEVEL'), re
       const trip = (await tx.request().input('id',sql.Int,tripId).query(
         'SELECT * FROM wf.SalesTrip WITH (UPDLOCK,HOLDLOCK) WHERE TripId=@id')).recordset[0];
       if (!trip) throw Object.assign(new Error('ไม่พบเที่ยวรถ'),{status:404});
-      if (!['ADMIN','C_LEVEL'].includes(req.user.role) && Number(trip.CreatedBy)!==Number(req.user.sub))
+      await assertTripScopeInTransaction(tx,req.user,tripId);
+      if (!hasRole(req.user,'ADMIN','C_LEVEL','MANAGER','COUNTER_SALES') && Number(trip.CreatedBy)!==Number(req.user.sub))
         throw Object.assign(new Error('ไม่มีสิทธิ์แก้ไขเที่ยวรถของผู้อื่น'),{status:403});
       if (trip.Status!=='DRAFT' || Number(trip.DocumentRevision)!==body.expectedRevision)
         throw Object.assign(new Error('สถานะหรือ revision เปลี่ยนแล้ว กรุณาโหลดข้อมูลใหม่'),{status:409});
@@ -1331,8 +1334,9 @@ router.post('/:id/confirm', requireCapability('so.confirm'), requireTripInScope,
         err.status = 404;
         throw err;
       }
+      await assertTripScopeInTransaction(tx,req.user,tripId);
       if (tripRow.Status === 'CONFIRMED' && idempotencyKey && tripRow.IdempotencyKey === idempotencyKey && String(tripRow.PayloadHash || '').trim() === canonicalPayloadHash) {
-        if (!['ADMIN','MANAGER','C_LEVEL'].includes(req.user.role) && Number(tripRow.CreatedBy)!==Number(req.user.sub))
+        if (!hasRole(req.user,'ADMIN','MANAGER','C_LEVEL','COUNTER_SALES') && Number(tripRow.CreatedBy)!==Number(req.user.sub))
           throw Object.assign(new Error('ไม่มีสิทธิ์ยืนยันเที่ยวรถของผู้อื่น'),{status:403});
         const residual=(await tx.request().input('id',sql.Int,tripId).query('SELECT TripId,TripCode FROM wf.SalesTrip WHERE ParentTripId=@id AND IsResidual=1')).recordset[0];
         residualTripId=residual?.TripId || null;residualTripCode=residual?.TripCode || null;replayed=true;
@@ -1369,8 +1373,8 @@ router.post('/:id/confirm', requireCapability('so.confirm'), requireTripInScope,
         WHERE TripId = @tripId
       `)).recordset || [];
 
-      const isElevatedRole = ['ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user.role);
-      const isTripCreator = tripRow.CreatedBy === req.user.sub;
+      const isElevatedRole = hasRole(req.user, 'ADMIN', 'MANAGER', 'C_LEVEL', 'COUNTER_SALES');
+      const isTripCreator = Number(tripRow.CreatedBy) === Number(req.user.sub);
       if (!isElevatedRole && !isTripCreator) {
         const err = new Error('ไม่มีสิทธิ์ยืนยันเที่ยวรถของผู้อื่น');
         err.status = 403;
@@ -1479,10 +1483,14 @@ router.post('/:id/confirm', requireCapability('so.confirm'), requireTripInScope,
           await confirmDraft({tx,draftId:Number(m.MemberId),user:req.user,ip:req.ip,
             expectedTripId:tripId,explicitPickup:targetPickupDate,truckPlate:cleanTruckPlate});
         } else {
-          // a WinSpeed member unlocked for an edit is locked again with the trip, after the counter's check (FR-022)
+          // a WinSpeed member unlocked for an edit is locked again with the trip; SALES and above confirm directly (owner, 25 Nov 2026)
           const ext = (await tx.request().input('soid', sql.VarChar(50), String(m.MemberId))
             .query(`SELECT IsUnlocked, VerifiedAt FROM wf.SalesOrderExt WITH (UPDLOCK) WHERE SOID = @soid`)).recordset?.[0];
-          if (ext && Number(ext.IsUnlocked) && req.user.role !== 'ADMIN' && !ext.VerifiedAt) {
+          if(ext&&Number(ext.IsUnlocked)&&(m.SoPrefix==='AI'||m.TruckPlate==='ตั๋วคุม'||m.IsControlTicket)){
+            const permissions=require('../services/role-capabilities');
+            if(!permissions.hasPermission(req.user,'so.control-ticket')||!permissions.hasPermission(actorPerspective(req.user),'so.control-ticket'))throw Object.assign(Error('เฉพาะ Counter Sale และผู้มีสิทธิ์เท่านั้นที่จำหน่ายตั๋วปุ๋ยได้'),{status:403,code:'CONTROL_TICKET_PERMISSION_REQUIRED'});
+          }
+          if (ext && Number(ext.IsUnlocked) && !canConfirmWithoutCounterVerify(req.user) && !ext.VerifiedAt) {
             const err = new Error(`${m.DocuNo || m.MemberId}: ต้องตรวจซ้ำ (Counter-Sales) ก่อนยืนยัน (FR-022)`);
             err.status = 400;
             throw err;
@@ -1570,6 +1578,7 @@ router.post('/:id/submit-plan', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', '
       if (!trip) {
         throw Object.assign(new Error('ไม่พบ Trip นี้'), { status: 404 });
       }
+      await assertTripScopeInTransaction(tx,req.user,tripId);
 
       // R7-5: Restrict submit-plan to trip sales owner and elevated roles
       const isElevated = require('../services/role-capabilities').hasRole(req.user,'ADMIN','MANAGER','C_LEVEL');
@@ -1653,7 +1662,7 @@ router.delete('/:id', requireRole('SALES', 'COUNTER_SALES', 'ADMIN', 'MANAGER', 
     const tripAudit = require('../services/trip-transaction-audit');
     const ids = await tripAudit.requireTripAuditIdentity(req.user);
     const outcome = await wfTransaction(async tx => {
-      const result = await require('../services/trip-membership-lock').deleteTripIfEmpty(tx, tripId);
+      const result = await require('../services/trip-membership-lock').deleteTripIfEmpty(tx, tripId,req.user);
       if (result.deleted) await tripAudit.logTripChange(tx, { tripId, action: 'DELETE',
         before: { status: result.previousStatus }, after: { status: 'DELETED' }, effectiveId: ids.effective });
       return result;
@@ -1742,6 +1751,7 @@ router.post('/:id/multi-cust-approval', requireRole('SALES', 'COUNTER_SALES', 'A
       if (!tripRow) {
         throw Object.assign(new Error('ไม่พบ Trip นี้'), { status: 404 });
       }
+      await assertTripScopeInTransaction(tx,req.user,tripId);
       if (!['ADMIN', 'MANAGER', 'C_LEVEL'].includes(req.user.role) && Number(tripRow.CreatedBy) !== Number(req.user.sub)) {
         throw Object.assign(new Error('ไม่มีสิทธิ์ส่งคำขออนุมัติสำหรับเที่ยวรถของผู้อื่น'), { status: 403 });
       }
@@ -1889,20 +1899,23 @@ router.patch('/:id/multi-cust-approval/:approvalId/cancel', requireRole('SALES',
     if (!Number.isInteger(tripId) || !Number.isInteger(approvalId)) {
       return res.status(400).json({ message: 'รหัสคำขอไม่ถูกต้อง' });
     }
-    const existing = (await wfQuery(
-      `SELECT Id, TripId, Status, RequestedBy FROM wf.TripMultiCustomerApproval WHERE Id = @aid AND TripId = @tid`,
-      { aid: { type: sql.Int, value: approvalId }, tid: { type: sql.Int, value: tripId } }
-    )).recordset?.[0];
-    if (!existing) return res.status(404).json({ message: 'ไม่พบคำขออนุมัติทริปนี้' });
-    if (existing.Status !== 'PENDING') return res.status(409).json({ message: `คำขอนี้อยู่ในสถานะ ${existing.Status} แล้ว` });
-    const isAdmin = ['ADMIN', 'C_LEVEL'].includes(req.user.role);
-    if (!isAdmin && Number(existing.RequestedBy) !== Number(req.user.sub)) {
-      return res.status(403).json({ message: 'ถอนได้เฉพาะคำขอที่คุณส่งเองเท่านั้น' });
-    }
-    await wfQuery(
-      `UPDATE wf.TripMultiCustomerApproval SET Status = 'CANCELLED', UpdatedAt = SYSUTCDATETIME() WHERE Id = @aid AND Status = 'PENDING'`,
-      { aid: { type: sql.Int, value: approvalId } }
-    );
+    const tripAudit=require('../services/trip-transaction-audit');
+    const ids=await tripAudit.requireTripAuditIdentity(req.user);
+    await wfTransaction(async tx=>{
+      await require('../services/trip-membership-lock').lockTripRow(tx,tripId);
+      await assertTripScopeInTransaction(tx,req.user,tripId);
+      const existing=(await tx.request().input('aid',sql.Int,approvalId).input('tid',sql.Int,tripId)
+        .query('SELECT Id,TripId,Status,RequestedBy FROM wf.TripMultiCustomerApproval WITH(UPDLOCK,HOLDLOCK) WHERE Id=@aid AND TripId=@tid')).recordset?.[0];
+      if(!existing)throw Object.assign(Error('ไม่พบคำขออนุมัติทริปนี้'),{status:404});
+      if(existing.Status!=='PENDING')throw Object.assign(Error('คำขอนี้เปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลใหม่'),{status:409});
+      if(!hasRole(req.user,'ADMIN','C_LEVEL')&&Number(existing.RequestedBy)!==ids.effective)
+        throw Object.assign(Error('ถอนได้เฉพาะคำขอที่คุณส่งเองเท่านั้น'),{status:403});
+      const changed=await tx.request().input('aid',sql.Int,approvalId).input('tid',sql.Int,tripId)
+        .query("UPDATE wf.TripMultiCustomerApproval SET Status='CANCELLED',UpdatedAt=SYSUTCDATETIME() WHERE Id=@aid AND TripId=@tid AND Status='PENDING'");
+      if(Number(changed.rowsAffected?.[0])!==1)throw Object.assign(Error('คำขอนี้เปลี่ยนสถานะแล้ว กรุณาโหลดข้อมูลใหม่'),{status:409});
+      await tripAudit.logTripChange(tx,{tripId,action:'MULTI_CUST_APPROVAL_CANCEL',
+        before:{approvalId,status:existing.Status},after:{approvalId,status:'CANCELLED'},effectiveId:ids.effective,reasonCode:'MULTI_CUST_TRIP'});
+    },{isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE});
     broadcast('trip_multi_cust_approval', { id: approvalId, tripId, action: 'cancelled' });
     broadcast('trip_updated', { tripId, action: 'multi_cust_approval_cancelled' });
     res.json({ id: approvalId, tripId, status: 'CANCELLED', message: 'ถอนคำขออนุมัติเรียบร้อย' });

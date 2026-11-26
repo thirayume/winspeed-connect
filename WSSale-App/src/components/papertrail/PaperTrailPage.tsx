@@ -3,6 +3,7 @@ import { LayoutGrid, RefreshCw, Truck, FileText, ArrowRight, ArrowLeft, Clock, P
 import { fetchPaperBoard, confirmSO, moveToPicking, confirmLoading, syncImported, fetchLostPapers, verifySO, createUnlockRequest, listUnlockRequests, cancelSO, deleteSO } from '../../services/api';
 import { useAuthStore } from '../../store/auth-store';
 import { useCan } from '../../utils/capabilities';
+import { DocumentDate } from '../common/DocumentDate';
 import { useAppStore } from '../../store/app-store';
 import type { SalesOrder } from '../../types';
 import { fetchSalesOrders } from '../../services/api';
@@ -29,7 +30,7 @@ const CAN_REQ_UNLOCK = ['SALES', 'COUNTER_SALES', 'WAREHOUSE', 'ADMIN'];
 const CAN_APPROVE_UNLOCK = ['APPROVER', 'ADMIN', 'MANAGER'];
 
 const STATUS_NEXT: Record<string, { label: string; roles: string[] } | undefined> = {
-  DRAFT:     { label: 'ยืนยันเป็นรอจัดส่ง', roles: ['SALES', 'COUNTER_SALES', 'ADMIN'] },
+  DRAFT:     { label: 'ยืนยันเป็นรอจัดส่ง', roles: ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'] },
   // picking may start before WinSpeed approves; shipping waits for the approval
   PENDING_APPROVAL: { label: 'เริ่มรอรับสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
   CONFIRMED: { label: 'เริ่มรอรับสินค้า', roles: ['WAREHOUSE', 'ADMIN'] },
@@ -281,7 +282,7 @@ export function PaperTrailPage() {
                       <div className="p-1.5 space-y-1.5">
                         {g.cards.map(card => {
                           const next = STATUS_NEXT[card.status];
-                          const canAdvance = next && role && next.roles.includes(role);
+                          const canAdvance = next && (card.status === 'DRAFT' ? canAct('so.confirm') : Boolean(role && next.roles.includes(role)));
                           const overdue = card.daysOpen > 45 ? 'text-red-600' : card.daysOpen > 30 ? 'text-amber-600' : 'text-gray-400';
                           return (
                             <div key={card.id} data-testid={`paper-card-${card.id}`} className="rounded-lg bg-white p-2.5 shadow-sm relative overflow-hidden group border border-gray-100">
@@ -310,6 +311,7 @@ export function PaperTrailPage() {
                                 )}
                                 {card.controlTicketNo && <span className="flex items-center gap-0.5 bg-gray-100 px-1 rounded"><FileText size={9} />{card.controlTicketNo}</span>}
                                 {card.importedDocuNo && <span className="text-emerald-600 font-medium">{card.importedDocuNo}</span>}
+                                <DocumentDate date={card.docuDate} draftDate={card.createdAt} isDraft={card.docuType === 0}/>
                                 <span className={`flex items-center gap-0.5 ${overdue}`}><Clock size={9} />{card.daysOpen}ว</span>
                                 {card.status !== 'DRAFT' && (card.soPrefix === 'AI' || card.truckPlate === 'ตั๋วคุม' || card.controlTicketNo) && (() => {
                                   const daysLeft = 180 - (card.daysOpen || 0);

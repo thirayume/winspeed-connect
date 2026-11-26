@@ -30,6 +30,10 @@ const ROLE_RANK = Object.freeze({
 // O-5: senior operators keep Access As
 const ACCESS_AS_ACTOR_ROLES = Object.freeze(['ADMIN', 'C_LEVEL', 'MANAGER', 'ACCOUNTING', 'APPROVER', 'COUNTER_SALES']);
 const TICKET_SALES_ROLES = Object.freeze(['COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN']);
+// Owner, 25 Nov 2026: users from SALES upwards confirm bills directly without Counter-Sales re-check (FR-022).
+const DIRECT_CONFIRM_ROLES = Object.freeze([
+  'SALES', 'COUNTER_SALES', 'APPROVER', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN',
+]);
 
 const ALL = ROLES;
 const MENUS = Object.freeze({
@@ -65,11 +69,11 @@ const MENUS = Object.freeze({
 });
 
 const ACTIONS = Object.freeze({
-  'so.create': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
-  'so.edit': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
+  'so.create': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
+  'so.edit': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.cancel': ['SALES', 'C_LEVEL', 'ADMIN'],
   'so.verify': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
-  'so.confirm': ['SALES', 'COUNTER_SALES', 'C_LEVEL', 'ADMIN'],
+  'so.confirm': ['SALES', 'COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   'so.control-ticket': ['COUNTER_SALES', 'MANAGER', 'C_LEVEL', 'ADMIN'],
   // Owner, 20 Nov 2026: booking approval moves from SALES to the desk, accounting and management roles.
   'so.approve-native': ['COUNTER_SALES', 'ACCOUNTING', 'MANAGER', 'C_LEVEL', 'ADMIN'],
@@ -150,6 +154,15 @@ function roleRank(role) {
 
 function userRoles(user) { return [...new Set(Array.isArray(user?.roles) ? user.roles : [user?.role].filter(Boolean))]; }
 function hasRole(user, ...roles) { return userRoles(user).some(r => roles.includes(r)); }
+function canConfirmWithoutCounterVerify(user) {
+  const roles = userRoles(user);
+  if (roles.includes('SEPARATION')) return false;
+  if (user?.isImpersonating) {
+    const actorRoles = Array.isArray(user.actorRoles) ? user.actorRoles : [user.actorRole].filter(Boolean);
+    if (actorRoles.includes('SEPARATION') || !actorRoles.some(r => DIRECT_CONFIRM_ROLES.includes(r))) return false;
+  }
+  return roles.some(r => DIRECT_CONFIRM_ROLES.includes(r));
+}
 // Owner, 21 Nov 2026: ADMIN is the highest role and holds every permission, whatever Role Management lists for it.
 // The database agrees (wf.fn_UserHasPermission, migration 256). A SEPARATION assignment still holds none.
 function hasPermission(user, action) {
@@ -185,4 +198,4 @@ function enabledFeatures(env = process.env) {
     ...(env.NATIVE_DOCUMENT_WRITER_VERSION==='v3'?['native-documents-v3']:[]),
     ...(env.NATIVE_DOCUMENT_WRITER_VERSION==='v3'&&env.NATIVE_COUPON_BRIDGE_ENABLED==='true'?['native-coupon-bridge']:[])];
 }
-module.exports = { ROLES, ROLE_RANK, ACCESS_AS_ACTOR_ROLES, MENUS, ACTIONS, capabilitiesFor, rolesFor, roleRank, userRoles, hasRole, hasPermission, featureEnabled, enabledFeatures };
+module.exports = { ROLES, ROLE_RANK, ACCESS_AS_ACTOR_ROLES, DIRECT_CONFIRM_ROLES, MENUS, ACTIONS, capabilitiesFor, rolesFor, roleRank, userRoles, hasRole, canConfirmWithoutCounterVerify, hasPermission, featureEnabled, enabledFeatures };

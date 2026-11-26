@@ -2,6 +2,113 @@
 
 Operational snapshot: **24 November 2026 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
+**27 November — uncommitted candidate, v3 rehearsal only.** UAT/PROD remain
+at the earlier release; this organization/direct-116 candidate is not deployed.
+After a verified COPY_ONLY/CHECKSUM backup on R740's D: drive, migrations
+280–289 and the reviewed direct protocol were installed only on
+`dbwins_worldfert9_uat_v3`. The restricted QA runtime has no access to the three
+live databases, uses loopback HTTP and disables background workers. No Reset,
+live employee/territory update or public publication has occurred.
+
+Latest clean backend regression passes **1,506/1,506** with the stricter audit
+hook. Earlier offline migration checks 99, deploy configuration checks 31,
+organization browser checks 11, Budget/PDF/Excel checks 12, bridge/recovery
+browser checks 5 and frontend build passed. New SQL gates pass four legacy-SET
+profiles, six retained-ID cases, fifteen create/edit/partial/cancel/recreate
+phases, and four unstaged-audit cases, with rollback baseline equality. The
+official prior-direct upgrade also passed rollback with all native hooks,
+contracts, quantities, ID ranges and audit/release counts restored.
+
+Two authenticated Sale-App Full Loops passed separately with ZERO and DISCOUNT:
+quotation, booking/Trip confirmation by SALES without the Counter verification
+step, credit approval, two-line 104s, mixed/partial 116s, J/N 107 closure,
+reconciliation, giveaway loans/repayment, Rebate accrual, claim and use/replay.
+Transport evidence in these runs is explicitly simulated QA evidence; these
+results do not certify a real physical shipment. Both runs' fourteen owned
+accounts were disabled and their organization fixtures retired; history remains.
+
+Physical WinSpeed create and partial edits now have completed native receipts
+and exact coupon reconciliation. The first failures exposed legacy SQL SET
+options (288) and reuse of a cancelled native ID (289). Native node ranges now
+rotate through a guarded audited wf procedure when retained history would be
+reused; original keys and receipts remain intact. A native-first race observed
+both SQL waits and rejected the App's excess reservation after rereading the
+new balance. An App-first hold prevented the native increase and was then
+released. That test also exposed WinSpeed opening print selection after a failed
+write. The candidate now rejects unstaged I/U/D audits, while allowing print
+audits. The strict hook was activated on v3 through the exact reviewed official
+plan. The physical retest displayed `NATIVE_116_SAVE_NOT_RECORDED_REOPEN_DOCUMENT`
+and preserved the prior document and quantities; its owned App hold was released.
+WinSpeed still opens print selection after dismissing the error: close it, reopen
+the document and verify its saved quantities before retrying. Print selection is
+not proof of a successful save.
+
+Physical cancellation then passed: both coupons returned to three tonnes, the
+document header/details disappeared, the genuine native delete audit completed,
+and the retained bridge history is CANCELLED. The native range advanced to its
+next unused block automatically. A separate existing, unregistered four-line
+legacy document passed partial edit/adoption and cancellation inside a full
+rollback; quantities, audit counts, hooks and all selected native rows returned
+to their baseline. Its audit callbacks were synthetic SQL rehearsal callbacks,
+not a physical WinSpeed legacy-user test.
+
+Authenticated ADMIN API setup on v3 aligned seven employee names and unique
+links, four independent promotion positions, seven editable territories covering
+twenty provinces per territory type, and the native supervisor chain. The
+reserved App administrator now links to system Employee metadata on v3 only;
+no WinSpeed login credentials were created. Existing inactive QA aliases were
+not renamed. All changes have configuration audits. Ten Access As identities
+passed customer-list equality against independent SQL, employee/territory/bill/
+giveaway visibility, Dashboard statistics reads and three organization maps.
+Twenty further real API negative checks returned 404 for out-of-branch customer
+pricing and tickets across those ten identities. The initial negative-fixture
+SQL used NULL-sensitive `NOT` and selected no outsiders; that skipped portion
+was not counted as a pass and was replaced by explicit real outsider selection.
+The primary price-indicator now checks customer scope too, and the organization
+map limits positions and assigned counts to the actual/effective branch.
+Explicit branch selection is checked before an endpoint runs, returning 403
+for an unauthorized branch. An earlier rehearsal correctly hid data but exposed
+the denial as HTTP 500; the corrected middleware and repeated API gate passed.
+
+The release planner pins all 23 dependency hashes and accepts an upgrade only
+from the exact previous direct fingerprints/module, the exact old bridge or the
+pristine baseline. Actual UAT/PROD staff/admin setup, reviewed cross-company
+binding renewal, remaining platform acceptance and a concrete publication/CI/
+UAT→PROD release review remain outstanding. Do not describe the whole platform
+as handed over yet. Real names and operational setup manifests remain private;
+public migrations do not seed them.
+
+Final local offline migration checks **99/99**, deploy configuration checks
+**31/31**, and frontend build pass. After the QA configuration, the actual
+restricted runtime verifies all **50** native metadata fingerprints, migration
+289, hooks ready and an empty recovery queue. No actual UAT/PROD promotion is
+implied by these v3 results.
+
+**26 November — organization and native 116 review in progress.** The latest
+read-only runtime check in this review found UAT and PROD at `65f1a2d` (schema
+279 / bridge ledger 275). The uncommitted workspace includes the owner's earlier
+bill/trip UI changes and new organization/territory controls; it is not a deployed
+release. Migrations 280–282 were rehearsed on the named v3 copy with rollback,
+including employee metadata, annual branch ownership, strict upward approval,
+company/branch reporting and a limited SQL reader. The full clean backend suite
+passed 1,487 tests and offline migration checks passed 99; organization/employee/territory browser checks passed 11,
+and the earlier branch Budget workspace/PDF/synthetic Excel checks passed 12.
+The frontend build passed. Additional write checks cover customer reassignment,
+deactivation, trip scope changes inside transactions and audited approval withdrawal.
+Trip-board dates now use native SOID/DocuType joins, with actual DocuDate separated
+from draft creation dates; the query was verified against v3 without writes.
+
+Candidate 283 adds read-only native PFC permission/operator resolution; it does
+not install direct-save hooks or issue a permit. Twelve SQL permission cases,
+unmapped-operator rejection, actual native operator mapping, idempotent apply,
+down/reapply and rollback baseline/native-trigger equality passed on v3.
+The native operator is distinct from the reserved WF-SaleApp administrator and
+from the declared SaveEmpID. No credential columns were read. Native direct
+create/edit/cancel/concurrency, real employee/admin configuration, the remaining
+platform scope review, Full Loop and rollout are still pending. These partial
+checks are not handover or native direct-save sign-off. No Rebate Reset or live
+schema/business-data change was performed in this review.
+
 See [deployment guide](README.md), [release 2.0.0](RELEASE-2.0.0.md), [public ingress](DUCKDNS-PUBLIC-INGRESS.md) and
 [company PKI / ACME guide](TLS-DNS-PKI-ACME.md).
 

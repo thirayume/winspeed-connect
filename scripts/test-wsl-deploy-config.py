@@ -268,7 +268,7 @@ class R740ComposeGuardTests(unittest.TestCase):
             app[key] = migration[key] = target[key]
         for key in ("ONPREM_DB_USER", "CORS_ORIGIN", "ONPREM_SWITCHABLE_DATABASES", "REBATE_RESET_DATABASES", "NATIVE_BOOKING_AI_ENABLED",
                     "NATIVE_DELIVERY_104_ENABLED", "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED",
-                    "DISABLE_BACKGROUND_WORKERS", "NATIVE_DOCUMENT_WRITER_VERSION", "NATIVE_COUPON_BRIDGE_ENABLED"):
+                    "DISABLE_BACKGROUND_WORKERS", "NATIVE_DOCUMENT_WRITER_VERSION", "NATIVE_COUPON_BRIDGE_ENABLED", "NATIVE_COUPON_BRIDGE_DIRECT_ENABLED"):
             app[key] = target[key]
         app["TRUST_PROXY"] = "1"
         migration["ONPREM_MIGRATOR_USER"] = target["SALEAPP_MIGRATOR_LOGIN"]
@@ -423,7 +423,7 @@ class R740ComposeGuardTests(unittest.TestCase):
     def test_secret_env_cannot_override_any_native_writer(self):
         for environment in ("uat", "prod"):
             for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED",
-                        "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED", "NATIVE_COUPON_BRIDGE_ENABLED"):
+                        "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED", "NATIVE_COUPON_BRIDGE_ENABLED", "NATIVE_COUPON_BRIDGE_DIRECT_ENABLED"):
                 with self.subTest(environment=environment, flag=key):
                     models, target_path = self.fixture(environment)
                     app = models["resolved"]["services"]["backend"]["environment"]
@@ -452,7 +452,7 @@ class R740ComposeGuardTests(unittest.TestCase):
         for environment in ("uat", "prod"):
             models, target_path = self.fixture(environment)
             for key in ("NATIVE_BOOKING_AI_ENABLED", "NATIVE_DELIVERY_104_ENABLED",
-                        "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED", "NATIVE_COUPON_BRIDGE_ENABLED"):
+                        "NATIVE_MANUAL_116_ENABLED", "NATIVE_INVOICE_107_ENABLED", "NATIVE_COUPON_BRIDGE_ENABLED", "NATIVE_COUPON_BRIDGE_DIRECT_ENABLED"):
                 self.assertIn(" " + key + " ", pin_line)
                 app = models["resolved"]["services"]["backend"]["environment"]
                 self.assertIn(key + "=" + app[key], target_path.read_text(encoding="utf-8"))

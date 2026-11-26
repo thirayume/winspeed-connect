@@ -31,6 +31,14 @@ const sql = require('mssql');
 const executedQueries = [];
 let queryHandler = () => ({ recordset: [] });
 
+function scopeFixture(text,inputs){
+ const value=v=>v&&typeof v==='object'&&'value' in v?v.value:v;
+ if(text.includes('WHERE CustID=@scopeCustomerId')&&value(inputs.scopeCustomerCode)==='0342001')return {recordset:[{CustID:1141,CustCode:'0342001'}]};
+ if(text.includes('WHERE c.CustID=@visibilityCustId')&&Number(value(inputs.visibilityCustId))===1141)return {recordset:[{ok:1}]};
+ if(text.includes('FROM wf.SalesTrip WITH (UPDLOCK, HOLDLOCK)')&&Number(value(inputs.tripLockId))===38)return {recordset:[{TripId:38,Status:'DRAFT'}]};
+ if(text.includes('WHERE t.TripId=@membershipTripId')&&Number(value(inputs.membershipTripId))===38)return {recordset:[{ok:1}]};
+ return null;
+}
 class MockRequest {
   constructor() {
     this.inputs = {};
@@ -47,7 +55,7 @@ class MockRequest {
   async query(sqlText) {
     executedQueries.push({ text: sqlText, inputs: this.inputs });
     const legacy=require('./helpers/native-hold-legacy.cjs')(sqlText);if(legacy)return legacy;
-    return queryHandler(sqlText, this.inputs);
+    return scopeFixture(sqlText,this.inputs)||queryHandler(sqlText, this.inputs);
   }
   async execute(procName) {
     executedQueries.push({ text: `EXEC ${procName}`, inputs: this.inputs });
@@ -64,11 +72,11 @@ const stubDb = {
   sql,
   wfQuery: async (text, inputs = {}) => {
     executedQueries.push({ text, inputs });
-    return queryHandler(text, inputs);
+    return scopeFixture(text,inputs)||queryHandler(text, inputs);
   },
   query: async (text, inputs = {}) => {
     executedQueries.push({ text, inputs });
-    return queryHandler(text, inputs);
+    return scopeFixture(text,inputs)||queryHandler(text, inputs);
   },
   wfTransaction: async (callback) => {
     const tx = {

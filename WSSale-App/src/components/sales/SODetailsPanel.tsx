@@ -10,8 +10,10 @@ import { appAlert, appPrompt } from '../ui/AppAlert';
 import { RequestActionModal, type RequestActionType } from '../papertrail/RequestActionModal';
 import { SOCancelDeleteModal } from '../common/SOCancelDeleteModal';
 import { useAuthStore } from '../../store/auth-store';
+import { useCan } from '../../utils/capabilities';
 import { canViewRebateAmounts } from '../../utils/permissions';
 import { formatThaiDate } from '../../utils/date';
+import {DocumentDate} from '../common/DocumentDate';
 import { giveawayPieces } from '../../utils/giveaway';
 import type { SalesOrder } from '../../types';
 import { NativeAiApprovalButton } from './NativeAiApprovalButton';
@@ -37,6 +39,7 @@ export function SODetailsPanel({
 }) {
   const unlockRequests = useErpStore(s => s.unlockRequests);
   const currentUser = useAuthStore(s => s.user);
+  const can = useCan();
   const canSeeRebate = canViewRebateAmounts(currentUser);
   const canApproveGiveaway = currentUser?.role === 'MANAGER' || currentUser?.role === 'ADMIN';
   const [busy, setBusy] = useState(false);
@@ -95,7 +98,7 @@ export function SODetailsPanel({
               </span>
             )}
           </div>
-          <p className="text-xs text-gray-400 mt-0.5">{so.custName} · {so.createdAt?.slice(0, 10)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">{so.custName}</p><DocumentDate date={so.docuDate} draftDate={so.createdAt} isDraft={so.docuType === 0}/>
           {/* which WinSpeed document this bill has reached, with the tonnes on its tickets */}
           <DocStageChip stage={so.docStage} showQuantities className="mt-1.5" />
         </div>
@@ -375,15 +378,17 @@ export function SODetailsPanel({
               </div>
             ) : (
               <div className="flex gap-2">
-                <button
-                  disabled={busy}
-                  onClick={() => doAction(() => confirmSO(so.id!))}
-                  className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-60 transition-opacity shadow-sm"
-                  style={{ background: '#0C447C' }}
-                >
-                  {busy ? 'กำลังยืนยัน...' : (so.truckPlate === 'ตั๋วคุม' ? 'ยืนยันตั๋วคุม (บิลเดี่ยว)' : 'ยืนยันบิล')}
-                </button>
-                {onEdit && (
+                {can('so.confirm') && (
+                  <button
+                    disabled={busy}
+                    onClick={() => doAction(() => confirmSO(so.id!))}
+                    className="flex-1 py-2.5 rounded-xl text-white text-sm font-bold disabled:opacity-60 transition-opacity shadow-sm"
+                    style={{ background: '#0C447C' }}
+                  >
+                    {busy ? 'กำลังยืนยัน...' : (so.truckPlate === 'ตั๋วคุม' ? 'ยืนยันตั๋วคุม (บิลเดี่ยว)' : 'ยืนยันบิล')}
+                  </button>
+                )}
+                {onEdit && can('so.edit') && (
                   <button
                     disabled={busy}
                     onClick={onEdit}
@@ -394,7 +399,7 @@ export function SODetailsPanel({
                 )}
               </div>
             )}
-            {so.tripId && Number(so.tripId) > 0 && so.truckPlate !== 'ตั๋วคุม' && onEdit && (
+            {so.tripId && Number(so.tripId) > 0 && so.truckPlate !== 'ตั๋วคุม' && onEdit && can('so.edit') && (
               <button
                 disabled={busy}
                 onClick={onEdit}

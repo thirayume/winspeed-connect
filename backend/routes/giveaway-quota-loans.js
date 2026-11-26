@@ -32,11 +32,14 @@ router.get('/options',async(req,res)=>{
    if(!row||!visible(ss,row.SalesUserId)||!loans.party(req.user,ids,Number(row.SalesUserId)))return res.status(404).json({code:'QUOTA_LOAN_NOT_FOUND'});
    if(Number(row.PeriodYear)!==year)return res.status(409).json({code:'QUOTA_LOAN_ITEM_MISMATCH'});good=row.GoodId;
   }
+  const loanScopes=await require('../services/giveaway-loan-organization').counterpartyScopes(qread,req.user);
+  const {scopeFilter}=require('../services/visible-scope');const loanInputs={};
+  const loanFilters=loanScopes.map((s,i)=>{const f=scopeFilter(s,{userCol:'v.SalesUserId',prefix:'loanOption'+i});Object.assign(loanInputs,f.inputs);return '('+f.sql+')';});
   const rows=(await qread(`SELECT TOP 500 v.Id,v.Region,v.PeriodYear,v.SalesUserId,v.GoodId,v.GoodCode,v.GoodName,
     v.Brand,v.ItemName,v.RemainingQty,u.DisplayName FROM wf.v_GiveawayBudgetStatus v
     JOIN wf.AppUser u ON u.Id=v.SalesUserId AND u.IsActive=1
-    WHERE v.PeriodYear=@year AND v.GoodId IS NOT NULL AND (@good IS NULL OR v.GoodId=@good)
-    ORDER BY CASE WHEN v.SalesUserId=@me THEN 0 ELSE 1 END,v.GoodId,v.Id`,{year,good,me:ids.effective})).recordset||[];
+    WHERE v.PeriodYear=@year AND v.GoodId IS NOT NULL AND (@good IS NULL OR v.GoodId=@good) AND ${loanFilters.join(' AND ')}
+    ORDER BY CASE WHEN v.SalesUserId=@me THEN 0 ELSE 1 END,v.GoodId,v.Id`,{year,good,me:ids.effective,...loanInputs})).recordset||[];
   const options=rows.map(r=>({...r,canBorrowInto:visible(ss,r.SalesUserId)&&loans.party(req.user,ids,Number(r.SalesUserId))}));
   const database=(await qread('SELECT DB_NAME() AS DatabaseName')).recordset?.[0]?.DatabaseName;
   res.json({database,year,items:selected?options:options.filter(r=>r.canBorrowInto),limit:500});
