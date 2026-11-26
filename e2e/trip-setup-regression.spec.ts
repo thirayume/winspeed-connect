@@ -30,6 +30,7 @@ test('summary uses independent load-plan revision and trip-owned metadata',async
  if(url.endsWith('/loading-plan'))return route.fulfill({json:{trip:{loadPlanRevision:3,loadPlanStatus:'DRAFT'},plan:[]}});
  if(url.endsWith('/trips/42')&&r.method()==='GET')return route.fulfill({json:{tripId:42,transRegistration:'SERVER-42',documentRevision:7,tripRemark:'TRIP-ONLY',preSlingRequired:true,pickupDueDate:'2026-10-08',orders:[]}});
  if(url.includes('/master/trucks-stats'))return route.fulfill({json:[]});
+ if(url.endsWith('/master/truck-types'))return route.fulfill({json:[]});
  if(url.includes('/master/system-settings'))return route.fulfill({json:{raw:{},settings:{}}});
  if(url.includes('/master/goods'))return route.fulfill({json:[]});
  if(r.method()==='PUT'&&url.endsWith('/load-plan')){writes.push(r.postDataJSON());return route.fulfill({json:{loadPlanRevision:4,loadPlanStatus:'SALE_CONFIRMED'}});}
@@ -114,5 +115,6 @@ test('active trip keeps server members and plate when portal filter returns no o
  await page.waitForTimeout(600);
  await page.getByRole('button',{name:'สร้างบิล',exact:true}).click();
  await expect(page.getByTestId('trip-setup-dialog')).toHaveCount(0);
- await expect(page.getByText(/ทะเบียนรถ: SERVER-42/)).toBeVisible();
+ await expect(page.getByText(/ทะเบียนรถปัจจุบัน: SERVER-42 \|/)).toBeVisible();
+ await expect(page.getByText(/ทะเบียนรถปัจจุบัน: OLD-42 \|/)).toHaveCount(0);
 });
