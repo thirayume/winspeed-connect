@@ -414,6 +414,24 @@ Physical weighing hardware and VAT-positive GL posting are not certified by a de
 
 ### Routine release (owner)
 
+For the first installation of immutable migration284, run the reviewed
+[readiness-owner prerequisite](sql/one-off/2026-11-27-native116-readiness-owner.sql)
+as the approved SQL administrator in the exact selected database, before the
+official migration apply. It creates only a false-returning `wf` function stub
+when absent, checks its exact body/owner/object grants, assigns that one function
+to the existing migrator and records an audit. The restricted migrator can then
+apply284's `EXECUTE AS OWNER` without permission to impersonate dbo. Applied
+migration files and their ledger hashes remain unchanged. Repeat separately for
+UAT and each approved live company; this does not activate company2 writers.
+
+The UAT principal script validates the same immutable boolean body after restore
+and remaps this function's owner to the UAT migrator. It restores only its public
+boolean `EXECUTE` grant: ownership transfer removes object permissions, as
+[documented by Microsoft](https://learn.microsoft.com/en-us/sql/t-sql/statements/alter-authorization-transact-sql).
+Unknown owners, changed bodies and unexpected explicit grants stop the setup.
+Rehearse the prerequisite, restricted migration apply and restore remap inside
+an outer rollback before using it. Do not grant migrators dbo impersonation.
+
 1. UAT passed on a commit (from the UAT deploy receipt).
 2. **2. Promote UAT to PROD** with `uat_commit` = that commit; check that the run appears and
    passes (see the practical notes above).

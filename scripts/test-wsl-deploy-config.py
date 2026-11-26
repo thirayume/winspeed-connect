@@ -460,6 +460,32 @@ class R740ComposeGuardTests(unittest.TestCase):
 
 
 class R740UatReaderRemapTests(unittest.TestCase):
+    def test_native_readiness_owner_keeps_the_exact_immutable_boolean_body(self):
+        setup = (ROOT / "docs/deploy/r740/sql/r740-uat-principals.sql").read_text(encoding="utf-8")
+        prerequisite = (ROOT / "docs/deploy/r740/sql/one-off/2026-11-27-native116-readiness-owner.sql").read_text(encoding="utf-8")
+        original = (ROOT / "backend/migrations/284_native_116_connection_stage.sql").read_text(encoding="utf-8")
+        function = re.search(r"(?ms)^ALTER FUNCTION wf\.fn_Native116HooksReady\(\).*?(?=^GO\s*$)", original)
+        self.assertIsNotNone(function)
+        for source in (setup, prerequisite):
+            literal = re.search(r"SET @native_ready_expected=N'((?:''|[^'])*)';", source)
+            self.assertIsNotNone(literal)
+            self.assertEqual(literal.group(1).replace("''", "'").strip(), function.group(0).strip())
+            self.assertIn("@native_ready_exec=-2", source)
+            self.assertIn("unexpected object permissions", source)
+            self.assertNotRegex(source, r"(?i)GRANT\s+IMPERSONATE")
+
+    def test_restore_uses_the_same_owner_allowlist_and_restores_boolean_execute(self):
+        sources = [(ROOT / p).read_text(encoding="utf-8") for p in (
+            "docs/deploy/r740/sql/r740-uat-principals.sql",
+            "docs/deploy/r740/sql/one-off/2026-11-27-native116-readiness-owner.sql")]
+        blocks = [s.split("-- BEGIN REVIEWED NATIVE116 OWNER REMAP")[1].split("-- END REVIEWED NATIVE116 OWNER REMAP")[0].strip() for s in sources]
+        self.assertEqual(blocks[0], blocks[1])
+        self.assertIn("GRANT EXECUTE ON OBJECT::wf.fn_Native116HooksReady TO public", blocks[0])
+        self.assertIn("TO [wf_r740_uat_migrator_v2]", blocks[0])
+        self.assertIn("TO [wf_r740_prod_migrator]", blocks[0])
+        self.assertIn("IS_SRVROLEMEMBER('sysadmin')<>1", sources[1])
+        self.assertIn("DB_NAME() NOT IN", sources[1])
+
     def test_remap_exposes_only_the_immutable_reviewed_metadata_reader(self):
         # A restored execution identity must not widen the reader's SQL body.
         setup = (ROOT / "docs/deploy/r740/sql/r740-uat-principals.sql").read_text(encoding="utf-8")

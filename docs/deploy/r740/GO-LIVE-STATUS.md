@@ -1,5 +1,29 @@
 # R740 deployment and business acceptance
 
+**27 November 2026, 03:20 ICT — approved rollout in progress.** The owner approved
+publication of the reviewed organization/direct116 release and UAT→PROD after
+all gates, without Rebate Reset. UAT promotion CI45887515882 passed for0053171,
+including backend1506, offline99 and every configured browser/deploy gate. The
+official UAT plan had275unchanged/10pending/0drift. Apply committed280–283, then
+rolled back284 on SQL15151: the restricted migrator cannot impersonate the dbo
+owner of the new readiness function. Services were not restarted; the running
+release is still65f1a2d. PROD and company2 remain schema279 and unchanged.
+
+A reviewed prerequisite now assigns only that exact boolean function to the
+existing migrator, with no dbo impersonation or broader role grant. On UAT,
+64batches of284–289 passed under the restricted identity, together with
+idempotent bootstrap, restored-owner remap, retained public boolean execution
+and application execution. Three actual negative cases reject modified body,
+unknown owner and extra object grant. Every rehearsal rolled back and restored
+the ledger/object/audit baseline. The corrected principal script also handles
+this owner after nightly restore. This source fix still needs CI and rollout;
+these rehearsal results are not a completed UAT or PROD deployment.
+
+Verified COPY_ONLY/CHECKSUM backups of all three databases are retained on
+R740's D: drive with SHA256 summaries. No real report files were copied off-box,
+no business documents or live staff/territories were changed in this rollout,
+and Reset baselines remain unchanged. Earlier entries below are historical.
+
 Operational snapshot: **24 November 2026 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.
 **27 November — uncommitted candidate, v3 rehearsal only.** UAT/PROD remain
