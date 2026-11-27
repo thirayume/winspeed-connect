@@ -1,5 +1,33 @@
 # R740 deployment and business acceptance
 
+**27 November 2026 — native116 numbering and admission remediation.**
+This source adds migrations290–291. Use each environment's exact official
+apply/native-activation receipt to establish whether that revision is live;
+the earlier organization release below remains the last recorded rollout.
+
+Migration290 advances only the reviewed active redemption counter to retained
+same-year document/audit numbers and keeps it current after completed native
+and app saves. It never lowers a counter or renumbers a document. Company2
+receives schema only; its native target and counter remain unchanged. Down
+retains the advanced counter and audit. Migration291 retains289's admission
+controls, rejects duplicate business numbers under the shared transaction lock,
+and identifies unchecked lines, invoice state and quantity mismatches separately.
+The app preserves nested SQL business codes and shows actionable Thai messages.
+The existing development CORS allowlist now permits X-Org-Branch.
+
+Pre-promotion acceptance: backend1511, offline99, frontend build and browser9
+passed. v3 SQL counter11 and validation13 cases, four-line legacy partial
+edit/adoption/cancel, and restricted UAT/company2 migrator rehearsals passed;
+rollback baselines match. A verified D: v3 backup preceded persistent290–291.
+Physical native automatic numbering produced a free number without the two
+reported duplicate/search dialogs; a mixed C/D partial save completed with
+matching balances, truthful audit and no pending stage. The original failed
+input was not reproduced: do not claim its exact cause was proved. WinSpeed's
+separate number-gap warning was observed and accepted for this QA document;
+its module policy is retained, as are all invoice/reservation/quantity guards.
+No Rebate Reset or live business-document test was performed for these gates.
+Concurrent uncommitted Approval Center edits are excluded from this release.
+
 **27 November 2026 — organization scope and native 116 release deployed.**
 Feature baseline 0193af0 passed hosted UAT CI45890381479 and PROD
 CI45937564625, including backend1,506, offline99 and the configured browser,

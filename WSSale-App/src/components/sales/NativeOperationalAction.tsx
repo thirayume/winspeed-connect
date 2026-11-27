@@ -8,6 +8,7 @@ import {NativeCreditSummary} from './NativeCreditSummary';
 import {CouponBridgeEdit,NativeBridgeCreate} from '../recon/CouponBridgePanel';
 import type {CustomerCreditStatus} from '../../types';
 import {useAuthStore} from '../../store/auth-store';
+import {native116ErrorMessage} from '../../utils/native116Errors';
 
 type Stage=119|104|116|107;
 type Cut={redemptionId:number;redemptionNo:string;lineNo:number;deliveryId:number;couponNo:string;quantity:string;docDate:string};
@@ -24,6 +25,7 @@ const permission:Record<Stage,string>={119:'so.approve-native',104:'so.create-na
 const title=(type:Stage)=>type===119?DOC_TYPES.AI.name:`${DOC_TYPES[String(type)].name} (${type})`;
 const describe=(e:unknown)=>{
  const code=(e as {data?:{code?:string}}).data?.code||'';
+ const nativeMessage=native116ErrorMessage(code);if(nativeMessage)return nativeMessage;
  const messages:Record<string,string>={
   ND_SOURCE_CHANGED:'เอกสาร ยอดจอง หรือข้อมูลเครดิตเปลี่ยน กรุณาตรวจและยื่นคำขอใหม่',
   ND_PREVIEW_STALE:'ข้อมูลเปลี่ยน กรุณาตรวจใหม่ก่อนยืนยัน',ND_COUPON_INSUFFICIENT:'ยอดตั๋วพร้อมใช้ไม่พอ กรุณาตรวจยอดจองและยอดขน',

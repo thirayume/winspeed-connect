@@ -3,11 +3,13 @@ import {req} from '../../services/api';
 import {useCan, useFeature} from '../../utils/capabilities';
 import {useAuthStore} from '../../store/auth-store';
 import {Native116RecoveryPanel} from './Native116RecoveryPanel';
+import {native116ErrorMessage} from '../../utils/native116Errors';
 type Line={couponId:number;couponNo?:string;before:string;after:string;nativeBefore:string};
 type Preview={fingerprint:string;registered:boolean;opening:boolean;plan:{lines:Line[]};data?:{docDate:string;receiver:string;plate:string}};
 type Item={PermitId:string;CustId:number;DocuNo:string|null;State:string;Operation:string;opening:boolean};
 const send=<T,>(operation:string,body:object)=>req<T>('/native-documents/bridge/'+operation,{method:'POST',body:JSON.stringify(body)});
-const errorText=(e:unknown)=>`ยังดำเนินการไม่ได้ กรุณาตรวจสิทธิ์ ข้อมูลล่าสุด และยอดพัก (${(e as {data?:{code?:string}}).data?.code||'กรุณาลองใหม่'})`;
+const errorText=(e:unknown)=>{const code=(e as {data?:{code?:string}}).data?.code||'';
+ return native116ErrorMessage(code)||`ยังดำเนินการไม่ได้ กรุณาตรวจสิทธิ์ ข้อมูลล่าสุด และยอดพัก (${code||'กรุณาลองใหม่'})`;};
 export function NativeBridgeCreate({requestId,reason,onDone}:{requestId:string;reason:string;onDone:()=>void}){
  const feature=useFeature(),can=useCan(),token=useAuthStore(s=>s.token),epoch=useRef(0);
  const [preview,setPreview]=useState<Preview|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');

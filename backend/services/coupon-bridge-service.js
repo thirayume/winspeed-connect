@@ -175,6 +175,6 @@ async function bridgeOperation(args,options={}){
   return {permitId,status:'APPROVED',leaseMinutes:15};
  },{isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE});
 }
-function httpError(e){const code=e.code&&(/^(ND_|COUPON_BRIDGE_)[A-Z0-9_]+$/.test(e.code)||['LOCK_TIMEOUT','DEADLOCK_RETRY'].includes(e.code))?e.code:/\b(BRIDGE_[A-Z0-9_]+)\b/.exec(String(e.message))?.[1];
- return {status:e.status||(code?409:503),code:code||'ND_BRIDGE_FAILED'};}
+function httpError(e){const result=require('./native-document-service').httpError(e);
+ return result.code==='ND_OPERATION_FAILED'?{...result,code:'ND_BRIDGE_FAILED'}:result;}
 module.exports={bridgeOperation,xml,httpError};

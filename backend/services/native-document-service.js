@@ -245,8 +245,10 @@ async function nativeDocument(args,options={}){
  },{isolationLevel:sql.ISOLATION_LEVEL.SERIALIZABLE});
 }
 function httpError(e){
+ const messages=[e,...[e.originalError,e.originalError?.info,...(e.precedingErrors||[]),...(e.originalError?.precedingErrors||[])]
+  .filter(item=>Number(item?.number)===50000)];
  const code=e.code&&(/^(ND_|BRIDGE_|COUPON_BRIDGE_|NATIVE_116_)[A-Z0-9_]+$/.test(e.code)||['LOCK_TIMEOUT','DEADLOCK_RETRY'].includes(e.code))
-  ?e.code:/\b((?:ND_|BRIDGE_|NATIVE_116_)[A-Z0-9_]+)\b/.exec(String(e.message))?.[1];
+  ?e.code:messages.map(item=>/\b((?:ND_|BRIDGE_|NATIVE_116_)[A-Z0-9_]+)\b/.exec(String(item?.message||''))?.[1]).find(Boolean);
  return {status:e.status||(code?409:503),code:code||'ND_OPERATION_FAILED'};
 }
 module.exports={nativeDocument,queryFor,liveUser,permission,requirePermission,approveAllowed,planXml,nativeProof,assertInvoiceCutProof,httpError};

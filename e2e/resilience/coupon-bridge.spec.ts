@@ -1,4 +1,29 @@
 import {test,expect} from '@playwright/test';
+
+for(const [code,message] of [
+ ['NATIVE_116_DOCUMENT_NUMBER_ALREADY_USED_GET_NEW_NUMBER','เลขใบขนนี้ใช้แล้ว กรุณาขอเลขใหม่และตรวจใบเดิมก่อนบันทึก'],
+ ['NATIVE_116_CHECK_ALL_REQUIRED_CHECK_EVERY_LINE','กรุณาติ๊ก Check ทุกบรรทัดและ Check All ใน WinSpeed ก่อนบันทึก'],
+ ['NATIVE_116_TOTAL_QUANTITY_MISMATCH_RECHECK_TRANSPORT','ยอดรวมใบขนไม่ตรงกับจำนวนขนรายบรรทัด กรุณาตรวจและยืนยันช่องจำนวนอีกครั้ง'],
+ ['NATIVE_116_INVOICE_STATE_REVIEW_REQUIRED','สถานะออกบิลของใบขนต้องตรวจสอบ กรุณาให้ฝ่ายบัญชีตรวจเอกสารอ้างอิง'],
+])test('native bridge explains rejected input: '+code,async({page})=>{
+ let published=0;
+ await page.route('**/api/**',route=>{if(route.request().url().endsWith('/publish'))published++;
+  return route.fulfill({status:409,json:{code,message:code}});});
+ await page.goto('/tests/coupon-bridge.html');
+ await page.getByLabel('เลขใบขน').fill('900000001');
+ await page.getByLabel('เหตุผลแผน WinSpeed').fill('ตรวจจำนวนและเอกสารใบขนจำลอง');
+ await page.getByRole('button',{name:'ตรวจแผนล่าสุด'}).click();
+ await expect(page.getByText(message,{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'อนุมัติแผนสำหรับ WinSpeed'})).toHaveCount(0);
+ expect(published).toBe(0);
+});
+
+test('native application action explains a changed total without offering a write',async({page})=>{
+ await page.route('**/api/**',route=>route.fulfill({status:409,json:{code:'NATIVE_116_TOTAL_QUANTITY_MISMATCH_RECHECK_TRANSPORT'}}));
+ await page.goto('/tests/coupon-bridge.html');
+ await page.getByRole('button',{name:'ขอตัดตั๋ว / บันทึกใบขน (116)'}).click();
+ await expect(page.getByText('ยอดรวมใบขนไม่ตรงกับจำนวนขนรายบรรทัด กรุณาตรวจและยืนยันช่องจำนวนอีกครั้ง',{exact:true})).toBeVisible();
+});
 test('bridge disabled renders no action and issues no Pool/bridge request',async({page})=>{
  let requests=0;await page.route('**/api/**',route=>{requests++;return route.fulfill({json:{}});});
  await page.goto('/tests/coupon-bridge.html?off=1');

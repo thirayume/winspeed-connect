@@ -40,6 +40,25 @@ test('HTTP errors expose stable codes rather than native SQL or customer details
  assert.deepEqual(httpError(Error('BRIDGE_NATIVE_PENDING_RECOVERY')),{status:409,code:'BRIDGE_NATIVE_PENDING_RECOVERY'});
  assert.deepEqual(httpError(Object.assign(Error('hold'),{code:'COUPON_BRIDGE_REVIEW_REQUIRED',status:409})),{status:409,code:'COUPON_BRIDGE_REVIEW_REQUIRED'});
 });
+
+test('native and bridge routes retain actionable admission codes behind driver rollback messages',()=>{
+ const bridge=require('../services/coupon-bridge-service').httpError;
+ for(const code of ['NATIVE_116_DOCUMENT_NUMBER_ALREADY_USED_GET_NEW_NUMBER','NATIVE_116_CHECK_ALL_REQUIRED_CHECK_EVERY_LINE',
+  'NATIVE_116_INVOICE_STATE_REVIEW_REQUIRED','NATIVE_116_TOTAL_QUANTITY_MISMATCH_RECHECK_TRANSPORT']){
+  for(const payload of [{precedingErrors:[{number:50000,message:code+' private SQL details'}]},
+   {originalError:{info:{number:50000,message:code+' private SQL details'}}}]){
+   const error=Object.assign(Error('The transaction ended in the trigger. Private query text.'),{number:3609,...payload});
+   for(const adapt of [httpError,bridge])assert.deepEqual(adapt(error),{status:409,code});
+  }
+ }
+});
+
+test('nested unrelated SQL failures remain unavailable and never expose query text',()=>{
+ const error=Object.assign(Error('The transaction ended in the trigger.'),{number:3609,
+  precedingErrors:[{number:207,message:'Invalid column name NATIVE_116_PRIVATE_VALUE'}]});
+ assert.deepEqual(httpError(error),{status:503,code:'ND_OPERATION_FAILED'});
+ assert.deepEqual(require('../services/coupon-bridge-service').httpError(error),{status:503,code:'ND_BRIDGE_FAILED'});
+});
 test('locked credit policies run serially on one transaction connection and retain opening debt',async()=>{
  const {creditSummary}=require('../services/native-document-source');
  let active=0,max=0,count=0;

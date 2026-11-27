@@ -58,7 +58,7 @@ const isWildcard = rawOrigins.includes('*');
 const corsOptions = {
   origin: isWildcard ? true : rawOrigins,  // true = reflect request origin (for credentials)
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-DB-Target'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-DB-Target', 'X-Org-Branch'],
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers choke on 204
 };

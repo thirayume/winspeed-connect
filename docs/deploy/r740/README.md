@@ -642,3 +642,36 @@ login. Re-review cross-company identity bindings after either Employee link
 changes. Missing secondary-company staff/accounts need explicit setup; do not
 copy passwords or activate inactive accounts automatically. Annual plans and
 sales targets remain business-owner setup after rollout.
+
+
+## Native116 numbering and input validation (migrations290–291)
+
+Deploy this source with the normal CI/promotion flow and `deploy-r740.ps1`.
+The approved primary native target must remain reviewed; a verified fresh
+backup is required before apply. Rehearse under the actual restricted migrator
+and prove the app cannot call counter maintenance directly. Renew the exact-SHA
+native activation through the same official wrapper after deployment.
+
+290 aligns the single reviewed `redemption` branch counter for format
+`yy010000` with retained same-year native documents, bridge/receipt history and
+native audit numbers. It preserves all document numbers and advances only.
+Completed native/app saves maintain alignment; backdated or synthetic number
+series do not rewind or switch its year. Unsupported formats and exhausted
+sequences require review. Company2 remains excluded from native writes and
+counter repair. Down removes only the wf hooks/procedure and retains the
+advanced counter and its audit, preventing number reuse.
+
+291 keeps the prior transaction, native identity, scope, invoice, reservation
+and quantity checks. It reports the particular incomplete field rather than
+one combined database message, and rejects duplicate business numbers under
+the shared native transaction lock. Check every populated line and Check All;
+confirm each transport quantity and the header total before Save. App routes
+preserve typed business conflicts hidden behind a driver's rollback message;
+unrelated SQL failures remain unavailable and never expose query text.
+
+For acceptance, test automatic numbering, a two-ticket partial save, edit and
+cancel/return, denied duplicate/invoiced/unchecked inputs, and counter history.
+Compare balances and COMPLETE audit rather than treating Select Form as proof.
+Keep WinSpeed's separate number-gap policy. The vendor documents its three
+settings (allow, warn, refuse) in [number-gap options](https://www.prosoftwinspeed.com/Faq/Detail/1437).
+No duplicate-check bypass, Rebate Reset or historical renumbering is required.

@@ -1,5 +1,6 @@
 {
   "test": [
+    "tests/cors-preflight.test.js",
     "tests/company-service.test.js",
     "tests/credit-service.test.js",
     "tests/customer-access-primary.test.js",
@@ -259,6 +260,7 @@
     "tests/native-116-recovery.test.js"
   ],
   "test:unit": [
+    "tests/cors-preflight.test.js",
     "tests/policy-contract.test.js",
     "tests/db-target-policy.test.js",
     "tests/rebate.test.js",
