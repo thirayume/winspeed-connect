@@ -6,7 +6,7 @@ Docker engine and Docker Desktop on that server are not used.
 
 > **Current status for all agents (Claude · Codex · Antigravity):**
 > [GO-LIVE-STATUS.md](GO-LIVE-STATUS.md) — what is live vs pending, and the constraints to respect
-> when working on deploy or the databases. Runbook refreshed 2026-11-24 (current v3 rollout and reports, migrations through 279;
+> when working on deploy or the databases. Runbook refreshed 2026-11-27 (organization scope, direct116 and reports, migrations through 289;
 > older release 2.0.0 notes cover migrations through 253 on UAT,
 > PROD and `dbwins_worldfert2`; see [RELEASE-2.0.0.md](RELEASE-2.0.0.md)). Database care: [sql/maintenance](sql/maintenance/README.md).
 
@@ -577,8 +577,12 @@ removes the SQL password from the active legacy entrypoint. Do not print/export
 that rollback material. Credential rotation requires an IT dependency inventory;
 replacing this batch does not rotate a shared SQL login.
 
-Off-host copies remain a separate gate: the existing approved network share denied
-access during the 24 November audit. S4U does not carry reusable network credentials.
+The owner selected local D: retention on24November: daily21:00 backups and
+Friday21:00 cleanup of files older than15days, without an extra weekly backup.
+That policy is already configured; this release does not change its schedule.
+Off-host copies are not configured under that local policy. If later requested,
+provision and test a separate approved destination; the older network share denied
+access during the24November audit. S4U does not carry reusable network credentials.
 IT must approve/provision the backup identity/share access and test it under the
 actual unattended identity; do not save a network password in scripts or treat a
 mapped drive visible in a desktop session as unattended proof. The runner accepts
@@ -617,7 +621,8 @@ accepts only the exact previous direct module/fingerprints for this upgrade;
 unknown drift still blocks activation. Migration 288 preserves legacy caller
 SET options, and 289 rotates only an exhausted native SMID block while retaining
 all cancelled-document history. Down migration does not restore a retired block.
-These changes are rehearsed on v3 only; follow GO-LIVE-STATUS before rollout.
+These changes passed v3 acceptance and are deployed on both primary environments;
+follow GO-LIVE-STATUS for the exact revision, receipts and remaining operational setup.
 
 After a native save error, WinSpeed may still open its print selection window.
 Close that window, reopen the document and verify its persisted quantities; do
@@ -625,7 +630,7 @@ not infer success from the print dialog or repeatedly press Save. The direct
 protocol requires a completed native audit receipt. A failed increase against an
 App reservation must preserve the prior saved document and balances.
 
-For the organization candidate, apply the reviewed private setup separately in
+For future organization changes, apply reviewed private setup separately in
 UAT before PROD: validate unique native Employee codes and existing account
 links; use the ADMIN native-Employee editor for names/supervisors; create each
 promotion position directly below its actual manager; and assign SALE and

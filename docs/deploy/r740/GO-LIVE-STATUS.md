@@ -1,28 +1,99 @@
 # R740 deployment and business acceptance
 
-**27 November 2026, 03:20 ICT — approved rollout in progress.** The owner approved
-publication of the reviewed organization/direct116 release and UAT→PROD after
-all gates, without Rebate Reset. UAT promotion CI45887515882 passed for0053171,
-including backend1506, offline99 and every configured browser/deploy gate. The
-official UAT plan had275unchanged/10pending/0drift. Apply committed280–283, then
-rolled back284 on SQL15151: the restricted migrator cannot impersonate the dbo
-owner of the new readiness function. Services were not restarted; the running
-release is still65f1a2d. PROD and company2 remain schema279 and unchanged.
+**27 November 2026 — organization scope and native 116 release deployed.**
+Feature baseline 0193af0 passed hosted UAT CI45890381479 and PROD
+CI45937564625, including backend1,506, offline99 and the configured browser,
+report and deploy gates. Official apply receipts are
+20261127-033012-uat-apply-0193af0.txt and
+20261127-111243-prod-apply-0193af0.txt. Both primary environments and company2
+have migrations280–289: ledger285, pending0, drift0. Applied migration bytes
+remain immutable. A documentation-only handover revision preserves this feature
+baseline; the latest successful deploy/native receipts identify its exact SHA.
 
-A reviewed prerequisite now assigns only that exact boolean function to the
-existing migrator, with no dbo impersonation or broader role grant. On UAT,
-64batches of284–289 passed under the restricted identity, together with
-idempotent bootstrap, restored-owner remap, retained public boolean execution
-and application execution. Three actual negative cases reject modified body,
-unknown owner and extra object grant. Every rehearsal rolled back and restored
-the ledger/object/audit baseline. The corrected principal script also handles
-this owner after nightly restore. This source fix still needs CI and rollout;
-these rehearsal results are not a completed UAT or PROD deployment.
+Authenticated UI acceptance passed all22 main screens on both UAT and PROD.
+PROD additionally passed the reviewed-account secondary Budget/report switch,
+then returned to the primary company, all permitted branches and the actual
+administrator with Access As stopped. No business form was saved.
 
-Verified COPY_ONLY/CHECKSUM backups of all three databases are retained on
-R740's D: drive with SHA256 summaries. No real report files were copied off-box,
-no business documents or live staff/territories were changed in this rollout,
-and Reset baselines remain unchanged. Earlier entries below are historical.
+Both primary databases now have the reviewed seven employee/account links,
+four distinct promotion positions, seven editable territories covering twenty
+provinces per territory type, the upward supervisor chain, and the reserved
+App admin linked to system Employee metadata EMP-00000. Real staff names and
+setup manifests are private. Historical document owners/keys were preserved;
+no WinSpeed credentials were created. The primary-to-secondary admin binding
+was explicitly re-reviewed after the Employee link changed; no missing target
+staff account was automatically created or reactivated.
+
+Ten real effective identities in each primary environment passed independent
+SQL customer-list equality, Employee/territory/bill/giveaway/Dashboard reads,
+organization maps and branch filtering. Twenty outsider price/ticket requests
+per environment returned404. UAT UI independently confirmed that the regional
+manager sees own/descendant branches, branch narrowing works and Access As is
+stopped after testing. Products and shared masters retain their role-based
+permissions; customer-owned documents and financial records use branch scope.
+
+Reviewed official direct116 activation passed on UAT and PROD, with50 native
+metadata fingerprints, hooks ready and no pending recovery stages. Actual
+WinSpeed operator identity and current native permissions authorize direct
+create/edit/cancel; no Sale-App permit is required. Native SaveEmpID remains
+separate from the operator identity. The App-only EMP-00000 admin is not a
+native login. Existing reservations are retained, including a pre-existing
+PROD reservation; native saves cannot consume reserved quantities.
+
+Both live environments passed report catalog38:37 loaded and one approval
+memo correctly requires a selected plan. Twelve real XLSX exports per
+environment were parsed in memory on R740; only counts/hashes were retained.
+Price cells213 matched WinSpeed;348 receipt headers and receipt/sales amounts
+matched with zero-cent differences. Trusted HTTPS, six public JS/CSS assets
+and six backend files matched the deployed release. Coupon balances, native
+116/Invoice counts and all Reset participant baselines were unchanged.
+Owned deployment automation accounts are disabled, their credentials and
+staged helper files removed, and audit history retained. No Rebate Reset or
+business document was created for live acceptance.
+
+Company2 received schema only. Its native target/direct116/bridge remain off,
+one reviewed account remains active, and Budget Plan/business data were not
+seeded. Budget Plan and permitted report access still require current explicit
+account bindings in both companies. Staff, preparer/Manager/C_Level accounts,
+real annual plans and sales targets remain business-owner setup as applicable;
+no automatic credential copying or staff activation is authorized.
+
+The SQL15151 prerequisite is now applied: only the exact boolean readiness
+function is owned by the existing restricted migrator, with its public boolean
+EXECUTE restored. No dbo impersonation or broader role was granted. UAT restore
+principal remapping validates its immutable body and approved owner. Actual
+rollback rehearsal passed64 restricted migration batches, idempotence and
+three rejection cases. This is distinct from a physical nightly restore of
+this new release, which has not yet run. Last night's26November21:00 manifest
+verified both company backups, but refused UAT refresh before any restore on
+UAT_EXTERNAL_SESSIONS_PRESENT; task result1 is retained as a failed refresh,
+not a failed backup. Close external UAT clients before21:00; never weaken the
+guard or terminate unreviewed sessions automatically.
+
+Fresh pre-PROD COPY_ONLY/CHECKSUM backups of company9 and company2 passed
+RESTORE VERIFYONLY and SHA256 at11:02/11:03 ICT on R740's D: drive. The owner's
+existing policy remains daily21:00 backup/guarded UAT refresh, with Friday21:00
+cleanup of files older than15days and no extra weekly backup. The previous
+company2 usage-counter repair and isolated restore check passed on24November;
+this release performs no DBCC repair or retention deletion. Tonight's actual
+backup/refresh/cleanup results must be checked after the scheduled run.
+
+Before release, isolated v3 acceptance passed physical WinSpeed create/partial
+edit/cancel, exact returned balances/audits, both native/App race orderings and
+two authenticated ZERO/DISCOUNT Full Loops through quotation,103, SALES Trip
+confirmation, AI,104, mixed partial116, J/N107, giveaway loans/return and Rebate
+accrual/claim/use/replay. Four-line legacy adoption/edit/cancel was separately
+rehearsed with SQL callbacks and full rollback. Transport evidence was simulated;
+these are not physical shipment, real-staff training, printer or VAT/GL sign-offs.
+Expired tickets continue to warn and remain usable under the owner's policy.
+After a WinSpeed save error, close any print selection, reopen the document and
+verify persisted quantities before retrying; print selection is not save proof.
+
+Use [the deployment guide](README.md) and the private
+[handover guide](../../sale-app/handover/README.md) for operation. Earlier entries
+below are dated historical observations, not outstanding gates for this release.
+
+## Historical checkpoints
 
 Operational snapshot: **24 November 2026 (ICT)**. This page records observed results;
 current source and the latest successful server receipts determine the running release.

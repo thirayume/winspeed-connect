@@ -21,7 +21,7 @@ Private, on the owner's machine only (git-ignored, never committed): the hand-ov
 - `WSSale-App/` — frontend: React 18, Vite, TypeScript, Tailwind, Zustand. `npm run build` (`tsc -b && vite build`).
 - `backend/` — Node.js 22, Express, `mssql` for SQL Server 2008 R2 (compatibility 80: no CONCAT/THROW/TRY_CAST/IIF).
   - `routes/` HTTP only; `services/` business logic; `migrations/` numbered SQL with rollbacks in `migrations/down/`
-    (through 279; 246 and 250 excluded in `migration-policy.json`); `tests/` Node test runner (`npm test`).
+    (through 289; 246 and 250 excluded in `migration-policy.json`); `tests/` Node test runner (`npm test`).
 - `e2e/` — Playwright browser suites; CI runs those listed in `.github/actions/verify/action.yml`.
 - `docs/deploy/r740/` — the only deploy kit (scripts, targets, SQL, maintenance). `docs/deploy/onprem/` holds the
   Caddy/WSL files it builds from.
